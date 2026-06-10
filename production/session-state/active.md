@@ -3,17 +3,17 @@
 Last updated: 2026-06-10
 
 <!-- STATUS -->
-Epic: Open Source Readiness
-Feature: Open Source Readiness
-Task: Push initial repository scaffold
+Epic: Framework Core
+Feature: Layer Boundaries
+Task: Document architecture boundaries
 <!-- /STATUS -->
 
 ## Current Focus
 
 - Active GDD: `design/gdd/flutter-app-framework.md`
-- Active Epic: `production/epics/presentation/EPIC-open-source-readiness.md`
-- Active Story: `production/epics/presentation/story-confirm-mvp-defaults.md`
-- Current task: Initial repository scaffold pushed to `origin/main`.
+- Active Epic: `production/epics/core/EPIC-framework-core.md`
+- Active Story: `production/epics/core/story-document-layer-boundaries.md`
+- Current task: Architecture layer and package boundaries documented.
 
 ## Progress
 
@@ -57,6 +57,7 @@ Task: Push initial repository scaffold
 - [x] Confirm remaining open questions for state management, package publishing, and platform targets.
 - [x] Create first repository commit.
 - [x] Push `main` to `origin`.
+- [x] Document architecture layer and package boundaries.
 
 ## Key Decisions
 
@@ -82,6 +83,8 @@ Task: Push initial repository scaffold
 | 2026-06-10 | Confirm MVP defaults. | Resolved state management, publishing, and platform target defaults for MVP. | `design/gdd/flutter-app-framework.md`, `README.md`, `docs/mvp-plan.md` |
 | 2026-06-10 | Create first repository commit. | Initial scaffold, docs, packages, tests, CI, and production workflow are now committed locally. | Root commit created. |
 | 2026-06-10 | Push initial scaffold. | Published `main` to the configured GitHub remote. | `origin/main` |
+| 2026-06-10 | Start layer boundary documentation. | Core epic's next incomplete story is architecture boundary documentation. | `production/epics/core/story-document-layer-boundaries.md`, `docs/architecture.md` |
+| 2026-06-10 | Complete layer boundary documentation. | Contributors need package boundaries, import direction, and feature layer rules before adding more framework modules. | `docs/architecture.md`, `README.md`, `docs/feature-module-guide.md` |
 
 ## Files In Progress
 
@@ -107,6 +110,8 @@ Task: Push initial repository scaffold
 | `docs/flutter-setup.md` | Local Flutter setup instructions. | Created |
 | `docs/mvp-plan.md` | Focused FulFrame MVP scope and milestones. | Created |
 | `production/epics/core/story-define-core-contracts.md` | Next MVP implementation story. | Ready |
+| `production/epics/core/story-document-layer-boundaries.md` | Core layer boundary documentation story. | Complete |
+| `docs/architecture.md` | Package and feature boundary documentation. | Created |
 | `production/epics/feature/story-add-task-list-sample-feature.md` | Starter app sample feature story. | Complete |
 | `docs/feature-module-guide.md` | Documents starter feature module structure. | Created |
 | `production/epics/presentation/story-write-readme-positioning.md` | README positioning story. | Complete |
@@ -154,6 +159,7 @@ Task: Push initial repository scaffold
 | 2026-06-10 | `C:\Users\safte\flutter\bin\dart.bat run melos run test` | Passed | Core tests and starter app widget tests passed after MVP defaults were confirmed. |
 | 2026-06-10 | `git commit -m "Initial FulFrame scaffold"` | Passed | Created root commit, then amended it with session-state evidence. |
 | 2026-06-10 | `git push -u origin main` | Passed | `main` now tracks `origin/main`. |
+| 2026-06-10 | `C:\Users\safte\flutter\bin\dart.bat run melos run analyze` | Passed | All 5 workspace packages analyze cleanly after architecture docs update. |
 
 ## Open Questions
 
@@ -166,6 +172,4 @@ Task: Push initial repository scaffold
 
 ## Next Step
 
-Next production step: continue MVP hardening from
-`production/epics/core/story-define-core-contracts.md` or prepare a public
-release checklist.
+Next production step: commit and push the boundary documentation update.

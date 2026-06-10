@@ -38,12 +38,12 @@ or state-management package.
 | Story | Type | Status | Evidence |
 |-------|------|--------|----------|
 | `story-define-core-contracts.md` | Logic | Complete | Unit tests for core contracts. |
-| `story-document-layer-boundaries.md` | Config/Data | Planned | Architecture doc with import rules. |
+| `story-document-layer-boundaries.md` | Config/Data | Complete | Architecture doc with import rules. |
 | `story-add-feature-module-example.md` | Integration | Planned | Example feature compiles and tests. |
 
 ## Definition Of Done
 
-- [ ] Core contracts are documented.
+- [x] Core contracts are documented.
 - [ ] Core contracts are covered by unit tests.
-- [ ] Layer boundaries are clear enough for contributors to follow.
+- [x] Layer boundaries are clear enough for contributors to follow.
 - [ ] No MVP contract requires a specific backend.

@@ -65,7 +65,9 @@ The feature demonstrates FulFrame's default module boundaries:
 - `ui`: Flutter screen and widgets.
 
 See [docs/feature-module-guide.md](docs/feature-module-guide.md) for the folder
-shape and rules for adding a new feature module.
+shape and rules for adding a new feature module. See
+[docs/architecture.md](docs/architecture.md) for package boundaries, layer
+responsibilities, and import direction.
 
 ## Local Setup
 

@@ -3,6 +3,8 @@
 FulFrame starter features are organized by responsibility so contributors can
 copy the shape into real apps without adopting a backend or extra state package.
 
+For full package and import-boundary rules, see `docs/architecture.md`.
+
 ## Folder Shape
 
 ```text
