@@ -1,0 +1,20 @@
+name: fulframe
+
+packages:
+  - packages/**
+  - examples/**
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  analyze:
+    run: dart run melos exec -- "flutter analyze ."
+    description: Run static analysis in every package.
+  test:
+    run: dart run melos exec --dir-exists=test -- "flutter test"
+    description: Run Dart tests where available.
+  format:
+    run: dart run melos exec -- "dart format ."
+    description: Format Dart files.

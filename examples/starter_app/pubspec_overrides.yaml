@@ -1,0 +1,6 @@
+# melos_managed_dependency_overrides: fulframe_app,fulframe_core
+dependency_overrides:
+  fulframe_app:
+    path: ..\\..\\packages\\fulframe_app
+  fulframe_core:
+    path: ..\\..\\packages\\fulframe_core

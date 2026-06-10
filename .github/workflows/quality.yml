@@ -1,0 +1,37 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install workspace tooling
+        run: dart pub get
+
+      - name: Bootstrap packages
+        run: dart run melos bootstrap
+
+      - name: Analyze
+        run: dart run melos run analyze
+
+      - name: Test core package
+        working-directory: packages/fulframe_core
+        run: dart test
+
+      - name: Test starter app
+        working-directory: examples/starter_app
+        run: flutter test

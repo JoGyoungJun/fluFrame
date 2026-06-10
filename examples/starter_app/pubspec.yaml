@@ -1,0 +1,19 @@
+name: fulframe_starter_app
+description: Starter Flutter app demonstrating FulFrame architecture.
+publish_to: none
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fulframe_app:
+    path: ../../packages/fulframe_app
+  fulframe_core:
+    path: ../../packages/fulframe_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^4.0.0
