@@ -1,0 +1,12 @@
+# .pubignore replaces .gitignore for publishing, so templates/ IS included
+# in the published package (after running: dart run tool/sync_template.dart).
+#
+# Every pattern is anchored with a leading slash: an unanchored `test/`
+# would ALSO strip templates/app/test from the published bundle, silently
+# shipping a template without its test suite.
+/.dart_tool/
+/build/
+/pubspec.lock
+/test/
+/tool/
+/dart_test.yaml

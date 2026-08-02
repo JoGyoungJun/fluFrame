@@ -1,0 +1,40 @@
+{
+  "@@locale": "en",
+  "appTitle": "FluFrame App",
+  "homeTab": "Home",
+  "settingsTab": "Settings",
+  "homeGreeting": "Welcome to fluFrame!",
+  "homeDescription": "A production-ready Flutter starter with Riverpod, go_router, theming, and localization built in.",
+  "counterLabel": "{count, plural, =1{Button pushed 1 time} other{Button pushed {count} times}}",
+  "@counterLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "increment": "Increment",
+  "viewPosts": "View sample posts",
+  "postsTitle": "Posts",
+  "postsErrorMessage": "Failed to load posts.",
+  "genericErrorMessage": "Something went wrong.",
+  "retry": "Retry",
+  "postDetailTitle": "Post #{id}",
+  "@postDetailTitle": {
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "postNotFound": "Post not found.",
+  "settingsTitle": "Settings",
+  "appearanceSection": "Appearance",
+  "themeModeSystem": "System",
+  "themeModeLight": "Light",
+  "themeModeDark": "Dark",
+  "languageSection": "Language",
+  "languageSystem": "System",
+  "languageEnglish": "English",
+  "languageKorean": "한국어"
+}

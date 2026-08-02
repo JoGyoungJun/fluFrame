@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  template:
+    name: Template app — analyze & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      - name: Verify generated code is up to date
+        # git add + diff --cached also catches NEW generated files that a
+        # contributor forgot to commit (plain git diff is blind to them).
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          git add -A lib
+          git diff --cached --exit-code -- lib
+      - run: dart format --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test --coverage
+
+  cli:
+    name: CLI — analyze & unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart format --set-exit-if-changed lib test tool
+      - run: dart analyze
+      - run: dart test -x e2e
+
+  e2e:
+    name: CLI — end-to-end (generate & verify app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart test -t e2e --reporter expanded

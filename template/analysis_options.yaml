@@ -1,0 +1,13 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - lib/l10n/gen/**
+    - "**/*.freezed.dart"
+    - "**/*.g.dart"
+
+linter:
+  rules:
+    # Generated l10n keys are referenced across features; keep package imports
+    # everywhere for consistency (also required by the fluFrame CLI's renamer).
+    always_use_package_imports: true

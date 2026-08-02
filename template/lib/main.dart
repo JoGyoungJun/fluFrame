@@ -1,0 +1,39 @@
+import 'package:fluframe_app/app/app.dart';
+import 'package:fluframe_app/core/network/api_exception.dart';
+import 'package:fluframe_app/core/storage/key_value_store.dart';
+import 'package:fluframe_app/features/settings/data/settings_repository.dart';
+import 'package:fluframe_app/features/settings/presentation/locale_controller.dart';
+import 'package:fluframe_app/features/settings/presentation/theme_mode_controller.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Resolve persisted settings before the first frame so the app starts
+  // with the right theme and locale (no flash of defaults).
+  final store = SharedPreferencesKeyValueStore(SharedPreferencesAsync());
+  final settings = SettingsRepository(store);
+  final themeMode = await settings.loadThemeMode();
+  final locale = await settings.loadLocale();
+
+  runApp(
+    ProviderScope(
+      // Riverpod 3 retries failing providers with exponential backoff by
+      // default, which keeps AsyncValueWidget in its loading state for
+      // ~40s before the error/retry UI ever appears. Typed API failures
+      // are surfaced immediately; anything else gets one quick retry.
+      retry: (retryCount, error) {
+        if (error is ApiException || retryCount >= 1) return null;
+        return const Duration(milliseconds: 200);
+      },
+      overrides: [
+        keyValueStoreProvider.overrideWithValue(store),
+        initialThemeModeProvider.overrideWithValue(themeMode),
+        initialLocaleProvider.overrideWithValue(locale),
+      ],
+      child: const FluFrameApp(),
+    ),
+  );
+}
