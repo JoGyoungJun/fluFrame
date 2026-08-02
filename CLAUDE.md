@@ -11,6 +11,17 @@ Monorepo for **fluFrame**: a production-ready Flutter app template and the
 | `packages/fluframe/` | CLI: `fluframe create <name>` | `dart` |
 | `_backup-ccgs/` | Unrelated backup of a game-studio template — ignore | — |
 
+## Maintenance commands (.claude/skills/)
+
+| Command | Purpose |
+|---|---|
+| `/verify [fast]` | Full verification pipeline — the gate before any commit/release |
+| `/upgrade-deps [major]` | Safe dependency/SDK upgrades with breaking-change research |
+| `/release <version>` | pub.dev release: bump → sync → e2e → dry-run audit → publish → tag |
+| `/new-feature <name>` | Add a template feature module following all conventions |
+| `/stack-watch` | Re-ground pinned versions & post-cutoff notes against reality |
+| `/oss-triage` | Issues/PRs triage, CI health, adoption metrics vs Claude for OSS goals |
+
 ## Verification (run after ANY change)
 
 ```sh
