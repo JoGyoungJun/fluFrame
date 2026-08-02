@@ -1,5 +1,9 @@
 # fluFrame
 
+[![CI](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml/badge.svg)](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml)
+[![pub package](https://img.shields.io/pub/v/fluframe.svg)](https://pub.dev/packages/fluframe)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Production-ready Flutter apps in one command.**
 
 fluFrame is a Flutter boilerplate + CLI: `fluframe create my_app` scaffolds a

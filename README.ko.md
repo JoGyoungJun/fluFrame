@@ -1,5 +1,9 @@
 # fluFrame
 
+[![CI](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml/badge.svg)](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml)
+[![pub package](https://img.shields.io/pub/v/fluframe.svg)](https://pub.dev/packages/fluframe)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **한 번의 명령으로 프로덕션 수준의 Flutter 앱을.**
 
 fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_app` 한 줄로
