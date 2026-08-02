@@ -20,10 +20,13 @@ of work, milestones are the plan of record.
 idea → issue → /design (spec) ± /adr (decision) → /plan (milestone)
      → /work <issue#> → branch → tests → PR + CI gate → merge
      → /release <version> → /oss-triage ↺ → /retro (per milestone)
+
+/cycle = the whole loop in one command (plan → work × N → release → retro)
 ```
 
 | Command | Purpose |
 |---|---|
+| `/cycle [milestone]` | One full cycle end-to-end; pauses only at plan approval & publish |
 | `/plan [milestone]` | Milestone planning: goal, prioritized issues, P0 readiness gate |
 | `/design <title\|issue#>` | Design spec before non-trivial changes → `docs/design/` |
 | `/adr <title>` | Architecture Decision Record → `docs/adr/` |
