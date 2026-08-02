@@ -22,6 +22,14 @@ Monorepo for **fluFrame**: a production-ready Flutter app template and the
 | `/stack-watch` | Re-ground pinned versions & post-cutoff notes against reality |
 | `/oss-triage` | Issues/PRs triage, CI health, adoption metrics vs Claude for OSS goals |
 
+## Branch workflow
+
+`main` is protected — every change (maintainers included) lands via
+branch → PR → all three CI jobs green → merge. Direct pushes to main are
+rejected. Zero approvals are required, so self-merging your own PR after
+CI passes is the normal flow: `gh pr create --fill` then
+`gh pr merge --squash --auto --delete-branch`.
+
 ## Verification (run after ANY change)
 
 ```sh

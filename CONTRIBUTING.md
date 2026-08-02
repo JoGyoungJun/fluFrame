@@ -60,6 +60,9 @@ The e2e test requires the Flutter SDK on PATH and takes a few minutes.
    `fix(cli): handle spaces in output path`.
 4. Describe **what** and **why** in the PR body; link the related issue.
 
+`main` is a protected branch: every change — maintainers' included —
+lands through a pull request with all CI jobs green. Nothing merges red.
+
 ## Releasing (maintainers)
 
 1. Bump `version` in `packages/fluframe/pubspec.yaml`, `cliVersion` in

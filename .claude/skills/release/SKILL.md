@@ -29,12 +29,17 @@ published version can never be deleted (only retracted within 7 days).
    browser auth). Ask the user to run it themselves with the `!` prefix,
    from the repo root:
    `! cd packages/fluframe && dart pub publish`
-6. **Record the release**:
+6. **Record the release** — main is protected (PR + green CI required,
+   admins included), so the release lands via PR:
    ```sh
+   git checkout -b release/fluframe-v<version>
    git add -A
    git commit -m "release(cli): fluframe v<version>"
-   git tag fluframe-v<version>
-   git push origin main --tags
+   git push -u origin release/fluframe-v<version>
+   gh pr create --fill
+   gh pr merge --squash --auto --delete-branch   # merges when CI passes
    ```
+   After the merge: `git checkout main && git pull`, then
+   `git tag fluframe-v<version> && git push origin fluframe-v<version>`.
 7. **Post-check**: WebFetch https://pub.dev/packages/fluframe — confirm the
    new version is live and note the pub points once analysis completes.
