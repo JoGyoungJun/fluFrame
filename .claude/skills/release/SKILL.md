@@ -26,8 +26,9 @@ published version can never be deleted (only retracted within 7 days).
      pattern lost its leading slash (they MUST stay slash-anchored)
    - `templates/app/gitignore` (dot-less)
 5. **Publish**: `dart pub publish` is interactive (y/N prompt + first-time
-   browser auth). Ask the user to run it themselves with the `!` prefix:
-   `! cd C:/Users/safte/github/fluFrame/packages/fluframe && dart pub publish`
+   browser auth). Ask the user to run it themselves with the `!` prefix,
+   from the repo root:
+   `! cd packages/fluframe && dart pub publish`
 6. **Record the release**:
    ```sh
    git add -A
