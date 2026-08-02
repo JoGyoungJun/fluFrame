@@ -12,4 +12,4 @@ deliberate — contributors can see how the project learns.
 
 | Date | Milestone | Retro |
 |---|---|---|
-| — | _none yet_ | |
+| 2026-08 | v0.1.0 — first pub.dev release | [2026-08-v0.1.0.md](2026-08-v0.1.0.md) |

@@ -25,10 +25,12 @@ published version can never be deleted (only retracted within 7 days).
    - `templates/app/test/...`  ← a missing test/ means a `.pubignore`
      pattern lost its leading slash (they MUST stay slash-anchored)
    - `templates/app/gitignore` (dot-less)
-5. **Publish**: `dart pub publish` is interactive (y/N prompt + first-time
-   browser auth). Ask the user to run it themselves with the `!` prefix,
-   from the repo root:
-   `! cd packages/fluframe && dart pub publish`
+5. **Publish**: `dart pub publish` needs a real TTY for its y/N prompt —
+   the Claude Code `!` shell has none (fails with errno 6). Ask the user
+   to either run it in a separate terminal, or skip the prompt:
+   `! cd packages/fluframe && dart pub publish --force`
+   (First-time browser auth works either way.) Verify afterwards:
+   `https://pub.dev/api/packages/fluframe` shows the new version.
 6. **Record the release** — main is protected (PR + green CI required,
    admins included), so the release lands via PR:
    ```sh
