@@ -1,5 +1,7 @@
 # fluframe
 
+[![pub package](https://img.shields.io/pub/v/fluframe.svg)](https://pub.dev/packages/fluframe)
+
 Generate production-ready Flutter apps from the
 [fluFrame](https://github.com/JoGyoungJun/fluFrame) boilerplate —
 Riverpod 3, go_router, localization, theming, dio, and tests wired out
