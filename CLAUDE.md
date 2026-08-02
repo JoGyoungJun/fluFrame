@@ -11,14 +11,28 @@ Monorepo for **fluFrame**: a production-ready Flutter app template and the
 | `packages/fluframe/` | CLI: `fluframe create <name>` | `dart` |
 | `_backup-ccgs/` | Unrelated backup of a game-studio template — ignore | — |
 
-## Maintenance commands (.claude/skills/)
+## Development routine (.claude/skills/)
+
+GitHub-native port of a structured dev methodology: issues are the unit
+of work, milestones are the plan of record.
+
+```text
+idea → issue → /design (spec) ± /adr (decision) → /plan (milestone)
+     → /work <issue#> → branch → tests → PR + CI gate → merge
+     → /release <version> → /oss-triage ↺ → /retro (per milestone)
+```
 
 | Command | Purpose |
 |---|---|
+| `/plan [milestone]` | Milestone planning: goal, prioritized issues, P0 readiness gate |
+| `/design <title\|issue#>` | Design spec before non-trivial changes → `docs/design/` |
+| `/adr <title>` | Architecture Decision Record → `docs/adr/` |
+| `/work <issue#>` | Issue-driven implementation: readiness gate → branch → tests → PR |
 | `/verify [fast]` | Full verification pipeline — the gate before any commit/release |
-| `/upgrade-deps [major]` | Safe dependency/SDK upgrades with breaking-change research |
+| `/new-feature <name>` | Template feature module conventions (used by /work) |
 | `/release <version>` | pub.dev release: bump → sync → e2e → dry-run audit → publish → tag |
-| `/new-feature <name>` | Add a template feature module following all conventions |
+| `/retro [milestone]` | Milestone retrospective: plan-vs-actual, 3-5 owned action items |
+| `/upgrade-deps [major]` | Safe dependency/SDK upgrades with breaking-change research |
 | `/stack-watch` | Re-ground pinned versions & post-cutoff notes against reality |
 | `/oss-triage` | Issues/PRs triage, CI health, adoption metrics vs Claude for OSS goals |
 

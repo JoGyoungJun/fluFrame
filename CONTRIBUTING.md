@@ -63,6 +63,17 @@ The e2e test requires the Flutter SDK on PATH and takes a few minutes.
 `main` is a protected branch: every change — maintainers' included —
 lands through a pull request with all CI jobs green. Nothing merges red.
 
+## Design specs and ADRs
+
+- Non-trivial features start with a short design spec in
+  [`docs/design/`](docs/design/) — problem, design, l10n keys, test
+  plan, and testable acceptance criteria. Bug fixes and small tweaks
+  skip this.
+- Decisions that are hard to reverse (core dependencies, architecture
+  patterns, the CLI's generation contract) are recorded as ADRs in
+  [`docs/adr/`](docs/adr/). If you are proposing one, open an issue
+  first so the discussion is captured.
+
 ## Releasing (maintainers)
 
 1. Bump `version` in `packages/fluframe/pubspec.yaml`, `cliVersion` in
