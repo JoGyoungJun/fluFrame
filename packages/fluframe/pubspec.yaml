@@ -6,6 +6,12 @@ description: >-
 version: 0.1.0
 repository: https://github.com/JoGyoungJun/fluFrame
 issue_tracker: https://github.com/JoGyoungJun/fluFrame/issues
+topics:
+  - flutter
+  - cli
+  - boilerplate
+  - riverpod
+  - scaffolding
 
 environment:
   sdk: ^3.12.0
