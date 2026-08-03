@@ -53,6 +53,11 @@ published version can never be deleted (only retracted within 7 days).
    The workflow re-runs every gate (tag↔pubspec match, unit, bundle
    sync, e2e, dry-run) before publishing; a red gate publishes nothing —
    fix, delete the tag (`git push origin :fluframe-v<version>`), re-tag.
+   **pub.dev rate limit**: max 12 publishes per rolling 24h (server
+   rejects the upload). If hit, the tag stays valid — re-run later with
+   `gh run rerun <run-id>` once a slot frees; no re-tagging needed.
+   Also: `gh run watch ... | tail` swallows the exit code — check the
+   run's `conclusion` field, never a piped `$?`.
    Manual fallback (pub.dev outage, first-time setup):
    `packages\fluframe\tool\publish.bat` in a real terminal, or with
    `--yes` from the `!` shell.
