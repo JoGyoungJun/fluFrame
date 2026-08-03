@@ -1,6 +1,14 @@
 # Changelog
 
+## 0.7.1
+
+- Actually ships the **theme color presets** announced in 0.7.0 — a
+  release-ordering mistake published 0.7.0 from a commit that did not
+  yet contain them. No other changes.
+
 ## 0.7.0
+
+> ⚠️ Published without the preset feature described below — use 0.7.1.
 
 - Template: **five selectable theme color presets** (persisted) join the
   existing light/dark mode — pick Indigo/Emerald/Crimson/Amber/Violet in
