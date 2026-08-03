@@ -134,6 +134,7 @@ class ProjectGenerator {
       'linux',
     ],
     bool runPub = true,
+    bool bareOverlay = false,
   }) async {
     final BackendAddon? addon;
     if (backend == null) {
@@ -179,6 +180,24 @@ class ProjectGenerator {
     if (Directory(targetPath).existsSync()) {
       _log.writeln('Directory "$targetPath" already exists. Aborting.');
       return ExitCode.usage.code;
+    }
+
+    if (bareOverlay) {
+      // Upgrade support (spec 002): produce ONLY the overlay output —
+      // no platform scaffold, no pub, no metadata — as merge input.
+      Directory(targetPath).createSync(recursive: true);
+      _applyOverlay(targetPath, name: name, description: description);
+      for (final selected in [addon, reporting, analyticsAddon]) {
+        if (selected == null) continue;
+        final addonExit = await _applyBackendAddon(
+          targetPath,
+          addon: selected,
+          name: name,
+          installDependencies: false,
+        );
+        if (addonExit != 0) return addonExit;
+      }
+      return ExitCode.success.code;
     }
 
     _log.writeln('Scaffolding $name with flutter create...');
@@ -306,6 +325,7 @@ class ProjectGenerator {
     String targetPath, {
     required BackendAddon addon,
     required String name,
+    bool installDependencies = true,
   }) async {
     final parent = templateDirectory.parent.path;
     final addonDir =
@@ -358,7 +378,7 @@ class ProjectGenerator {
       );
     }
 
-    if (addon.dependencies.isNotEmpty) {
+    if (installDependencies && addon.dependencies.isNotEmpty) {
       _log.writeln(
         'Adding dependencies: ${addon.dependencies.join(', ')}...',
       );

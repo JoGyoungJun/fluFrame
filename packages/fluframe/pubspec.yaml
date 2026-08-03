@@ -20,6 +20,7 @@ executables:
   fluframe:
 
 dependencies:
+  archive: ^4.0.9
   args: ^2.7.0
   io: ^1.0.5
   path: ^1.9.1
