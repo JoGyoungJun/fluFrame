@@ -28,3 +28,4 @@ Statuses: `Proposed` → `Accepted` | `Rejected`; later `Superseded by
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-backend-addon-overlays.md) | Backend addons as anchored patch overlays | Accepted |
+| [0002](0002-upgrade-three-way-merge.md) | Upgrades via three-way merge against reconstructed bases | Accepted |

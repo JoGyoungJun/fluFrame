@@ -24,3 +24,4 @@ Test plan, Acceptance criteria, Open questions.
 | # | Spec | Status | Issue |
 |---|---|---|---|
 | 001 | [Backend-neutral auth scaffold](001-auth-scaffold.md) | APPROVED | #24 #25 #26 |
+| 002 | [fluframe upgrade](002-upgrade-command.md) | APPROVED | #80 #81 |
