@@ -30,6 +30,7 @@ flutter run --dart-define-from-file=env/dev.json
 |---|---|
 | 상태관리 | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod) 3 — 수동 `Notifier`/`AsyncNotifier`, 프로바이더 코드젠 없음 |
 | 네비게이션 | [go_router](https://pub.dev/packages/go_router) 17 — `StatefulShellRoute` 하단 탭, 중첩 라우트 |
+| 인증 | 백엔드 중립 스캐폴드: 로그인/프로필 플로, 라우트 게이팅, 세션 영속화 — provider 하나 교체로 [Supabase](docs/guides/auth-supabase.md)·[Firebase](docs/guides/auth-firebase.md) 연결 |
 | 모델 | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable, REST 샘플 기능 포함 |
 | 네트워킹 | [dio](https://pub.dev/packages/dio) — `DioException` → sealed `ApiException` 매핑 |
 | 영속화 | `SharedPreferencesAsync`를 감싼 `KeyValueStore` 인터페이스 — 테스트에서 쉽게 대체 가능 |
