@@ -1,4 +1,5 @@
 import 'package:fluframe_app/app/app.dart';
+import 'package:fluframe_app/core/analytics/analytics_service.dart';
 import 'package:fluframe_app/features/auth/presentation/login_screen.dart';
 import 'package:fluframe_app/features/auth/presentation/profile_screen.dart';
 import 'package:fluframe_app/features/home/presentation/home_screen.dart';
@@ -39,6 +40,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(SettingsScreen), findsOneWidget);
+    });
+
+    testWidgets('navigation reports screen views', (tester) async {
+      final analytics = RecordingAnalyticsService();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ...appTestOverrides(),
+            analyticsServiceProvider.overrideWithValue(analytics),
+          ],
+          child: const FluFrameApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+
+      expect(analytics.screenViews, contains('/settings'));
     });
 
     testWidgets('profile tab redirects to login while signed out', (
