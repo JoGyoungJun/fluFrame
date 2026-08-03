@@ -37,6 +37,9 @@ const String templateDisplayName = 'FluFrame App';
 /// any locale.
 const String templateDisplayNameKo = 'FluFrame 앱';
 
+/// Japanese template display name (`appTitle` in `app_ja.arb`).
+const String templateDisplayNameJa = 'FluFrame アプリ';
+
 /// Files and directories copied from the template over a fresh
 /// `flutter create` output.
 ///
@@ -70,7 +73,8 @@ String rewriteTemplateContent(String content, {required String projectName}) {
   return content
       .replaceAll(templatePackageName, projectName)
       .replaceAll(templateDisplayName, displayName)
-      .replaceAll(templateDisplayNameKo, '$displayName 앱');
+      .replaceAll(templateDisplayNameKo, '$displayName 앱')
+      .replaceAll(templateDisplayNameJa, '$displayName アプリ');
 }
 
 /// Escapes [value] for use inside a YAML double-quoted scalar.

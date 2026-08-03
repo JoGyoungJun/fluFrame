@@ -133,6 +133,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get presetViolet => 'Violet';
 
   @override
+  String get presetTeal => 'Teal';
+
+  @override
   String get languageSection => 'Language';
 
   @override
@@ -143,4 +146,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get languageKorean => '한국어';
+
+  @override
+  String get languageJapanese => 'Japanese';
 }

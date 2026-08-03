@@ -18,7 +18,10 @@ enum ThemePreset {
   amber(Color(0xFFD97706)),
 
   /// Purple.
-  violet(Color(0xFF7C3AED));
+  violet(Color(0xFF7C3AED)),
+
+  /// Blue-green.
+  teal(Color(0xFF0D9488));
 
   const ThemePreset(this.seed);
 

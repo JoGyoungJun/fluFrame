@@ -23,6 +23,17 @@ import 'package:fluframe_app/app/app.dart';
       expect(rewritten, isNot(contains('fluframe_app')));
     });
 
+    test('replaces the Japanese display name token', () {
+      const content = '"appTitle": "FluFrame アプリ"';
+
+      final rewritten = rewriteTemplateContent(
+        content,
+        projectName: 'my_cool_app',
+      );
+
+      expect(rewritten, '"appTitle": "My Cool App アプリ"');
+    });
+
     test('replaces the Korean display name token', () {
       // Regression: app_ko.arb's appTitle ("FluFrame 앱") used to survive
       // generation, leaving fluFrame branding in the Korean locale.
