@@ -1,3 +1,5 @@
+import 'package:fluframe_app/core/storage/key_value_store.dart';
+import 'package:fluframe_app/features/auth/data/auth_repository.dart';
 import 'package:fluframe_app/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,13 +8,23 @@ import 'package:flutter_test/flutter_test.dart';
 
 export 'in_memory_key_value_store.dart';
 
+/// Tests always run against the in-memory auth repository, regardless of
+/// which backend the app itself is wired to (`--backend` addons swap
+/// `authRepositoryProvider` in lib/) — keeping the suite green and
+/// offline after a backend swap.
+final List<Override> _defaultOverrides = [
+  authRepositoryProvider.overrideWith(
+    (ref) => InMemoryAuthRepository(ref.watch(keyValueStoreProvider)),
+  ),
+];
+
 /// Creates a [ProviderContainer] that is disposed with the running test.
 ///
 /// Riverpod 3's automatic retry is disabled so providers that intentionally
 /// fail in a test stay failed instead of retrying in the background.
 ProviderContainer createContainer({List<Override> overrides = const []}) {
   return ProviderContainer.test(
-    overrides: overrides,
+    overrides: [..._defaultOverrides, ...overrides],
     retry: (retryCount, error) => null,
   );
 }
@@ -26,7 +38,7 @@ extension PumpApp on WidgetTester {
   }) {
     return pumpWidget(
       ProviderScope(
-        overrides: overrides,
+        overrides: [..._defaultOverrides, ...overrides],
         retry: (retryCount, error) => null,
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
