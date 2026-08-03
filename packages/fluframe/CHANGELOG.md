@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- **Backend-neutral auth scaffold** in the generated app (zero new
+  dependencies): email/password login screen with validation, auth-gated
+  profile tab, GoRouter redirect with return-path, and a session that
+  survives restarts — all behind a single `AuthRepository` seam.
+- Swap-in guides for **Supabase** and **Firebase** auth (one provider
+  override) in the repository's `docs/guides/`.
+
 ## 0.2.0
 
 - `--org` is now validated before anything runs: malformed identifiers
