@@ -21,6 +21,13 @@ void main() {
       expect(await runner.run(['create', 'BadName']), 64);
     });
 
+    test('create rejects an invalid --org before running anything', () async {
+      final runner = FluframeCommandRunner();
+
+      expect(await runner.run(['create', 'my_app', '--org', 'bad org']), 64);
+      expect(await runner.run(['create', 'my_app', '--org', '1com.x']), 64);
+    });
+
     test('unknown commands are usage errors', () async {
       final runner = FluframeCommandRunner();
 

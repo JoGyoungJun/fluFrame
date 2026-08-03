@@ -66,6 +66,14 @@ class CreateCommand extends Command<int> {
         '(lower_snake_case, no leading digit, not a reserved word).',
       );
     }
+    final org = results['org'] as String;
+    if (!isValidOrg(org)) {
+      usageException(
+        '"$org" is not a valid organization identifier '
+        '(dot-separated segments, each starting with a letter, '
+        'e.g. com.example).',
+      );
+    }
 
     final templateDirectory = await resolveTemplateDirectory(
       explicitPath: results['template-dir'] as String?,
@@ -81,7 +89,7 @@ class CreateCommand extends Command<int> {
     final generator = ProjectGenerator(templateDirectory: templateDirectory);
     return generator.generate(
       name: projectName,
-      org: results['org'] as String,
+      org: org,
       description: results['description'] as String?,
       outputDirectory: results['output-directory'] as String,
       platforms: results['platforms'] as List<String>,
