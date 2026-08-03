@@ -25,17 +25,20 @@ class AddonPatch {
   final String replacement;
 }
 
-/// A backend variant applied on top of the base template overlay.
+/// A generation addon applied on top of the base template overlay
+/// (auth backends, error reporting, ...). Addons are stackable: each is
+/// applied in turn with the same primitives.
 class BackendAddon {
-  /// Creates a backend addon definition.
+  /// Creates an addon definition.
   const BackendAddon({
     required this.name,
     required this.dependencies,
     required this.patches,
     this.postCreateNotes = const [],
+    this.requiresFiles = true,
   });
 
-  /// Addon identifier (`--backend <name>`, addon directory name).
+  /// Addon identifier (CLI option value, addon directory name).
   final String name;
 
   /// Packages installed with `flutter pub add`.
@@ -46,6 +49,10 @@ class BackendAddon {
 
   /// Setup steps printed after generation.
   final List<String> postCreateNotes;
+
+  /// Whether the addon ships bundled files. Patch-only addons set this
+  /// to `false`; file-bearing addons keep the loud missing-bundle error.
+  final bool requiresFiles;
 }
 
 /// The Supabase auth backend (stage 2 of the backend roadmap).
@@ -215,4 +222,96 @@ const String _firebaseSetupNote2 =
 const Map<String, BackendAddon> backendAddons = {
   'firebase': firebaseAddon,
   'supabase': supabaseAddon,
+};
+
+/// The Sentry error-reporting addon: wires the crash-reporting seam
+/// shipped in the template's `core/logging/error_handlers.dart`.
+const BackendAddon sentryAddon = BackendAddon(
+  name: 'sentry',
+  requiresFiles: false,
+  dependencies: ['sentry_flutter'],
+  patches: [
+    // main.dart: initialize Sentry only when a DSN is configured, so
+    // fresh apps stay runnable before any setup.
+    AddonPatch(
+      file: 'lib/main.dart',
+      anchor: '  WidgetsFlutterBinding.ensureInitialized();',
+      replacement:
+          '  WidgetsFlutterBinding.ensureInitialized();\n'
+          '\n'
+          "  const sentryDsn = String.fromEnvironment('SENTRY_DSN');\n"
+          '  if (sentryDsn.isNotEmpty) {\n'
+          '    await SentryFlutter.init(\n'
+          '      (options) => options.dsn = sentryDsn,\n'
+          '    );\n'
+          '  }',
+    ),
+    AddonPatch(
+      file: 'lib/main.dart',
+      anchor: "import 'package:shared_preferences/shared_preferences.dart';",
+      replacement:
+          "import 'package:shared_preferences/shared_preferences.dart';\n"
+          "import 'package:sentry_flutter/sentry_flutter.dart';",
+    ),
+    // error_handlers.dart: capture in both hooks.
+    AddonPatch(
+      file: 'lib/core/logging/error_handlers.dart',
+      anchor: "import 'package:flutter/foundation.dart';",
+      replacement:
+          "import 'package:flutter/foundation.dart';\n"
+          "import 'package:sentry_flutter/sentry_flutter.dart';",
+    ),
+    AddonPatch(
+      file: 'lib/core/logging/error_handlers.dart',
+      anchor: '  FlutterError.presentError(details);',
+      replacement:
+          '  FlutterError.presentError(details);\n'
+          '  unawaited(\n'
+          '    Sentry.captureException(details.exception, '
+          'stackTrace: details.stack),\n'
+          '  );',
+    ),
+    AddonPatch(
+      file: 'lib/core/logging/error_handlers.dart',
+      anchor: "  _logger.error('Uncaught platform error', error, stackTrace);",
+      replacement:
+          "  _logger.error('Uncaught platform error', error, stackTrace);\n"
+          '  unawaited(Sentry.captureException(error, '
+          'stackTrace: stackTrace));',
+    ),
+    // error_handlers.dart: unawaited needs dart:async.
+    AddonPatch(
+      file: 'lib/core/logging/error_handlers.dart',
+      anchor: "import 'package:fluframe_app/core/logging/app_logger.dart';",
+      replacement:
+          "import 'dart:async';\n"
+          '\n'
+          "import 'package:fluframe_app/core/logging/app_logger.dart';",
+    ),
+    // env: DSN placeholders.
+    AddonPatch(
+      file: 'env/dev.json',
+      anchor: '"API_BASE_URL": "https://jsonplaceholder.typicode.com"',
+      replacement:
+          '"API_BASE_URL": "https://jsonplaceholder.typicode.com",\n'
+          '  "SENTRY_DSN": ""',
+    ),
+    AddonPatch(
+      file: 'env/prod.json',
+      anchor: '"API_BASE_URL": "https://jsonplaceholder.typicode.com"',
+      replacement:
+          '"API_BASE_URL": "https://jsonplaceholder.typicode.com",\n'
+          '  "SENTRY_DSN": ""',
+    ),
+  ],
+  postCreateNotes: [_sentrySetupNote],
+);
+
+const String _sentrySetupNote =
+    'Sentry: paste your DSN into env/dev.json (and env/prod.json) as '
+    'SENTRY_DSN — with it empty, Sentry stays disabled.';
+
+/// Error-reporting addons, keyed by `--error-reporting` value.
+const Map<String, BackendAddon> errorReportingAddons = {
+  'sentry': sentryAddon,
 };

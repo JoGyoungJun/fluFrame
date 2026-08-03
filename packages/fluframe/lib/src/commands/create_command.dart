@@ -39,6 +39,12 @@ class CreateCommand extends Command<int> {
         help: 'Wire a real auth backend into the generated app.',
       )
       ..addOption(
+        'error-reporting',
+        defaultsTo: 'none',
+        allowed: ['none', ...errorReportingAddons.keys],
+        help: 'Wire a crash-reporting service into the error hooks.',
+      )
+      ..addOption(
         'template-dir',
         hide: true,
         help: 'Override the template location (development only).',
@@ -94,12 +100,14 @@ class CreateCommand extends Command<int> {
     }
 
     final backend = results['backend'] as String;
+    final errorReporting = results['error-reporting'] as String;
     final generator = ProjectGenerator(templateDirectory: templateDirectory);
     return generator.generate(
       name: projectName,
       org: org,
       description: results['description'] as String?,
       backend: backend == 'none' ? null : backend,
+      errorReporting: errorReporting == 'none' ? null : errorReporting,
       outputDirectory: results['output-directory'] as String,
       platforms: results['platforms'] as List<String>,
       runPub: results['pub'] as bool,

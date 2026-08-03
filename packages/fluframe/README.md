@@ -44,6 +44,7 @@ flutter run --dart-define-from-file=env/dev.json
 | `--output-directory`, `-o` | `.` | Where to create the project folder |
 | `--platforms` | all six | Passed through to `flutter create` |
 | `--backend` | `none` | Wire a real auth backend (`supabase` \| `firebase`) into the generated app |
+| `--error-reporting` | `none` | Wire crash reporting (`sentry`) into the error hooks |
 | `--no-pub` | off | Skip `flutter pub get` / `gen-l10n` |
 
 ## How it works
