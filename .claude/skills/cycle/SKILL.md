@@ -45,9 +45,13 @@ fires. For each iteration, pick the highest-priority READY issue
 2. Branch → implement with tests → `/verify` (`fast`; full when
    `packages/fluframe/` or the generation contract is touched).
 3. PR with `Closes #<n>` → `gh pr merge --squash --auto --delete-branch`
-   → `gh pr checks <pr> --watch` until merged (PRs land strictly one at
-   a time: branch protection requires up-to-date branches, so parallel
-   PRs would just invalidate each other).
+   → then **poll `gh pr view <pr> --json state` until it reports
+   MERGED** — green checks alone are NOT merged (incident: 0.7.0
+   shipped without its feature because the release branched off while
+   the feature PR was still OPEN). If a PR sits OPEN behind a newer
+   main, un-stick it with `gh pr update-branch <pr>` — auto-merge does
+   not update stale branches under strict checks. PRs land strictly one
+   at a time.
 4. `git checkout main && git pull` before the next iteration.
 
 **Failure rule**: a red `/verify` or CI gets ONE fix attempt; still red →
