@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+- Template: **analytics seam** — an `AnalyticsService` interface with a
+  debug-logging default, automatic screen-view tracking for every
+  navigation (bottom tabs included), and a sample domain event. Swap one
+  provider to wire a real product-analytics SDK; `--analytics` addons
+  are next on the roadmap.
+
 ## 0.11.0
 
 - **`--error-reporting sentry`**: wires sentry_flutter into the
