@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Template: **Japanese localization** (full `app_ja.arb` + language
+  picker entry) alongside English and Korean; `FluFrame アプリ` joins
+  the rename tokens so generated apps stay unbranded in every locale.
+- Template: sixth theme preset (**teal**).
+
 ## 0.9.0
 
 - Template: **global error handling hooks** — `FlutterError.onError` and
