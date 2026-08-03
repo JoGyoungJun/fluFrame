@@ -42,7 +42,7 @@ flutter run --dart-define-from-file=env/dev.json
 | `--description` | template default | Description for the new `pubspec.yaml` |
 | `--output-directory`, `-o` | `.` | Where to create the project folder |
 | `--platforms` | all six | Passed through to `flutter create` |
-| `--backend` | `none` | Wire a real auth backend (`supabase`) into the generated app |
+| `--backend` | `none` | Wire a real auth backend (`supabase` \| `firebase`) into the generated app |
 | `--no-pub` | off | Skip `flutter pub get` / `gen-l10n` |
 
 ## How it works

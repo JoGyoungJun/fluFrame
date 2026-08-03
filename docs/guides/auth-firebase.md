@@ -1,5 +1,7 @@
 # Swapping the auth scaffold to Firebase
 
+> **TIP**: new projects can skip this guide entirely — `fluframe create my_app --backend firebase` wires all of this automatically. This guide is for adding firebase to an app generated without it.
+
 The template ships a backend-neutral auth flow behind one seam:
 `AuthRepository` (`lib/features/auth/data/auth_repository.dart`). This
 guide replaces the fake `InMemoryAuthRepository` with Firebase Auth.
