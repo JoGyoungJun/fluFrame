@@ -1,6 +1,7 @@
 import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/package_name.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_source.dart';
@@ -30,6 +31,12 @@ class CreateCommand extends Command<int> {
         'platforms',
         defaultsTo: ['android', 'ios', 'web', 'windows', 'macos', 'linux'],
         help: 'Platforms passed through to flutter create.',
+      )
+      ..addOption(
+        'backend',
+        defaultsTo: 'none',
+        allowed: ['none', ...backendAddons.keys],
+        help: 'Wire a real auth backend into the generated app.',
       )
       ..addOption(
         'template-dir',
@@ -86,11 +93,13 @@ class CreateCommand extends Command<int> {
       return ExitCode.software.code;
     }
 
+    final backend = results['backend'] as String;
     final generator = ProjectGenerator(templateDirectory: templateDirectory);
     return generator.generate(
       name: projectName,
       org: org,
       description: results['description'] as String?,
+      backend: backend == 'none' ? null : backend,
       outputDirectory: results['output-directory'] as String,
       platforms: results['platforms'] as List<String>,
       runPub: results['pub'] as bool,

@@ -27,7 +27,7 @@ gitignored):
   "APP_FLAVOR": "dev",
   "API_BASE_URL": "https://jsonplaceholder.typicode.com",
   "SUPABASE_URL": "https://<project>.supabase.co",
-  "SUPABASE_ANON_KEY": "<anon key>"
+  "SUPABASE_PUBLISHABLE_KEY": "<publishable key>"
 }
 ```
 
@@ -36,7 +36,7 @@ gitignored):
 ```dart
 await Supabase.initialize(
   url: const String.fromEnvironment('SUPABASE_URL'),
-  anonKey: const String.fromEnvironment('SUPABASE_ANON_KEY'),
+  publishableKey: const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
 );
 ```
 

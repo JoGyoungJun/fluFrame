@@ -1,5 +1,4 @@
 import 'package:fluframe_app/app/app.dart';
-import 'package:fluframe_app/core/storage/key_value_store.dart';
 import 'package:fluframe_app/features/auth/presentation/login_screen.dart';
 import 'package:fluframe_app/features/auth/presentation/profile_screen.dart';
 import 'package:fluframe_app/features/home/presentation/home_screen.dart';
@@ -17,9 +16,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
-          ],
+          overrides: appTestOverrides(),
           child: const FluFrameApp(),
         ),
       );
@@ -32,9 +29,7 @@ void main() {
     testWidgets('switches to the settings tab', (tester) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
-          ],
+          overrides: appTestOverrides(),
           child: const FluFrameApp(),
         ),
       );
@@ -51,9 +46,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
-          ],
+          overrides: appTestOverrides(),
           child: const FluFrameApp(),
         ),
       );
@@ -70,9 +63,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
-          ],
+          overrides: appTestOverrides(),
           child: const FluFrameApp(),
         ),
       );
