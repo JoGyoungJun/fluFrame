@@ -10,6 +10,8 @@ class _FakeWeatherRepository implements WeatherRepository {
     City.seoul: WeatherReport(temperatureC: 15.3, windSpeedKmh: 8.4),
     City.tokyo: WeatherReport(temperatureC: 21, windSpeedKmh: 3.2),
     City.newYork: WeatherReport(temperatureC: 9.9, windSpeedKmh: 12.5),
+    City.paris: WeatherReport(temperatureC: 18.2, windSpeedKmh: 6.1),
+    City.sydney: WeatherReport(temperatureC: 25.4, windSpeedKmh: 14.8),
   };
 
   @override
@@ -50,6 +52,23 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('21.0°C'), findsOneWidget);
+    });
+
+    testWidgets('the new cities fetch their own weather', (tester) async {
+      await tester.pumpApp(
+        const WeatherScreen(),
+        overrides: [
+          weatherRepositoryProvider.overrideWith(
+            (ref) => _FakeWeatherRepository(),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sydney'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('25.4°C'), findsOneWidget);
     });
   });
 }

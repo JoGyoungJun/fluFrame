@@ -21,7 +21,13 @@ enum City {
   tokyo(35.68, 139.69),
 
   /// New York, USA.
-  newYork(40.71, -74.01);
+  newYork(40.71, -74.01),
+
+  /// Paris, France.
+  paris(48.86, 2.35),
+
+  /// Sydney, Australia.
+  sydney(-33.87, 151.21);
 
   const City(this.latitude, this.longitude);
 

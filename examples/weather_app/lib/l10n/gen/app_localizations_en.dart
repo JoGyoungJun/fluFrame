@@ -33,6 +33,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cityNewYork => 'New York';
 
   @override
+  String get cityParis => 'Paris';
+
+  @override
+  String get citySydney => 'Sydney';
+
+  @override
   String temperatureValue(double value) {
     return '$value°C';
   }

@@ -146,6 +146,18 @@ abstract class AppLocalizations {
   /// **'New York'**
   String get cityNewYork;
 
+  /// No description provided for @cityParis.
+  ///
+  /// In en, this message translates to:
+  /// **'Paris'**
+  String get cityParis;
+
+  /// No description provided for @citySydney.
+  ///
+  /// In en, this message translates to:
+  /// **'Sydney'**
+  String get citySydney;
+
   /// No description provided for @temperatureValue.
   ///
   /// In en, this message translates to:
