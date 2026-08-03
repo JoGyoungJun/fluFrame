@@ -5,7 +5,7 @@ import 'package:fluframe/src/commands/create_command.dart';
 import 'package:io/io.dart';
 
 /// The current version of the fluframe CLI. Keep in sync with pubspec.yaml.
-const String cliVersion = '0.4.0';
+const String cliVersion = '0.5.0';
 
 /// Entry point of the `fluframe` command line interface.
 class FluframeCommandRunner extends CommandRunner<int> {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- **`--backend firebase`**: generate an app with Firebase Auth wired into
+  the auth seam. Ships a compile-safe `DefaultFirebaseOptions` stub that
+  throws with clear guidance until you run `flutterfire configure` —
+  honest about the one step that cannot be automated.
+
 ## 0.4.0
 
 - **`--backend supabase`**: generate an app with Supabase Auth already
