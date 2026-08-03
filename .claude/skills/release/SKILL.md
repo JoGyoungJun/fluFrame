@@ -25,17 +25,8 @@ published version can never be deleted (only retracted within 7 days).
    - `templates/app/test/...`  ← a missing test/ means a `.pubignore`
      pattern lost its leading slash (they MUST stay slash-anchored)
    - `templates/app/gitignore` (dot-less)
-5. **Publish** — preferred: the gate-wrapped script (re-runs every gate,
-   then publishes):
-   - Real terminal: `packages\fluframe\tool\publish.bat` (interactive y/N)
-   - Claude Code `!` shell (no TTY): `! packages\fluframe\tool\publish.bat --yes`
-   Raw fallback: `dart pub publish --force` from `packages/fluframe`
-   (plain `dart pub publish` fails in the `!` shell — its y/N prompt
-   needs a TTY, errno 6). First-time browser auth works in all paths.
-   Verify afterwards: `https://pub.dev/api/packages/fluframe` shows the
-   new version.
-6. **Record the release** — main is protected (PR + green CI required,
-   admins included), so the release lands via PR:
+5. **Land the bump via PR** — main is protected (PR + green CI,
+   admins included):
    ```sh
    git checkout -b release/fluframe-v<version>
    git add -A
@@ -44,7 +35,23 @@ published version can never be deleted (only retracted within 7 days).
    gh pr create --fill
    gh pr merge --squash --auto --delete-branch   # merges when CI passes
    ```
-   After the merge: `git checkout main && git pull`, then
-   `git tag fluframe-v<version> && git push origin fluframe-v<version>`.
+6. **Publish = push the tag** (automated via OIDC — see
+   `.github/workflows/publish.yml`; requires the one-time pub.dev admin
+   setup: Automated publishing → GitHub Actions → repository
+   `JoGyoungJun/fluFrame`, tag pattern `fluframe-v{{version}}`):
+   ```sh
+   git checkout main && git pull
+   git tag fluframe-v<version>
+   git push origin fluframe-v<version>
+   gh run watch $(gh run list --workflow publish.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+   ```
+   The workflow re-runs every gate (tag↔pubspec match, unit, bundle
+   sync, e2e, dry-run) before publishing; a red gate publishes nothing —
+   fix, delete the tag (`git push origin :fluframe-v<version>`), re-tag.
+   Manual fallback (pub.dev outage, first-time setup):
+   `packages\fluframe\tool\publish.bat` in a real terminal, or with
+   `--yes` from the `!` shell.
+   Verify afterwards: `https://pub.dev/api/packages/fluframe` shows the
+   new version.
 7. **Post-check**: WebFetch https://pub.dev/packages/fluframe — confirm the
    new version is live and note the pub points once analysis completes.

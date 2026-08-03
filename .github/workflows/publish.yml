@@ -1,0 +1,48 @@
+name: Publish to pub.dev
+
+# Automated publishing via OIDC (dart.dev/tools/pub/automated-publishing).
+# pub.dev only accepts publishes from workflows triggered by a tag push
+# matching the pattern configured in the package's admin settings
+# (fluframe-v{{version}}). Every release gate runs BEFORE publishing —
+# a red gate means the tag exists but nothing was published (fix, delete
+# the tag, re-tag).
+
+on:
+  push:
+    tags:
+      - 'fluframe-v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  publish:
+    name: Gate & publish fluframe
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token exchange for pub.dev
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      # Mints the pub.dev credential from the GitHub OIDC token.
+      - uses: dart-lang/setup-dart@v1
+      - name: Verify tag matches pubspec version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#fluframe-v}"
+          PUB_VERSION="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
+          echo "tag=$TAG_VERSION pubspec=$PUB_VERSION"
+          test "$TAG_VERSION" = "$PUB_VERSION"
+      - run: dart pub get
+      - name: Unit tests (includes the cliVersion sync guard)
+        run: dart test -x e2e
+      - name: Sync template bundle
+        run: dart run tool/sync_template.dart
+      - name: E2E (generate from the bundle, analyze + test)
+        run: dart test -t e2e --reporter expanded
+      - name: Publish dry-run
+        run: dart pub publish --dry-run
+      - name: Publish
+        run: dart pub publish --force
