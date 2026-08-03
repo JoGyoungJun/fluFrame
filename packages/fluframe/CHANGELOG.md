@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0
+
+**Stability declaration** — fluframe now follows semantic versioning
+against a documented public contract (see `docs/versioning.md` in the
+repository): CLI surface, generation guarantees, rename tokens,
+`.fluframe.json` schema, the stackable addon mechanism, and the upgrade
+path.
+
+- **`fluframe upgrade [--apply] [--from]`** — pull template updates into
+  an existing app via a per-file three-way merge (base reconstructed
+  from the pub.dev archive of the version the app was generated with);
+  dry-run by default, git conflict markers, removals reported but never
+  auto-deleted.
+- `create` now records generation metadata (`.fluframe.json`, schema 1:
+  version + addon combo) — the contract `upgrade` reads.
+- **`--analytics amplitude`** — wires the analytics seam to Amplitude
+  with an API-key-guarded provider swap; stackable with `--backend` and
+  `--error-reporting`.
+
 ## 0.12.0
 
 - Template: **analytics seam** — an `AnalyticsService` interface with a

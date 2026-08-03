@@ -17,10 +17,15 @@ together and passing.
 
 ```sh
 dart pub global activate fluframe
-fluframe create my_app --org com.mycompany
+fluframe create my_app --org com.mycompany --backend supabase
 cd my_app
 flutter run --dart-define-from-file=env/dev.json
+
+fluframe upgrade   # later: pull template improvements into your app
 ```
+
+Post-1.0 stability promises are documented in
+[docs/versioning.md](docs/versioning.md).
 
 Or use this repository as a GitHub template and start from
 [`template/`](template/) directly.

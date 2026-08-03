@@ -446,6 +446,7 @@ version: 0.1.0+1
       final metadata = File(
         p.join(temp.path, 'demo_app', '.fluframe.json'),
       ).readAsStringSync();
+      expect(metadata, contains('"schema": 1'));
       expect(metadata, contains('"name": "demo_app"'));
       expect(metadata, contains('"org": "dev.example"'));
       expect(metadata, contains('"backend": "fake"'));

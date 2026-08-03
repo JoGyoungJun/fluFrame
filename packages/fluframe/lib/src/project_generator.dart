@@ -252,6 +252,7 @@ class ProjectGenerator {
     // reconstruct this exact generation later (design spec 002).
     File(p.join(targetPath, '.fluframe.json')).writeAsStringSync(
       '${const JsonEncoder.withIndent('  ').convert({
+        'schema': 1,
         'cliVersion': cliVersion,
         'name': name,
         'org': org,

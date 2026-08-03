@@ -16,10 +16,15 @@ fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_ap
 
 ```sh
 dart pub global activate fluframe
-fluframe create my_app --org com.mycompany
+fluframe create my_app --org com.mycompany --backend supabase
 cd my_app
 flutter run --dart-define-from-file=env/dev.json
+
+fluframe upgrade   # 나중에: 템플릿 개선 사항을 내 앱으로 가져오기
 ```
+
+1.0 이후의 안정성 약속은 [docs/versioning.md](docs/versioning.md)에
+문서화되어 있습니다.
 
 또는 이 저장소를 GitHub 템플릿으로 사용해 [`template/`](template/)에서 바로
 시작할 수도 있습니다.
