@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Template: **five selectable theme color presets** (persisted) join the
+  existing light/dark mode — pick Indigo/Emerald/Crimson/Amber/Violet in
+  Settings, survives restarts.
+
 ## 0.6.0
 
 - **`fluframe doctor`**: one command to verify the machine can generate
