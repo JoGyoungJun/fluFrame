@@ -35,6 +35,11 @@ published version can never be deleted (only retracted within 7 days).
    gh pr create --fill
    gh pr merge --squash --auto --delete-branch   # merges when CI passes
    ```
+   **Do not proceed until `gh pr view --json state` reports MERGED** —
+   and never tag until every feature PR of the milestone is MERGED too
+   (0.7.0 incident: tagging while a feature PR was still OPEN published
+   a release without its feature). Stuck PR behind newer main →
+   `gh pr update-branch <pr>`.
 6. **Publish = push the tag** (automated via OIDC — see
    `.github/workflows/publish.yml`; requires the one-time pub.dev admin
    setup: Automated publishing → GitHub Actions → repository
