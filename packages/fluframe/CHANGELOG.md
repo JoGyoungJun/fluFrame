@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- Template: **global error handling hooks** — `FlutterError.onError` and
+  `platformDispatcher.onError` route every uncaught error through one
+  documented file (`core/logging/error_handlers.dart`), the exact seam
+  for wiring Sentry/Crashlytics later.
+
 ## 0.8.0
 
 - Template: **offline fallback cache** for the posts sample — the last
