@@ -217,6 +217,52 @@ version: 0.1.0+1
       expect(calls, hasLength(1));
     });
 
+    test('explains when launching flutter throws ProcessException', () async {
+      final failing = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: (executable, arguments, {workingDirectory}) =>
+            throw const ProcessException('flutter', ['create']),
+        log: log,
+      );
+
+      final code = await failing.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      expect(code, 69);
+      expect(log.toString(), contains('Flutter SDK not found on PATH'));
+      expect(
+        log.toString(),
+        contains('https://docs.flutter.dev/get-started/install'),
+      );
+    });
+
+    test('explains when the shell reports flutter as unrecognized', () async {
+      // Windows runInShell path: missing command = exit 9009, no exception.
+      final failing = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: (executable, arguments, {workingDirectory}) async =>
+            ProcessResult(
+              0,
+              9009,
+              '',
+              "'flutter' is not recognized as an internal or external command",
+            ),
+        log: log,
+      );
+
+      final code = await failing.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      expect(code, 69);
+      expect(log.toString(), contains('Flutter SDK not found on PATH'));
+    });
+
     test('refuses to overwrite an existing directory', () async {
       Directory(p.join(temp.path, 'demo_app')).createSync();
 

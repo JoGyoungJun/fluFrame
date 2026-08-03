@@ -123,17 +123,33 @@ class ProjectGenerator {
     }
 
     _log.writeln('Scaffolding $name with flutter create...');
-    final create = await _runProcess('flutter', [
-      'create',
-      targetPath,
-      '--project-name',
-      name,
-      '--org',
-      org,
-      '--platforms=${platforms.join(',')}',
-      '--empty',
-    ]);
+    final ProcessResult create;
+    try {
+      create = await _runProcess('flutter', [
+        'create',
+        targetPath,
+        '--project-name',
+        name,
+        '--org',
+        org,
+        '--platforms=${platforms.join(',')}',
+        '--empty',
+      ]);
+    } on ProcessException {
+      _logFlutterMissing();
+      return ExitCode.unavailable.code;
+    }
     if (create.exitCode != 0) {
+      // With runInShell (Windows) a missing command surfaces as a shell
+      // error exit instead of a ProcessException: 9009 (cmd) / 127 (POSIX).
+      final stderrText = create.stderr.toString();
+      if (create.exitCode == 9009 ||
+          create.exitCode == 127 ||
+          stderrText.contains('is not recognized') ||
+          stderrText.contains('command not found')) {
+        _logFlutterMissing();
+        return ExitCode.unavailable.code;
+      }
       _log
         ..writeln('flutter create failed:')
         ..writeln(create.stderr);
@@ -191,6 +207,15 @@ class ProjectGenerator {
       ..writeln('  cd $targetPath')
       ..writeln('  flutter run --dart-define-from-file=env/dev.json');
     return ExitCode.success.code;
+  }
+
+  void _logFlutterMissing() {
+    _log
+      ..writeln('Flutter SDK not found on PATH.')
+      ..writeln(
+        'Install it first: https://docs.flutter.dev/get-started/install',
+      )
+      ..writeln('Then verify with: flutter --version');
   }
 
   void _applyOverlay(
