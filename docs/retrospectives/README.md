@@ -12,6 +12,7 @@ deliberate — contributors can see how the project learns.
 
 | Date | Milestone | Retro |
 |---|---|---|
+| 2026-08 | v0.5.0 — --backend firebase | [2026-08-v0.5.0.md](2026-08-v0.5.0.md) |
 | 2026-08 | v0.4.0 — --backend supabase | [2026-08-v0.4.0.md](2026-08-v0.4.0.md) |
 | 2026-08 | v0.3.0 — auth scaffold | [2026-08-v0.3.0.md](2026-08-v0.3.0.md) |
 | 2026-08 | v0.2.0 — polish release | [2026-08-v0.2.0.md](2026-08-v0.2.0.md) |
