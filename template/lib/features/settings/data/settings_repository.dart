@@ -1,3 +1,4 @@
+import 'package:fluframe_app/app/theme/app_theme.dart';
 import 'package:fluframe_app/core/storage/key_value_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ class SettingsRepository {
   final KeyValueStore _store;
 
   static const String _themeModeKey = 'settings.themeMode';
+  static const String _themePresetKey = 'settings.themePreset';
   static const String _localeKey = 'settings.locale';
 
   /// Loads the persisted [ThemeMode], defaulting to [ThemeMode.system].
@@ -24,6 +26,19 @@ class SettingsRepository {
   /// Persists [mode] as the preferred theme mode.
   Future<void> saveThemeMode(ThemeMode mode) =>
       _store.setString(_themeModeKey, mode.name);
+
+  /// Loads the persisted [ThemePreset], defaulting to [ThemePreset.indigo].
+  Future<ThemePreset> loadThemePreset() async {
+    final raw = await _store.getString(_themePresetKey);
+    return ThemePreset.values.firstWhere(
+      (preset) => preset.name == raw,
+      orElse: () => ThemePreset.indigo,
+    );
+  }
+
+  /// Persists [preset] as the preferred theme color.
+  Future<void> saveThemePreset(ThemePreset preset) =>
+      _store.setString(_themePresetKey, preset.name);
 
   /// Loads the persisted locale override, or `null` to follow the system.
   Future<Locale?> loadLocale() async {

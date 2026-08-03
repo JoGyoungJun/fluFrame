@@ -6,6 +6,7 @@ import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
 import 'package:fluframe_app/features/settings/data/settings_repository.dart';
 import 'package:fluframe_app/features/settings/presentation/locale_controller.dart';
 import 'package:fluframe_app/features/settings/presentation/theme_mode_controller.dart';
+import 'package:fluframe_app/features/settings/presentation/theme_preset_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ Future<void> main() async {
   final store = SharedPreferencesKeyValueStore(SharedPreferencesAsync());
   final settings = SettingsRepository(store);
   final themeMode = await settings.loadThemeMode();
+  final themePreset = await settings.loadThemePreset();
   final locale = await settings.loadLocale();
   final initialUser = await InMemoryAuthRepository(store).restoreSession();
 
@@ -34,6 +36,7 @@ Future<void> main() async {
       overrides: [
         keyValueStoreProvider.overrideWithValue(store),
         initialThemeModeProvider.overrideWithValue(themeMode),
+        initialThemePresetProvider.overrideWithValue(themePreset),
         initialLocaleProvider.overrideWithValue(locale),
         initialUserProvider.overrideWithValue(initialUser),
       ],

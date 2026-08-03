@@ -19,6 +19,19 @@ void main() {
       expect(await store.getString('settings.themeMode'), 'dark');
     });
 
+    testWidgets('selecting a color preset persists it', (tester) async {
+      final store = InMemoryKeyValueStore();
+      await tester.pumpApp(
+        const SettingsScreen(),
+        overrides: [keyValueStoreProvider.overrideWithValue(store)],
+      );
+
+      await tester.tap(find.text('Emerald'));
+      await tester.pumpAndSettle();
+
+      expect(await store.getString('settings.themePreset'), 'emerald');
+    });
+
     testWidgets('selecting a language persists the locale', (tester) async {
       final store = InMemoryKeyValueStore();
       await tester.pumpApp(

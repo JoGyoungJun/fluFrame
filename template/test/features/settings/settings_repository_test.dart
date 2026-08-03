@@ -1,3 +1,4 @@
+import 'package:fluframe_app/app/theme/app_theme.dart';
 import 'package:fluframe_app/features/settings/data/settings_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +21,16 @@ void main() {
       await repository.saveThemeMode(ThemeMode.dark);
 
       expect(await repository.loadThemeMode(), ThemeMode.dark);
+    });
+
+    test('loadThemePreset defaults to indigo when nothing is stored', () async {
+      expect(await repository.loadThemePreset(), ThemePreset.indigo);
+    });
+
+    test('round-trips the theme preset', () async {
+      await repository.saveThemePreset(ThemePreset.emerald);
+
+      expect(await repository.loadThemePreset(), ThemePreset.emerald);
     });
 
     test('loadLocale defaults to null when nothing is stored', () async {

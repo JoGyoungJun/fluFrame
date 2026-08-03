@@ -115,6 +115,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeModeDark => 'Dark';
 
   @override
+  String get colorSection => 'Theme color';
+
+  @override
+  String get presetIndigo => 'Indigo';
+
+  @override
+  String get presetEmerald => 'Emerald';
+
+  @override
+  String get presetCrimson => 'Crimson';
+
+  @override
+  String get presetAmber => 'Amber';
+
+  @override
+  String get presetViolet => 'Violet';
+
+  @override
   String get languageSection => 'Language';
 
   @override
