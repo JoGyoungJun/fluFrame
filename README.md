@@ -81,6 +81,9 @@ Real apps generated with `fluframe create` and extended by the book:
 - [`examples/todo_app`](examples/todo_app) — persisted todo list added as
   a new feature module + tab (freezed, KeyValueStore, AsyncNotifier,
   l10n, tests)
+- [`examples/weather_app`](examples/weather_app) — current weather from a
+  keyless public API (Open-Meteo): absolute-URL dio calls,
+  FutureProvider.family, city picker
 
 ## Development (this repo)
 

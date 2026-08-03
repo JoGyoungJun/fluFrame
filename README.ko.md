@@ -58,6 +58,9 @@ CLI는 먼저 **사용자의** Flutter SDK로 `flutter create --empty`를 실행
 
 - [`examples/todo_app`](examples/todo_app) — 새 기능 모듈+탭으로 추가된
   영속 투두리스트 (freezed, KeyValueStore, AsyncNotifier, l10n, 테스트)
+- [`examples/weather_app`](examples/weather_app) — 키 없는 공개 API
+  (Open-Meteo)로 현재 날씨 표시: 절대 URL dio 호출, FutureProvider.family,
+  도시 선택
 
 ## 개발 (이 저장소)
 
