@@ -360,6 +360,65 @@ version: 0.1.0+1
       expect(log.toString(), contains('lib/main.dart'));
     });
 
+    test(
+      'stacks a backend addon with a patch-only error-reporting addon',
+      () async {
+        Directory(
+          p.join(temp.path, 'template_addons', 'fake', 'lib'),
+        ).createSync(recursive: true);
+        File(
+          p.join(temp.path, 'template_addons', 'fake', 'lib', 'extra.dart'),
+        ).writeAsStringSync('// extra\n');
+        const backendFake = BackendAddon(
+          name: 'fake',
+          dependencies: ['fake_pkg'],
+          patches: [
+            AddonPatch(
+              file: 'lib/main.dart',
+              anchor: '// FluFrame App',
+              replacement: '// backend-patched',
+            ),
+          ],
+        );
+        const reportingFake = BackendAddon(
+          name: 'fake_report',
+          requiresFiles: false,
+          dependencies: ['report_pkg'],
+          patches: [
+            AddonPatch(
+              file: 'lib/main.dart',
+              anchor: '// backend-patched',
+              replacement: '// backend-patched // report-patched',
+            ),
+          ],
+        );
+        final stacked = ProjectGenerator(
+          templateDirectory: templateDir,
+          runProcess: fakeRunProcess,
+          log: log,
+          addons: const {'fake': backendFake},
+          errorAddons: const {'fake_report': reportingFake},
+        );
+
+        final code = await stacked.generate(
+          name: 'demo_app',
+          org: 'dev.example',
+          outputDirectory: temp.path,
+          backend: 'fake',
+          errorReporting: 'fake_report',
+        );
+
+        expect(code, 0, reason: log.toString());
+        final main = File(
+          p.join(temp.path, 'demo_app', 'lib', 'main.dart'),
+        ).readAsStringSync();
+        expect(main, contains('// backend-patched // report-patched'));
+        final argLists = calls.map((call) => call.$2.join(' ')).toList();
+        expect(argLists, contains('pub add fake_pkg'));
+        expect(argLists, contains('pub add report_pkg'));
+      },
+    );
+
     test('an unknown backend is a usage error', () async {
       final code = await generator.generate(
         name: 'demo_app',

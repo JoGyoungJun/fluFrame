@@ -114,7 +114,7 @@ void main() {
   );
 
   test(
-    'supabase backend variant passes flutter analyze and flutter test',
+    'supabase + sentry variant passes flutter analyze and flutter test',
     () async {
       final sync = await Process.run(
         'dart',
@@ -141,6 +141,7 @@ void main() {
         org: 'dev.example',
         outputDirectory: temp.path,
         backend: 'supabase',
+        errorReporting: 'sentry',
         platforms: const ['android', 'web'],
       );
       expect(code, 0);
@@ -159,6 +160,12 @@ void main() {
         ).existsSync(),
         isTrue,
       );
+      expect(
+        File(
+          p.join(projectPath, 'lib', 'core', 'logging', 'error_handlers.dart'),
+        ).readAsStringSync(),
+        contains('Sentry.captureException'),
+      );
       final mainContent = File(
         p.join(projectPath, 'lib', 'main.dart'),
       ).readAsStringSync();
@@ -171,6 +178,14 @@ void main() {
       expect(
         File(p.join(projectPath, 'env', 'dev.json')).readAsStringSync(),
         contains('SUPABASE_URL'),
+      );
+      expect(
+        File(p.join(projectPath, 'env', 'dev.json')).readAsStringSync(),
+        contains('SENTRY_DSN'),
+      );
+      expect(
+        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
+        contains('sentry_flutter'),
       );
 
       final analyze = await Process.run(

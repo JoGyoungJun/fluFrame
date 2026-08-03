@@ -97,9 +97,11 @@ class ProjectGenerator {
     RunProcess? runProcess,
     StringSink? log,
     Map<String, BackendAddon>? addons,
+    Map<String, BackendAddon>? errorAddons,
   }) : _runProcess = runProcess ?? _defaultRunProcess,
        _log = log ?? stdout,
-       _addons = addons ?? backendAddons;
+       _addons = addons ?? backendAddons,
+       _errorAddons = errorAddons ?? errorReportingAddons;
 
   /// Root of the template to copy from.
   final Directory templateDirectory;
@@ -107,6 +109,7 @@ class ProjectGenerator {
   final RunProcess _runProcess;
   final StringSink _log;
   final Map<String, BackendAddon> _addons;
+  final Map<String, BackendAddon> _errorAddons;
 
   /// Generates the project and returns a process exit code.
   Future<int> generate({
@@ -115,6 +118,7 @@ class ProjectGenerator {
     required String outputDirectory,
     String? description,
     String? backend,
+    String? errorReporting,
     List<String> platforms = const [
       'android',
       'ios',
@@ -134,6 +138,19 @@ class ProjectGenerator {
         _log.writeln(
           'Unknown backend "$backend". '
           'Available: ${_addons.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+    final BackendAddon? reporting;
+    if (errorReporting == null) {
+      reporting = null;
+    } else {
+      reporting = _errorAddons[errorReporting];
+      if (reporting == null) {
+        _log.writeln(
+          'Unknown error-reporting service "$errorReporting". '
+          'Available: ${_errorAddons.keys.join(', ')}.',
         );
         return ExitCode.usage.code;
       }
@@ -182,11 +199,12 @@ class ProjectGenerator {
     _log.writeln('Applying the fluFrame template...');
     _applyOverlay(targetPath, name: name, description: description);
 
-    if (addon != null) {
-      _log.writeln('Applying the ${addon.name} backend addon...');
+    for (final selected in [addon, reporting]) {
+      if (selected == null) continue;
+      _log.writeln('Applying the ${selected.name} addon...');
       final addonExit = await _applyBackendAddon(
         targetPath,
-        addon: addon,
+        addon: selected,
         name: name,
       );
       if (addonExit != 0) return addonExit;
@@ -239,7 +257,10 @@ class ProjectGenerator {
       ..writeln('Next steps:')
       ..writeln('  cd $targetPath')
       ..writeln('  flutter run --dart-define-from-file=env/dev.json');
-    for (final note in addon?.postCreateNotes ?? const <String>[]) {
+    for (final note in [
+      ...?addon?.postCreateNotes,
+      ...?reporting?.postCreateNotes,
+    ]) {
       _log.writeln('  * $note');
     }
     return ExitCode.success.code;
@@ -263,14 +284,18 @@ class ProjectGenerator {
           orElse: () => Directory(p.join(parent, 'addons', addon.name)),
         );
     if (!addonDir.existsSync()) {
-      _log.writeln(
-        'Backend addon files for "${addon.name}" not found near the '
-        'template (${addonDir.path}). Reinstall with: '
-        'dart pub global activate fluframe',
-      );
-      return ExitCode.software.code;
+      if (addon.requiresFiles) {
+        _log.writeln(
+          'Addon files for "${addon.name}" not found near the '
+          'template (${addonDir.path}). Reinstall with: '
+          'dart pub global activate fluframe',
+        );
+        return ExitCode.software.code;
+      }
+      // Patch-only addon — nothing to copy.
+    } else {
+      _copyDirectory(addonDir, Directory(targetPath), name: name);
     }
-    _copyDirectory(addonDir, Directory(targetPath), name: name);
 
     for (final patch in addon.patches) {
       final file = File(p.join(targetPath, patch.file));
