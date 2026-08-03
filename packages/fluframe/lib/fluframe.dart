@@ -2,6 +2,7 @@
 /// fluFrame boilerplate.
 library;
 
+export 'src/backends.dart';
 export 'src/command_runner.dart';
 export 'src/commands/create_command.dart';
 export 'src/package_name.dart';

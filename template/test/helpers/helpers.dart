@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'in_memory_key_value_store.dart';
+
 export 'in_memory_key_value_store.dart';
 
 /// Tests always run against the in-memory auth repository, regardless of
@@ -16,6 +18,13 @@ final List<Override> _defaultOverrides = [
   authRepositoryProvider.overrideWith(
     (ref) => InMemoryAuthRepository(ref.watch(keyValueStoreProvider)),
   ),
+];
+
+/// Overrides for full-app tests (`pumpWidget(ProviderScope(...))`):
+/// in-memory storage plus the backend-agnostic auth pin.
+List<Override> appTestOverrides({KeyValueStore? store}) => [
+  keyValueStoreProvider.overrideWithValue(store ?? InMemoryKeyValueStore()),
+  ..._defaultOverrides,
 ];
 
 /// Creates a [ProviderContainer] that is disposed with the running test.

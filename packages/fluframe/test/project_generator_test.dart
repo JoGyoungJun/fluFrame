@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -261,6 +262,103 @@ version: 0.1.0+1
 
       expect(code, 69);
       expect(log.toString(), contains('Flutter SDK not found on PATH'));
+    });
+
+    test('applies a backend addon: files, patches, dependencies', () async {
+      Directory(
+        p.join(temp.path, 'template_addons', 'fake', 'lib'),
+      ).createSync(recursive: true);
+      File(
+        p.join(temp.path, 'template_addons', 'fake', 'lib', 'extra.dart'),
+      ).writeAsStringSync('// extra for fluframe_app\n');
+      const fake = BackendAddon(
+        name: 'fake',
+        dependencies: ['fake_pkg'],
+        patches: [
+          AddonPatch(
+            file: 'lib/main.dart',
+            anchor: '// FluFrame App',
+            replacement: '// patched by addon',
+          ),
+        ],
+      );
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      expect(code, 0, reason: log.toString());
+      expect(
+        File(
+          p.join(temp.path, 'demo_app', 'lib', 'extra.dart'),
+        ).readAsStringSync(),
+        contains('demo_app'),
+      );
+      expect(
+        File(
+          p.join(temp.path, 'demo_app', 'lib', 'main.dart'),
+        ).readAsStringSync(),
+        contains('// patched by addon'),
+      );
+      expect(
+        calls.map((call) => call.$2.join(' ')),
+        contains('pub add fake_pkg'),
+      );
+    });
+
+    test('a missing patch anchor fails loudly', () async {
+      Directory(
+        p.join(temp.path, 'template_addons', 'fake'),
+      ).createSync(recursive: true);
+      const fake = BackendAddon(
+        name: 'fake',
+        dependencies: [],
+        patches: [
+          AddonPatch(
+            file: 'lib/main.dart',
+            anchor: 'THIS ANCHOR DOES NOT EXIST',
+            replacement: 'x',
+          ),
+        ],
+      );
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      expect(code, isNot(0));
+      expect(log.toString(), contains('anchor not found'));
+      expect(log.toString(), contains('lib/main.dart'));
+    });
+
+    test('an unknown backend is a usage error', () async {
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'nope',
+      );
+
+      expect(code, 64);
+      expect(calls, isEmpty);
     });
 
     test('refuses to overwrite an existing directory', () async {

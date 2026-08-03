@@ -41,6 +41,21 @@ void main() {
     }
   }
 
+  // Backend addon sources (ADR 0001) ship alongside the base template.
+  final repoAddons = Directory(
+    p.normalize(p.join(packageRoot.path, '..', '..', 'template_addons')),
+  );
+  if (repoAddons.existsSync()) {
+    final addonBundle = Directory(
+      p.join(packageRoot.path, 'templates', 'addons'),
+    );
+    if (addonBundle.existsSync()) {
+      addonBundle.deleteSync(recursive: true);
+    }
+    _copyDirectory(repoAddons, addonBundle);
+    stdout.writeln('Synced template_addons into templates/addons.');
+  }
+
   stdout.writeln('Synced ${overlayEntries.length} entries into templates/app.');
 }
 

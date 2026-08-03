@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/package_name.dart';
 import 'package:io/io.dart';
 import 'package:path/path.dart' as p;
@@ -91,14 +92,17 @@ class ProjectGenerator {
     required this.templateDirectory,
     RunProcess? runProcess,
     StringSink? log,
+    Map<String, BackendAddon>? addons,
   }) : _runProcess = runProcess ?? _defaultRunProcess,
-       _log = log ?? stdout;
+       _log = log ?? stdout,
+       _addons = addons ?? backendAddons;
 
   /// Root of the template to copy from.
   final Directory templateDirectory;
 
   final RunProcess _runProcess;
   final StringSink _log;
+  final Map<String, BackendAddon> _addons;
 
   /// Generates the project and returns a process exit code.
   Future<int> generate({
@@ -106,6 +110,7 @@ class ProjectGenerator {
     required String org,
     required String outputDirectory,
     String? description,
+    String? backend,
     List<String> platforms = const [
       'android',
       'ios',
@@ -116,6 +121,20 @@ class ProjectGenerator {
     ],
     bool runPub = true,
   }) async {
+    final BackendAddon? addon;
+    if (backend == null) {
+      addon = null;
+    } else {
+      addon = _addons[backend];
+      if (addon == null) {
+        _log.writeln(
+          'Unknown backend "$backend". '
+          'Available: ${_addons.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+
     final targetPath = p.join(outputDirectory, name);
     if (Directory(targetPath).existsSync()) {
       _log.writeln('Directory "$targetPath" already exists. Aborting.');
@@ -158,6 +177,16 @@ class ProjectGenerator {
 
     _log.writeln('Applying the fluFrame template...');
     _applyOverlay(targetPath, name: name, description: description);
+
+    if (addon != null) {
+      _log.writeln('Applying the ${addon.name} backend addon...');
+      final addonExit = await _applyBackendAddon(
+        targetPath,
+        addon: addon,
+        name: name,
+      );
+      if (addonExit != 0) return addonExit;
+    }
 
     if (runPub) {
       _log.writeln('Resolving dependencies...');
@@ -206,6 +235,81 @@ class ProjectGenerator {
       ..writeln('Next steps:')
       ..writeln('  cd $targetPath')
       ..writeln('  flutter run --dart-define-from-file=env/dev.json');
+    for (final note in addon?.postCreateNotes ?? const <String>[]) {
+      _log.writeln('  * $note');
+    }
+    return ExitCode.success.code;
+  }
+
+  /// Copies the addon's bundled files, applies its anchored patches, and
+  /// installs its dependencies. A missing addon directory or patch anchor
+  /// fails loudly (ADR 0001) — never a silently broken app.
+  Future<int> _applyBackendAddon(
+    String targetPath, {
+    required BackendAddon addon,
+    required String name,
+  }) async {
+    final parent = templateDirectory.parent.path;
+    final addonDir =
+        [
+          Directory(p.join(parent, 'addons', addon.name)),
+          Directory(p.join(parent, 'template_addons', addon.name)),
+        ].firstWhere(
+          (dir) => dir.existsSync(),
+          orElse: () => Directory(p.join(parent, 'addons', addon.name)),
+        );
+    if (!addonDir.existsSync()) {
+      _log.writeln(
+        'Backend addon files for "${addon.name}" not found near the '
+        'template (${addonDir.path}). Reinstall with: '
+        'dart pub global activate fluframe',
+      );
+      return ExitCode.software.code;
+    }
+    _copyDirectory(addonDir, Directory(targetPath), name: name);
+
+    for (final patch in addon.patches) {
+      final file = File(p.join(targetPath, patch.file));
+      if (!file.existsSync()) {
+        _log.writeln(
+          'Addon patch target missing: ${patch.file} — the template and '
+          'the ${addon.name} addon are out of sync.',
+        );
+        return ExitCode.software.code;
+      }
+      final content = file.readAsStringSync();
+      final anchor = rewriteTemplateContent(patch.anchor, projectName: name);
+      if (!content.contains(anchor)) {
+        _log.writeln(
+          'Addon patch anchor not found in ${patch.file}:\n  $anchor\n'
+          'The template and the ${addon.name} addon are out of sync.',
+        );
+        return ExitCode.software.code;
+      }
+      file.writeAsStringSync(
+        content.replaceFirst(
+          anchor,
+          rewriteTemplateContent(patch.replacement, projectName: name),
+        ),
+      );
+    }
+
+    if (addon.dependencies.isNotEmpty) {
+      _log.writeln(
+        'Adding dependencies: ${addon.dependencies.join(', ')}...',
+      );
+      final pubAdd = await _runProcess('flutter', [
+        'pub',
+        'add',
+        ...addon.dependencies,
+      ], workingDirectory: targetPath);
+      if (pubAdd.exitCode != 0) {
+        _log
+          ..writeln('flutter pub add failed:')
+          ..writeln(pubAdd.stderr);
+        return ExitCode.software.code;
+      }
+    }
     return ExitCode.success.code;
   }
 

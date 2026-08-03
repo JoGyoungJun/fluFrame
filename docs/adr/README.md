@@ -27,4 +27,4 @@ Statuses: `Proposed` → `Accepted` | `Rejected`; later `Superseded by
 
 | # | Decision | Status |
 |---|---|---|
-| — | _none yet_ | |
+| [0001](0001-backend-addon-overlays.md) | Backend addons as anchored patch overlays | Accepted |
