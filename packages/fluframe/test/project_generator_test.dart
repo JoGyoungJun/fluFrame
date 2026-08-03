@@ -419,6 +419,39 @@ version: 0.1.0+1
       },
     );
 
+    test('writes generation metadata (.fluframe.json)', () async {
+      Directory(
+        p.join(temp.path, 'template_addons', 'fake'),
+      ).createSync(recursive: true);
+      const fake = BackendAddon(
+        name: 'fake',
+        requiresFiles: false,
+        dependencies: [],
+        patches: [],
+      );
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      final metadata = File(
+        p.join(temp.path, 'demo_app', '.fluframe.json'),
+      ).readAsStringSync();
+      expect(metadata, contains('"name": "demo_app"'));
+      expect(metadata, contains('"org": "dev.example"'));
+      expect(metadata, contains('"backend": "fake"'));
+      expect(metadata, contains('"analytics": null'));
+    });
+
     test('an unknown analytics service is a usage error', () async {
       final code = await generator.generate(
         name: 'demo_app',

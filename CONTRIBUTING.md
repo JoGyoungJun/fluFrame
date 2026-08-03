@@ -91,7 +91,7 @@ lands through a pull request with all CI jobs green. Nothing merges red.
 ## Releasing (maintainers)
 
 1. Bump `version` in `packages/fluframe/pubspec.yaml`, `cliVersion` in
-   `lib/src/command_runner.dart`, and update `CHANGELOG.md`; land the
+   `lib/src/version.dart`, and update `CHANGELOG.md`; land the
    bump on `main` via PR.
 2. Push the release tag: `git tag fluframe-v<version> && git push origin
    fluframe-v<version>`. The `publish.yml` workflow re-runs every gate
