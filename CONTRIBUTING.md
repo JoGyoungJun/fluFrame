@@ -49,7 +49,8 @@ Rules of thumb:
   keeping gets a widget test.
 - All user-facing strings live in `lib/l10n/app_en.arb` **and**
   `app_ko.arb` — never hardcode UI text.
-- Keep the `fluframe_app` / `FluFrame App` / `FluFrame 앱` tokens intact:
+- Keep the `fluframe_app` / `FluFrame App` / `FluFrame 앱` /
+  `FluFrame アプリ` tokens intact:
   the CLI rewrites them when generating projects.
 
 ## Developing the CLI

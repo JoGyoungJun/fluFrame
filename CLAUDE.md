@@ -62,9 +62,10 @@ dart test -t e2e    # full pipeline — run before releases and CLI changes
 ## Hard rules
 
 - **Never break the rename tokens.** The CLI rewrites `fluframe_app` →
-  project name, `FluFrame App` → humanized title, and `FluFrame 앱` →
-  humanized title + ` 앱`. These tokens must keep appearing exactly in
-  `template/pubspec.yaml`, package imports, and both ARB `appTitle`s.
+  project name, `FluFrame App` → humanized title, `FluFrame 앱` →
+  humanized title + ` 앱`, and `FluFrame アプリ` → humanized title +
+  ` アプリ`. These tokens must keep appearing exactly in
+  `template/pubspec.yaml`, package imports, and every ARB `appTitle`.
 - **`.pubignore` patterns stay slash-anchored** (`/test/`, not `test/`) —
   an unanchored pattern also strips `templates/app/test` from the published
   bundle. The e2e test and release checklist guard this.

@@ -37,8 +37,10 @@
   "presetCrimson": "크림슨",
   "presetAmber": "앰버",
   "presetViolet": "바이올렛",
+  "presetTeal": "틸",
   "languageSection": "언어",
   "languageSystem": "시스템",
   "languageEnglish": "English",
-  "languageKorean": "한국어"
+  "languageKorean": "한국어",
+  "languageJapanese": "日本語"
 }

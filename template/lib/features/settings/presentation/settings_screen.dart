@@ -99,6 +99,10 @@ class SettingsScreen extends ConsumerWidget {
                 value: 'ko',
                 label: Text(l10n.languageKorean),
               ),
+              ButtonSegment(
+                value: 'ja',
+                label: Text(l10n.languageJapanese),
+              ),
             ],
             selected: {locale?.languageCode ?? 'system'},
             onSelectionChanged: (selection) {
@@ -122,6 +126,7 @@ class SettingsScreen extends ConsumerWidget {
       ThemePreset.crimson => l10n.presetCrimson,
       ThemePreset.amber => l10n.presetAmber,
       ThemePreset.violet => l10n.presetViolet,
+      ThemePreset.teal => l10n.presetTeal,
     };
   }
 }

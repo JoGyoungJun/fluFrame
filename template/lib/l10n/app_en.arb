@@ -58,8 +58,10 @@
   "presetCrimson": "Crimson",
   "presetAmber": "Amber",
   "presetViolet": "Violet",
+  "presetTeal": "Teal",
   "languageSection": "Language",
   "languageSystem": "System",
   "languageEnglish": "English",
-  "languageKorean": "한국어"
+  "languageKorean": "한국어",
+  "languageJapanese": "Japanese"
 }
