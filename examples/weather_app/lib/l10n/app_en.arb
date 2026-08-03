@@ -8,6 +8,8 @@
   "citySeoul": "Seoul",
   "cityTokyo": "Tokyo",
   "cityNewYork": "New York",
+  "cityParis": "Paris",
+  "citySydney": "Sydney",
   "temperatureValue": "{value}°C",
   "@temperatureValue": {
     "placeholders": {

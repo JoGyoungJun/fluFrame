@@ -8,6 +8,8 @@
   "citySeoul": "서울",
   "cityTokyo": "도쿄",
   "cityNewYork": "뉴욕",
+  "cityParis": "파리",
+  "citySydney": "시드니",
   "temperatureValue": "{value}°C",
   "windValue": "바람 {value} km/h",
   "weatherErrorMessage": "날씨를 불러오지 못했습니다.",

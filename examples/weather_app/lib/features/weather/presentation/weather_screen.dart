@@ -35,6 +35,14 @@ class WeatherScreen extends ConsumerWidget {
                   value: City.newYork,
                   label: Text(l10n.cityNewYork),
                 ),
+                ButtonSegment(
+                  value: City.paris,
+                  label: Text(l10n.cityParis),
+                ),
+                ButtonSegment(
+                  value: City.sydney,
+                  label: Text(l10n.citySydney),
+                ),
               ],
               selected: {city},
               onSelectionChanged: (selection) =>
