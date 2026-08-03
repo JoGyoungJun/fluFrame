@@ -284,6 +284,42 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get themeModeDark;
 
+  /// No description provided for @colorSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme color'**
+  String get colorSection;
+
+  /// No description provided for @presetIndigo.
+  ///
+  /// In en, this message translates to:
+  /// **'Indigo'**
+  String get presetIndigo;
+
+  /// No description provided for @presetEmerald.
+  ///
+  /// In en, this message translates to:
+  /// **'Emerald'**
+  String get presetEmerald;
+
+  /// No description provided for @presetCrimson.
+  ///
+  /// In en, this message translates to:
+  /// **'Crimson'**
+  String get presetCrimson;
+
+  /// No description provided for @presetAmber.
+  ///
+  /// In en, this message translates to:
+  /// **'Amber'**
+  String get presetAmber;
+
+  /// No description provided for @presetViolet.
+  ///
+  /// In en, this message translates to:
+  /// **'Violet'**
+  String get presetViolet;
+
   /// No description provided for @languageSection.
   ///
   /// In en, this message translates to:

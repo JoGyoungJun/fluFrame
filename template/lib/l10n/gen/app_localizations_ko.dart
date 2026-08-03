@@ -114,6 +114,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get themeModeDark => '다크';
 
   @override
+  String get colorSection => '테마 색상';
+
+  @override
+  String get presetIndigo => '인디고';
+
+  @override
+  String get presetEmerald => '에메랄드';
+
+  @override
+  String get presetCrimson => '크림슨';
+
+  @override
+  String get presetAmber => '앰버';
+
+  @override
+  String get presetViolet => '바이올렛';
+
+  @override
   String get languageSection => '언어';
 
   @override
