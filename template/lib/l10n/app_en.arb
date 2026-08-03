@@ -28,6 +28,25 @@
     }
   },
   "postNotFound": "Post not found.",
+  "profileTab": "Profile",
+  "profileTitle": "Profile",
+  "profileSignedInAs": "Signed in as {email}",
+  "@profileSignedInAs": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "loginTitle": "Welcome back",
+  "emailLabel": "Email",
+  "passwordLabel": "Password",
+  "signInButton": "Sign in",
+  "signOutButton": "Sign out",
+  "emailRequired": "Enter your email.",
+  "emailInvalid": "Enter a valid email address.",
+  "passwordRequired": "Enter your password.",
+  "loginFailedMessage": "Sign-in failed. Check your credentials.",
   "settingsTitle": "Settings",
   "appearanceSection": "Appearance",
   "themeModeSystem": "System",

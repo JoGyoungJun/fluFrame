@@ -1,3 +1,6 @@
+import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
+import 'package:fluframe_app/features/auth/presentation/login_screen.dart';
+import 'package:fluframe_app/features/auth/presentation/profile_screen.dart';
 import 'package:fluframe_app/features/home/presentation/home_screen.dart';
 import 'package:fluframe_app/features/posts/presentation/post_detail_screen.dart';
 import 'package:fluframe_app/features/posts/presentation/post_not_found_screen.dart';
@@ -8,17 +11,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+/// Bridges auth-state changes into a [Listenable] so GoRouter re-runs its
+/// redirect without the router itself being rebuilt (which would lose
+/// navigation state).
+class _AuthRefreshNotifier extends ChangeNotifier {
+  _AuthRefreshNotifier(Ref ref) {
+    ref.listen(authControllerProvider, (previous, next) => notifyListeners());
+  }
+}
+
 /// Provider for the app-wide [GoRouter].
 ///
 /// Route map:
 /// - `/home` — landing screen (tab 1)
 ///   - `/home/posts` — sample post list
 ///   - `/home/posts/:id` — post detail
-/// - `/settings` — preferences (tab 2)
+/// - `/profile` — signed-in profile (tab 2, auth-gated)
+/// - `/settings` — preferences (tab 3)
+/// - `/login` — full-screen sign-in (root navigator, above the shell)
+///
+/// Gating: only `/profile` requires auth — the rest of the demo stays
+/// explorable. To gate the whole app instead, drop the `startsWith`
+/// check in the redirect below (see the backend guides).
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final refreshNotifier = _AuthRefreshNotifier(ref);
+  ref.onDispose(refreshNotifier.dispose);
   return GoRouter(
     initialLocation: '/home',
+    refreshListenable: refreshNotifier,
+    redirect: (context, state) {
+      final signedIn = ref.read(authControllerProvider) != null;
+      final location = state.matchedLocation;
+      if (!signedIn && location.startsWith('/profile')) {
+        return Uri(
+          path: '/login',
+          queryParameters: {'from': state.uri.toString()},
+        ).toString();
+      }
+      if (signedIn && location == '/login') {
+        return state.uri.queryParameters['from'] ?? '/home';
+      }
+      return null;
+    },
     routes: [
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppNavigationShell(navigationShell: navigationShell),
@@ -46,6 +85,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     ],
                   ),
                 ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
               ),
             ],
           ),
@@ -87,6 +134,11 @@ class AppNavigationShell extends StatelessWidget {
             icon: const Icon(Icons.home_outlined),
             selectedIcon: const Icon(Icons.home),
             label: l10n.homeTab,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: l10n.profileTab,
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings_outlined),

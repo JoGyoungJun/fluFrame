@@ -62,6 +62,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postNotFound => 'Post not found.';
 
   @override
+  String get profileTab => 'Profile';
+
+  @override
+  String get profileTitle => 'Profile';
+
+  @override
+  String profileSignedInAs(String email) {
+    return 'Signed in as $email';
+  }
+
+  @override
+  String get loginTitle => 'Welcome back';
+
+  @override
+  String get emailLabel => 'Email';
+
+  @override
+  String get passwordLabel => 'Password';
+
+  @override
+  String get signInButton => 'Sign in';
+
+  @override
+  String get signOutButton => 'Sign out';
+
+  @override
+  String get emailRequired => 'Enter your email.';
+
+  @override
+  String get emailInvalid => 'Enter a valid email address.';
+
+  @override
+  String get passwordRequired => 'Enter your password.';
+
+  @override
+  String get loginFailedMessage => 'Sign-in failed. Check your credentials.';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override
