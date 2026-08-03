@@ -31,6 +31,7 @@ Or use this repository as a GitHub template and start from
 |---|---|
 | State management | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod) 3 — manual `Notifier`/`AsyncNotifier`, no provider codegen |
 | Navigation | [go_router](https://pub.dev/packages/go_router) 17 — `StatefulShellRoute` bottom tabs, nested routes |
+| Auth | Backend-neutral scaffold: login/profile flow, gated routes, persisted session — swap in [Supabase](docs/guides/auth-supabase.md) or [Firebase](docs/guides/auth-firebase.md) via one provider |
 | Models | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable, sample REST feature |
 | Networking | [dio](https://pub.dev/packages/dio) with `DioException` → sealed `ApiException` mapping |
 | Persistence | `KeyValueStore` interface over `SharedPreferencesAsync` — trivially fakeable in tests |

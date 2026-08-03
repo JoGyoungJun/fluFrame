@@ -9,6 +9,7 @@ A Flutter app generated from the
 |---|---|
 | State management | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod) 3 (manual notifiers, no codegen) |
 | Navigation | [go_router](https://pub.dev/packages/go_router) with `StatefulShellRoute` bottom tabs |
+| Auth | Backend-neutral `AuthRepository` scaffold — login/profile flow, gated `/profile` route, persisted session; swap in Supabase/Firebase via the fluFrame guides |
 | Models | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable |
 | Networking | [dio](https://pub.dev/packages/dio) with typed `ApiException` mapping |
 | Persistence | `KeyValueStore` interface over `SharedPreferencesAsync` |
@@ -26,6 +27,7 @@ lib/
 ├── app/                   # App shell: MaterialApp.router, router, theme
 ├── core/                  # Cross-cutting: config, network, storage, logging, widgets
 ├── features/              # Feature-first modules
+│   ├── auth/              #   Login/profile flow, gated route (fake repo)
 │   ├── home/              #   Counter demo (sync Notifier)
 │   ├── posts/             #   REST list/detail demo (AsyncNotifier + FutureProvider)
 │   └── settings/          #   Theme + language, persisted
