@@ -24,6 +24,25 @@ void main() {
     });
   });
 
+  group('isValidOrg', () {
+    test('accepts dot-separated identifier segments', () {
+      expect(isValidOrg('com.example'), isTrue);
+      expect(isValidOrg('dev.my_org.apps'), isTrue);
+      expect(isValidOrg('io.x1'), isTrue);
+      expect(isValidOrg('com'), isTrue);
+    });
+
+    test('rejects malformed organization identifiers', () {
+      expect(isValidOrg(''), isFalse);
+      expect(isValidOrg('bad org'), isFalse);
+      expect(isValidOrg('1com.x'), isFalse);
+      expect(isValidOrg('com.'), isFalse);
+      expect(isValidOrg('com..x'), isFalse);
+      expect(isValidOrg('.com'), isFalse);
+      expect(isValidOrg('com.-x'), isFalse);
+    });
+  });
+
   group('humanizePackageName', () {
     test('title-cases underscore-separated parts', () {
       expect(humanizePackageName('my_cool_app'), 'My Cool App');

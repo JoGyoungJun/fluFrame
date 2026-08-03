@@ -76,6 +76,14 @@ final RegExp _packageNamePattern = RegExp(r'^[a-z_][a-z0-9_]*$');
 bool isValidPackageName(String name) =>
     _packageNamePattern.hasMatch(name) && !_reservedWords.contains(name);
 
+final RegExp _orgSegmentPattern = RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*$');
+
+/// Whether [org] is a valid organization identifier for `flutter create`:
+/// dot-separated segments, each starting with a letter
+/// (e.g. `com.example`, `dev.my_org.apps`).
+bool isValidOrg(String org) =>
+    org.isNotEmpty && org.split('.').every(_orgSegmentPattern.hasMatch);
+
 /// Converts a package name into a human-readable title.
 ///
 /// `my_cool_app` → `My Cool App`.
