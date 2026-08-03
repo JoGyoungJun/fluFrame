@@ -1,4 +1,5 @@
 import 'package:fluframe_app/app/app.dart';
+import 'package:fluframe_app/core/logging/error_handlers.dart';
 import 'package:fluframe_app/core/network/api_exception.dart';
 import 'package:fluframe_app/core/storage/key_value_store.dart';
 import 'package:fluframe_app/features/auth/data/auth_repository.dart';
@@ -13,6 +14,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Route every uncaught error through the two hooks in
+  // core/logging/error_handlers.dart (the crash-reporting seam).
+  FlutterError.onError = onFlutterError;
+  WidgetsBinding.instance.platformDispatcher.onError = onPlatformError;
 
   // Resolve persisted settings before the first frame so the app starts
   // with the right theme, locale, and session (no flash of defaults).
