@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:fluframe_app/core/network/api_client.dart';
 import 'package:fluframe_app/core/network/api_exception.dart';
+import 'package:fluframe_app/core/storage/key_value_store.dart';
+import 'package:fluframe_app/features/posts/data/cached_posts_repository.dart';
 import 'package:fluframe_app/features/posts/domain/post.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,7 +44,11 @@ class PostsRepository {
   }
 }
 
-/// Provider for the app-wide [PostsRepository].
+/// Provider for the app-wide [PostsRepository], wrapped in the offline
+/// fallback cache (see [CachedPostsRepository]).
 final postsRepositoryProvider = Provider<PostsRepository>(
-  (ref) => PostsRepository(ref.watch(dioProvider)),
+  (ref) => CachedPostsRepository(
+    PostsRepository(ref.watch(dioProvider)),
+    ref.watch(keyValueStoreProvider),
+  ),
 );
