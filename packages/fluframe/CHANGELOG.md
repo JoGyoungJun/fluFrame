@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- Template: **offline fallback cache** for the posts sample — the last
+  successful response is persisted and served automatically when the
+  network fails, demonstrating the repository-decorator pattern with
+  zero new dependencies.
+
 ## 0.7.1
 
 - Actually ships the **theme color presets** announced in 0.7.0 — a
