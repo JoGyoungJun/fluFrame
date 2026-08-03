@@ -3,10 +3,10 @@ import 'dart:io' as io;
 import 'package:args/command_runner.dart';
 import 'package:fluframe/src/commands/create_command.dart';
 import 'package:fluframe/src/commands/doctor_command.dart';
+import 'package:fluframe/src/version.dart';
 import 'package:io/io.dart';
 
-/// The current version of the fluframe CLI. Keep in sync with pubspec.yaml.
-const String cliVersion = '0.12.0';
+export 'package:fluframe/src/version.dart';
 
 /// Entry point of the `fluframe` command line interface.
 class FluframeCommandRunner extends CommandRunner<int> {

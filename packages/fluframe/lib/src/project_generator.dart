@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/package_name.dart';
+import 'package:fluframe/src/version.dart';
 import 'package:io/io.dart';
 import 'package:path/path.dart' as p;
 
@@ -226,6 +228,19 @@ class ProjectGenerator {
       );
       if (addonExit != 0) return addonExit;
     }
+
+    // Generation metadata — the contract `fluframe upgrade` reads to
+    // reconstruct this exact generation later (design spec 002).
+    File(p.join(targetPath, '.fluframe.json')).writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert({
+        'cliVersion': cliVersion,
+        'name': name,
+        'org': org,
+        'backend': backend,
+        'errorReporting': errorReporting,
+        'analytics': analytics,
+      })}\n',
+    );
 
     if (runPub) {
       _log.writeln('Resolving dependencies...');
