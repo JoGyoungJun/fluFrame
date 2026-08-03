@@ -23,4 +23,4 @@ Test plan, Acceptance criteria, Open questions.
 
 | # | Spec | Status | Issue |
 |---|---|---|---|
-| — | _none yet_ | | |
+| 001 | [Backend-neutral auth scaffold](001-auth-scaffold.md) | APPROVED | #24 #25 #26 |
