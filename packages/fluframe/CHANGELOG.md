@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- **`fluframe doctor`**: one command to verify the machine can generate
+  and run fluFrame apps — Flutter/Dart/git probes with actionable fixes
+  and a template-bundle check.
+
 ## 0.5.0
 
 - **`--backend firebase`**: generate an app with Firebase Auth wired into
