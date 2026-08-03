@@ -1,6 +1,8 @@
 import 'package:fluframe_app/app/app.dart';
 import 'package:fluframe_app/core/network/api_exception.dart';
 import 'package:fluframe_app/core/storage/key_value_store.dart';
+import 'package:fluframe_app/features/auth/data/auth_repository.dart';
+import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
 import 'package:fluframe_app/features/settings/data/settings_repository.dart';
 import 'package:fluframe_app/features/settings/presentation/locale_controller.dart';
 import 'package:fluframe_app/features/settings/presentation/theme_mode_controller.dart';
@@ -12,11 +14,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Resolve persisted settings before the first frame so the app starts
-  // with the right theme and locale (no flash of defaults).
+  // with the right theme, locale, and session (no flash of defaults).
   final store = SharedPreferencesKeyValueStore(SharedPreferencesAsync());
   final settings = SettingsRepository(store);
   final themeMode = await settings.loadThemeMode();
   final locale = await settings.loadLocale();
+  final initialUser = await InMemoryAuthRepository(store).restoreSession();
 
   runApp(
     ProviderScope(
@@ -32,6 +35,7 @@ Future<void> main() async {
         keyValueStoreProvider.overrideWithValue(store),
         initialThemeModeProvider.overrideWithValue(themeMode),
         initialLocaleProvider.overrideWithValue(locale),
+        initialUserProvider.overrideWithValue(initialUser),
       ],
       child: const FluFrameApp(),
     ),
