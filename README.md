@@ -74,6 +74,14 @@ Each feature keeps `data/` (repositories), `domain/` (models), and
 `AsyncValue`s through a shared `AsyncValueWidget` with loading/error/retry
 handling built in.
 
+## Examples
+
+Real apps generated with `fluframe create` and extended by the book:
+
+- [`examples/todo_app`](examples/todo_app) — persisted todo list added as
+  a new feature module + tab (freezed, KeyValueStore, AsyncNotifier,
+  l10n, tests)
+
 ## Development (this repo)
 
 ```sh
