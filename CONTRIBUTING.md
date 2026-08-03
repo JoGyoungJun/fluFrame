@@ -77,12 +77,16 @@ lands through a pull request with all CI jobs green. Nothing merges red.
 ## Releasing (maintainers)
 
 1. Bump `version` in `packages/fluframe/pubspec.yaml`, `cliVersion` in
-   `lib/src/command_runner.dart`, and update `CHANGELOG.md`.
-2. `cd packages/fluframe && dart run tool/sync_template.dart`
-3. `dart test -t e2e` — the e2e generates from the synced bundle and fails
-   if the bundle is incomplete.
-4. `dart pub publish --dry-run` — verify the file list includes
-   `templates/app/lib/...`, `templates/app/test/...`, and
-   `templates/app/gitignore`. A missing `test/` means an ignore pattern
-   regressed (they must stay slash-anchored in `.pubignore`).
-5. `dart pub publish`
+   `lib/src/command_runner.dart`, and update `CHANGELOG.md`; land the
+   bump on `main` via PR.
+2. Push the release tag: `git tag fluframe-v<version> && git push origin
+   fluframe-v<version>`. The `publish.yml` workflow re-runs every gate
+   (tag↔pubspec match, unit tests, bundle sync, e2e, dry-run) and then
+   publishes to pub.dev via OIDC — no local credentials involved.
+3. If a gate fails, nothing is published: fix on main via PR, delete and
+   re-push the tag.
+4. Manual fallback: `packages\fluframe\tool\publish.bat` runs the same
+   gates locally, then publishes interactively (`--yes` to skip the
+   prompt). The dry-run file list must include `templates/app/lib/...`,
+   `templates/app/test/...`, and `templates/app/gitignore` — a missing
+   `test/` means a `.pubignore` pattern lost its anchoring slash.
