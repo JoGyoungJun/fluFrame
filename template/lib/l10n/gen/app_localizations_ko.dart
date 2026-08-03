@@ -61,6 +61,44 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postNotFound => '게시글을 찾을 수 없습니다.';
 
   @override
+  String get profileTab => '프로필';
+
+  @override
+  String get profileTitle => '프로필';
+
+  @override
+  String profileSignedInAs(String email) {
+    return '$email 계정으로 로그인됨';
+  }
+
+  @override
+  String get loginTitle => '다시 오신 것을 환영합니다';
+
+  @override
+  String get emailLabel => '이메일';
+
+  @override
+  String get passwordLabel => '비밀번호';
+
+  @override
+  String get signInButton => '로그인';
+
+  @override
+  String get signOutButton => '로그아웃';
+
+  @override
+  String get emailRequired => '이메일을 입력하세요.';
+
+  @override
+  String get emailInvalid => '올바른 이메일 주소를 입력하세요.';
+
+  @override
+  String get passwordRequired => '비밀번호를 입력하세요.';
+
+  @override
+  String get loginFailedMessage => '로그인에 실패했습니다. 입력 정보를 확인하세요.';
+
+  @override
   String get settingsTitle => '설정';
 
   @override
