@@ -45,6 +45,7 @@ flutter run --dart-define-from-file=env/dev.json
 | `--platforms` | all six | Passed through to `flutter create` |
 | `--backend` | `none` | Wire a real auth backend (`supabase` \| `firebase`) into the generated app |
 | `--error-reporting` | `none` | Wire crash reporting (`sentry`) into the error hooks |
+| `--analytics` | `none` | Wire product analytics (`amplitude`) into the analytics seam |
 | `--no-pub` | off | Skip `flutter pub get` / `gen-l10n` |
 
 ## How it works

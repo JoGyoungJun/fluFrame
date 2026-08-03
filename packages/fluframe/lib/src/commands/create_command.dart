@@ -45,6 +45,12 @@ class CreateCommand extends Command<int> {
         help: 'Wire a crash-reporting service into the error hooks.',
       )
       ..addOption(
+        'analytics',
+        defaultsTo: 'none',
+        allowed: ['none', ...analyticsAddons.keys],
+        help: 'Wire a product-analytics service into the analytics seam.',
+      )
+      ..addOption(
         'template-dir',
         hide: true,
         help: 'Override the template location (development only).',
@@ -101,6 +107,7 @@ class CreateCommand extends Command<int> {
 
     final backend = results['backend'] as String;
     final errorReporting = results['error-reporting'] as String;
+    final analytics = results['analytics'] as String;
     final generator = ProjectGenerator(templateDirectory: templateDirectory);
     return generator.generate(
       name: projectName,
@@ -108,6 +115,7 @@ class CreateCommand extends Command<int> {
       description: results['description'] as String?,
       backend: backend == 'none' ? null : backend,
       errorReporting: errorReporting == 'none' ? null : errorReporting,
+      analytics: analytics == 'none' ? null : analytics,
       outputDirectory: results['output-directory'] as String,
       platforms: results['platforms'] as List<String>,
       runPub: results['pub'] as bool,

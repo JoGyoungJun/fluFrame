@@ -315,3 +315,64 @@ const String _sentrySetupNote =
 const Map<String, BackendAddon> errorReportingAddons = {
   'sentry': sentryAddon,
 };
+
+/// The Amplitude analytics addon: swaps the analytics seam's provider to
+/// a real SDK, guarded on a configured API key.
+const BackendAddon amplitudeAddon = BackendAddon(
+  name: 'amplitude',
+  dependencies: ['amplitude_flutter'],
+  patches: [
+    // analytics_service.dart: import the addon implementation.
+    AddonPatch(
+      file: 'lib/core/analytics/analytics_service.dart',
+      anchor: "import 'package:fluframe_app/core/logging/app_logger.dart';",
+      replacement:
+          "import 'package:fluframe_app/core/analytics/amplitude_analytics_service.dart';\n"
+          "import 'package:fluframe_app/core/logging/app_logger.dart';",
+    ),
+    // analytics_service.dart: key-guarded provider swap.
+    AddonPatch(
+      file: 'lib/core/analytics/analytics_service.dart',
+      anchor:
+          'final analyticsServiceProvider = Provider<AnalyticsService>(\n'
+          '  (ref) => const LoggingAnalyticsService(),\n'
+          ');',
+      replacement:
+          'final analyticsServiceProvider = '
+          'Provider<AnalyticsService>((ref) {\n'
+          '  const amplitudeApiKey = '
+          "String.fromEnvironment('AMPLITUDE_API_KEY');\n"
+          '  if (amplitudeApiKey.isEmpty) {\n'
+          '    return const LoggingAnalyticsService();\n'
+          '  }\n'
+          '  return AmplitudeAnalyticsService(amplitudeApiKey);\n'
+          '});',
+    ),
+    // env: API key placeholders.
+    AddonPatch(
+      file: 'env/dev.json',
+      anchor: '"API_BASE_URL": "https://jsonplaceholder.typicode.com"',
+      replacement:
+          '"API_BASE_URL": "https://jsonplaceholder.typicode.com",\n'
+          '  "AMPLITUDE_API_KEY": ""',
+    ),
+    AddonPatch(
+      file: 'env/prod.json',
+      anchor: '"API_BASE_URL": "https://jsonplaceholder.typicode.com"',
+      replacement:
+          '"API_BASE_URL": "https://jsonplaceholder.typicode.com",\n'
+          '  "AMPLITUDE_API_KEY": ""',
+    ),
+  ],
+  postCreateNotes: [_amplitudeSetupNote],
+);
+
+const String _amplitudeSetupNote =
+    'Amplitude: paste your API key into env/dev.json (and env/prod.json) '
+    'as AMPLITUDE_API_KEY — with it empty, events go to the debug log '
+    'only.';
+
+/// Analytics addons, keyed by `--analytics` value.
+const Map<String, BackendAddon> analyticsAddons = {
+  'amplitude': amplitudeAddon,
+};
