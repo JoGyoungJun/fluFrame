@@ -198,4 +198,90 @@ void main() {
       );
     },
   );
+
+  test(
+    'firebase backend variant passes flutter analyze and flutter test',
+    () async {
+      final sync = await Process.run(
+        'dart',
+        ['run', 'tool/sync_template.dart'],
+        runInShell: true,
+      );
+      expect(sync.exitCode, 0, reason: '${sync.stdout}\n${sync.stderr}');
+
+      final resolved = await resolveTemplateDirectory();
+      expect(resolved, isNotNull);
+
+      final temp = Directory.systemTemp.createTempSync('fluframe_e2e_fb_');
+      addTearDown(() {
+        try {
+          temp.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can hold locks briefly; leaking a temp dir is harmless.
+        }
+      });
+
+      final generator = ProjectGenerator(templateDirectory: resolved!);
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'firebase',
+        platforms: const ['android', 'web'],
+      );
+      expect(code, 0);
+
+      final projectPath = p.join(temp.path, 'demo_app');
+      expect(
+        File(
+          p.join(
+            projectPath,
+            'lib',
+            'features',
+            'auth',
+            'data',
+            'firebase_auth_repository.dart',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(projectPath, 'lib', 'firebase_options.dart')).existsSync(),
+        isTrue,
+      );
+      final mainContent = File(
+        p.join(projectPath, 'lib', 'main.dart'),
+      ).readAsStringSync();
+      expect(mainContent, contains('Firebase.initializeApp'));
+      expect(mainContent, isNot(contains('InMemoryAuthRepository(store)')));
+      expect(
+        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
+        contains('firebase_auth'),
+      );
+
+      final analyze = await Process.run(
+        'flutter',
+        ['analyze'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(
+        analyze.exitCode,
+        0,
+        reason: 'flutter analyze failed:\n${analyze.stdout}\n${analyze.stderr}',
+      );
+
+      final testRun = await Process.run(
+        'flutter',
+        ['test'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(
+        testRun.exitCode,
+        0,
+        reason: 'flutter test failed:\n${testRun.stdout}\n${testRun.stderr}',
+      );
+    },
+  );
 }
