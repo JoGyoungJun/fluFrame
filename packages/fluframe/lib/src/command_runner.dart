@@ -2,6 +2,7 @@ import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
 import 'package:fluframe/src/commands/create_command.dart';
+import 'package:fluframe/src/commands/doctor_command.dart';
 import 'package:io/io.dart';
 
 /// The current version of the fluframe CLI. Keep in sync with pubspec.yaml.
@@ -22,6 +23,7 @@ class FluframeCommandRunner extends CommandRunner<int> {
       help: 'Print the fluframe version.',
     );
     addCommand(CreateCommand());
+    addCommand(DoctorCommand());
   }
 
   @override

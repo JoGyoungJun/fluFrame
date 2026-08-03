@@ -16,6 +16,7 @@ dart pub global activate fluframe
 ## Usage
 
 ```sh
+fluframe doctor                      # check your environment first
 fluframe create my_app --org com.mycompany --description "My shiny app"
 cd my_app
 flutter run --dart-define-from-file=env/dev.json
