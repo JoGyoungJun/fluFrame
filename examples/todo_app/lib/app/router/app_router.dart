@@ -1,0 +1,167 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:todo_app/features/auth/presentation/auth_controller.dart';
+import 'package:todo_app/features/auth/presentation/login_screen.dart';
+import 'package:todo_app/features/auth/presentation/profile_screen.dart';
+import 'package:todo_app/features/home/presentation/home_screen.dart';
+import 'package:todo_app/features/posts/presentation/post_detail_screen.dart';
+import 'package:todo_app/features/posts/presentation/post_not_found_screen.dart';
+import 'package:todo_app/features/posts/presentation/posts_screen.dart';
+import 'package:todo_app/features/settings/presentation/settings_screen.dart';
+import 'package:todo_app/features/todos/presentation/todos_screen.dart';
+import 'package:todo_app/l10n/gen/app_localizations.dart';
+
+/// Bridges auth-state changes into a [Listenable] so GoRouter re-runs its
+/// redirect without the router itself being rebuilt (which would lose
+/// navigation state).
+class _AuthRefreshNotifier extends ChangeNotifier {
+  _AuthRefreshNotifier(Ref ref) {
+    ref.listen(authControllerProvider, (previous, next) => notifyListeners());
+  }
+}
+
+/// Provider for the app-wide [GoRouter].
+///
+/// Route map:
+/// - `/home` — landing screen (tab 1)
+///   - `/home/posts` — sample post list
+///   - `/home/posts/:id` — post detail
+/// - `/todos` — persisted todo list (tab 2)
+/// - `/profile` — signed-in profile (tab 3, auth-gated)
+/// - `/settings` — preferences (tab 4)
+/// - `/login` — full-screen sign-in (root navigator, above the shell)
+///
+/// Gating: only `/profile` requires auth — the rest of the demo stays
+/// explorable. To gate the whole app instead, drop the `startsWith`
+/// check in the redirect below (see the backend guides).
+final appRouterProvider = Provider<GoRouter>((ref) {
+  final refreshNotifier = _AuthRefreshNotifier(ref);
+  ref.onDispose(refreshNotifier.dispose);
+  return GoRouter(
+    initialLocation: '/home',
+    refreshListenable: refreshNotifier,
+    redirect: (context, state) {
+      final signedIn = ref.read(authControllerProvider) != null;
+      final location = state.matchedLocation;
+      if (!signedIn && location.startsWith('/profile')) {
+        return Uri(
+          path: '/login',
+          queryParameters: {'from': state.uri.toString()},
+        ).toString();
+      }
+      if (signedIn && location == '/login') {
+        return state.uri.queryParameters['from'] ?? '/home';
+      }
+      return null;
+    },
+    routes: [
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            AppNavigationShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (context, state) => const HomeScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'posts',
+                    builder: (context, state) => const PostsScreen(),
+                    routes: [
+                      GoRoute(
+                        path: ':id',
+                        builder: (context, state) {
+                          final id = int.tryParse(
+                            state.pathParameters['id'] ?? '',
+                          );
+                          if (id == null) return const PostNotFoundScreen();
+                          return PostDetailScreen(postId: id);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/todos',
+                builder: (context, state) => const TodosScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                builder: (context, state) => const SettingsScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ],
+  );
+});
+
+/// Scaffold hosting the bottom navigation bar around the active branch.
+class AppNavigationShell extends StatelessWidget {
+  /// Creates the navigation shell.
+  const AppNavigationShell({required this.navigationShell, super.key});
+
+  /// The active branch container provided by [StatefulShellRoute].
+  final StatefulNavigationShell navigationShell;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Scaffold(
+      body: navigationShell,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: navigationShell.currentIndex,
+        onDestinationSelected: (index) => navigationShell.goBranch(
+          index,
+          initialLocation: index == navigationShell.currentIndex,
+        ),
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: l10n.homeTab,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.checklist_outlined),
+            selectedIcon: const Icon(Icons.checklist),
+            label: l10n.todosTab,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: l10n.profileTab,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: l10n.settingsTab,
+          ),
+        ],
+      ),
+    );
+  }
+}

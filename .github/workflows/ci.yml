@@ -65,3 +65,22 @@ jobs:
           cache: true
       - run: dart pub get
       - run: dart test -t e2e --reporter expanded
+
+  examples:
+    name: Example apps — analyze & test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        example: [todo_app]
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

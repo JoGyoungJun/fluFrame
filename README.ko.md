@@ -52,6 +52,13 @@ CLI는 먼저 **사용자의** Flutter SDK로 `flutter create --empty`를 실행
 플랫폼 폴더가 항상 설치된 Flutter 버전과 일치합니다 — 템플릿의 `lib/`,
 `test/`, 설정 파일을 덮어쓰고 패키지명 토큰을 치환합니다.
 
+## 예제
+
+`fluframe create`로 생성한 뒤 문서화된 컨벤션 그대로 확장한 실제 앱들:
+
+- [`examples/todo_app`](examples/todo_app) — 새 기능 모듈+탭으로 추가된
+  영속 투두리스트 (freezed, KeyValueStore, AsyncNotifier, l10n, 테스트)
+
 ## 개발 (이 저장소)
 
 ```sh
