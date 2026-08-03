@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+- **`--error-reporting sentry`**: wires sentry_flutter into the
+  template's error hooks with DSN-guarded initialization (empty
+  `SENTRY_DSN` keeps Sentry disabled, so fresh apps run untouched).
+  Stackable with `--backend`, e.g.
+  `fluframe create my_app --backend supabase --error-reporting sentry`.
+
 ## 0.10.0
 
 - Template: **Japanese localization** (full `app_ja.arb` + language
