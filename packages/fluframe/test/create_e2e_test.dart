@@ -114,7 +114,7 @@ void main() {
   );
 
   test(
-    'supabase + sentry variant passes flutter analyze and flutter test',
+    'fully-stacked variant (supabase+sentry+amplitude) passes checks',
     () async {
       final sync = await Process.run(
         'dart',
@@ -142,6 +142,7 @@ void main() {
         outputDirectory: temp.path,
         backend: 'supabase',
         errorReporting: 'sentry',
+        analytics: 'amplitude',
         platforms: const ['android', 'web'],
       );
       expect(code, 0);
@@ -186,6 +187,22 @@ void main() {
       expect(
         File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
         contains('sentry_flutter'),
+      );
+      expect(
+        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
+        contains('amplitude_flutter'),
+      );
+      expect(
+        File(
+          p.join(
+            projectPath,
+            'lib',
+            'core',
+            'analytics',
+            'analytics_service.dart',
+          ),
+        ).readAsStringSync(),
+        contains('AmplitudeAnalyticsService'),
       );
 
       final analyze = await Process.run(

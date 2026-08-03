@@ -419,6 +419,18 @@ version: 0.1.0+1
       },
     );
 
+    test('an unknown analytics service is a usage error', () async {
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        analytics: 'nope',
+      );
+
+      expect(code, 64);
+      expect(calls, isEmpty);
+    });
+
     test('an unknown backend is a usage error', () async {
       final code = await generator.generate(
         name: 'demo_app',

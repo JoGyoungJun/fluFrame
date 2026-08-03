@@ -12,10 +12,7 @@ class SupabaseAuthRepository implements AuthRepository {
   supabase.SupabaseClient get _client => supabase.Supabase.instance.client;
 
   @override
-  Future<User> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<User> signIn({required String email, required String password}) async {
     try {
       final response = await _client.auth.signInWithPassword(
         email: email,

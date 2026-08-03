@@ -98,10 +98,12 @@ class ProjectGenerator {
     StringSink? log,
     Map<String, BackendAddon>? addons,
     Map<String, BackendAddon>? errorAddons,
+    Map<String, BackendAddon>? analytics,
   }) : _runProcess = runProcess ?? _defaultRunProcess,
        _log = log ?? stdout,
        _addons = addons ?? backendAddons,
-       _errorAddons = errorAddons ?? errorReportingAddons;
+       _errorAddons = errorAddons ?? errorReportingAddons,
+       _analytics = analytics ?? analyticsAddons;
 
   /// Root of the template to copy from.
   final Directory templateDirectory;
@@ -110,6 +112,7 @@ class ProjectGenerator {
   final StringSink _log;
   final Map<String, BackendAddon> _addons;
   final Map<String, BackendAddon> _errorAddons;
+  final Map<String, BackendAddon> _analytics;
 
   /// Generates the project and returns a process exit code.
   Future<int> generate({
@@ -119,6 +122,7 @@ class ProjectGenerator {
     String? description,
     String? backend,
     String? errorReporting,
+    String? analytics,
     List<String> platforms = const [
       'android',
       'ios',
@@ -151,6 +155,19 @@ class ProjectGenerator {
         _log.writeln(
           'Unknown error-reporting service "$errorReporting". '
           'Available: ${_errorAddons.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+    final BackendAddon? analyticsAddon;
+    if (analytics == null) {
+      analyticsAddon = null;
+    } else {
+      analyticsAddon = _analytics[analytics];
+      if (analyticsAddon == null) {
+        _log.writeln(
+          'Unknown analytics service "$analytics". '
+          'Available: ${_analytics.keys.join(', ')}.',
         );
         return ExitCode.usage.code;
       }
@@ -199,7 +216,7 @@ class ProjectGenerator {
     _log.writeln('Applying the fluFrame template...');
     _applyOverlay(targetPath, name: name, description: description);
 
-    for (final selected in [addon, reporting]) {
+    for (final selected in [addon, reporting, analyticsAddon]) {
       if (selected == null) continue;
       _log.writeln('Applying the ${selected.name} addon...');
       final addonExit = await _applyBackendAddon(
@@ -260,6 +277,7 @@ class ProjectGenerator {
     for (final note in [
       ...?addon?.postCreateNotes,
       ...?reporting?.postCreateNotes,
+      ...?analyticsAddon?.postCreateNotes,
     ]) {
       _log.writeln('  * $note');
     }
@@ -306,7 +324,9 @@ class ProjectGenerator {
         );
         return ExitCode.software.code;
       }
-      final content = file.readAsStringSync();
+      // Normalize CRLF so multi-line anchors match regardless of how git
+      // checked the template out on this machine.
+      final content = file.readAsStringSync().replaceAll('\r\n', '\n');
       final anchor = rewriteTemplateContent(patch.anchor, projectName: name);
       if (!content.contains(anchor)) {
         _log.writeln(
