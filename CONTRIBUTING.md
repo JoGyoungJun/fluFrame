@@ -4,6 +4,19 @@ Thanks for your interest in contributing! fluFrame aims to be the fastest way
 to start a production-quality Flutter app, and every contribution — bug
 reports, docs, translations, code — helps.
 
+## Where to start
+
+New here? The fastest route in:
+
+1. Read [docs/architecture.md](docs/architecture.md) — one page, includes
+   the invariants that CI enforces.
+2. Pick something labeled
+   [good first issue](https://github.com/JoGyoungJun/fluFrame/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+   — each one states its acceptance criteria and exactly which files are
+   involved.
+3. Generate yourself a playground: `dart run bin/fluframe.dart create
+   sandbox -o /tmp` from `packages/fluframe` uses your local checkout.
+
 ## Ground rules
 
 - Be kind. We follow the [Code of Conduct](CODE_OF_CONDUCT.md).
