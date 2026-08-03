@@ -1,3 +1,4 @@
+import 'package:fluframe_app/core/analytics/analytics_service.dart';
 import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
 import 'package:fluframe_app/features/auth/presentation/login_screen.dart';
 import 'package:fluframe_app/features/auth/presentation/profile_screen.dart';
@@ -36,7 +37,8 @@ class _AuthRefreshNotifier extends ChangeNotifier {
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshNotifier = _AuthRefreshNotifier(ref);
   ref.onDispose(refreshNotifier.dispose);
-  return GoRouter(
+  final analytics = ref.watch(analyticsServiceProvider);
+  final router = GoRouter(
     initialLocation: '/home',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
@@ -108,6 +110,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  // Automatic screen tracking: the delegate fires on every navigation,
+  // including shell-branch tab switches. Consecutive duplicates (e.g.
+  // redirects settling) are collapsed.
+  var lastReportedPath = '';
+  void reportScreenView() {
+    final path = router.routerDelegate.currentConfiguration.uri.path;
+    if (path == lastReportedPath) return;
+    lastReportedPath = path;
+    analytics.logScreenView(path);
+  }
+
+  router.routerDelegate.addListener(reportScreenView);
+  ref.onDispose(() => router.routerDelegate.removeListener(reportScreenView));
+  return router;
 });
 
 /// Scaffold hosting the bottom navigation bar around the active branch.
