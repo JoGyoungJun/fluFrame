@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        example: [todo_app]
+        example: [todo_app, weather_app]
     defaults:
       run:
         working-directory: examples/${{ matrix.example }}
