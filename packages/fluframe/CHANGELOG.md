@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- **`--backend supabase`**: generate an app with Supabase Auth already
+  wired into the auth seam — `SupabaseAuthRepository`, env-based
+  configuration (`SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` via
+  `--dart-define-from-file`), and setup notes. The generated app's test
+  suite stays green and offline regardless of backend.
+- Backend addon mechanism (ADR 0001): dependencies via `flutter pub add`,
+  bundled addon files, and anchored patches that fail loudly if the
+  template and addon ever drift apart.
+
 ## 0.3.0
 
 - **Backend-neutral auth scaffold** in the generated app (zero new
