@@ -12,6 +12,12 @@ fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_ap
 
 [English README](README.md)
 
+| 홈 | 샘플 REST 기능 | 테마 & 4개 언어 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/home-light.png" width="240" alt="생성된 앱의 홈 탭"> | <img src="docs/assets/posts-light.png" width="240" alt="REST로 불러온 게시글 목록"> | <img src="docs/assets/settings-dark.png" width="240" alt="다크 모드의 설정 탭"> |
+
+`fluframe create` 결과물 그대로이며, 손댄 곳이 없습니다.
+
 ## 빠른 시작
 
 ```sh
