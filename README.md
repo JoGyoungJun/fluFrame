@@ -13,6 +13,12 @@ together and passing.
 
 [한국어 README](README.ko.md)
 
+| Home | Sample REST feature | Theming & 4 locales |
+|:---:|:---:|:---:|
+| <img src="docs/assets/home-light.png" width="240" alt="Home tab of a generated app"> | <img src="docs/assets/posts-light.png" width="240" alt="Post list loaded over REST"> | <img src="docs/assets/settings-dark.png" width="240" alt="Settings tab in dark mode"> |
+
+Straight out of `fluframe create` — no edits.
+
 ## Quick start
 
 ```sh

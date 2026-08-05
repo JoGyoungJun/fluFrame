@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0
+
+- Template: the settings **language picker no longer clips its labels on
+  phone-width screens**. Four segments plus a selected-state check icon
+  overflowed a 390pt viewport, wrapping "English" mid-word; the picker now
+  uses the same wrapping chips as the theme-colour section. Regression test
+  pins the labels to a single line at phone width.
+- Template: `go_router` moved to `^17.4.0`, and the committed lockfiles
+  (template and both examples) were refreshed — this drops the **retracted
+  `build_daemon` 4.1.3** that generated apps previously inherited, and picks
+  up `built_value` 8.12.7.
+- Docs: README (English and Korean) and the pub.dev page now show
+  screenshots of a generated app — home, the sample REST feature, and the
+  settings tab in dark mode.
+
 ## 1.0.0
 
 **Stability declaration** — fluframe now follows semantic versioning
