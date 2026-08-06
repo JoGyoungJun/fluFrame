@@ -16,6 +16,13 @@ class UpgradeCommand extends Command<int> {
         negatable: false,
         help: 'Write the merged results (default is a dry-run report).',
       )
+      ..addFlag(
+        'force',
+        negatable: false,
+        help:
+            'Apply even when the app is not a clean git working tree '
+            '(--apply keeps no backup, so there would be no way back).',
+      )
       ..addOption(
         'from',
         help:
@@ -53,6 +60,7 @@ class UpgradeCommand extends Command<int> {
       projectDir: io.Directory(results['project-dir'] as String),
       fromOverride: results['from'] as String?,
       apply: results['apply'] as bool,
+      force: results['force'] as bool,
     );
   }
 }

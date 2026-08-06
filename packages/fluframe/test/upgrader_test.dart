@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fluframe/src/upgrader.dart';
 import 'package:fluframe/src/version.dart';
+import 'package:io/io.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -27,6 +28,28 @@ void main() {
         oldBundleProvider: (version) async => oldTemplates,
         log: log,
       );
+    }
+
+    /// Turns [dir] into a git repository with a clean working tree, which
+    /// is what `--apply` requires when `--force` is not passed.
+    Future<void> gitCommitAll(Directory dir) async {
+      Future<void> git(List<String> arguments) async {
+        final result = await Process.run(
+          'git',
+          arguments,
+          workingDirectory: dir.path,
+          runInShell: true,
+        );
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+      }
+
+      await git(['init', '--quiet']);
+      await git(['config', 'core.autocrlf', 'false']);
+      await git(['config', 'user.email', 'test@example.com']);
+      await git(['config', 'user.name', 'fluframe test']);
+      await git(['config', 'commit.gpgsign', 'false']);
+      await git(['add', '-A']);
+      await git(['commit', '--quiet', '-m', 'before upgrade']);
     }
 
     setUp(() {
@@ -87,7 +110,11 @@ void main() {
     });
 
     test('--apply writes clean merges and additions, keeps removals', () async {
-      final code = await upgrader().run(projectDir: project, apply: true);
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
 
       expect(code, 0, reason: log.toString());
       expect(
@@ -115,7 +142,11 @@ void main() {
         p.join(project.path, 'lib', 'a.dart'),
       ).writeAsStringSync('alpha local edit\n');
 
-      await upgrader().run(projectDir: project, apply: true);
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
 
       final content = File(
         p.join(project.path, 'lib', 'a.dart'),
@@ -124,6 +155,99 @@ void main() {
       expect(content, contains('<<<<<<<'));
       expect(content, contains('alpha local edit'));
       expect(content, contains('alpha v2'));
+      // Unresolved conflicts are a failure, not a success (CI must see it).
+      expect(code, ExitCode.software.code, reason: log.toString());
+      // And the version must NOT advance, or the `already up to date`
+      // short-circuit would seal off the re-run that resolves them.
+      final meta = File(
+        p.join(project.path, '.fluframe.json'),
+      ).readAsStringSync();
+      expect(meta, contains('"cliVersion":"0.1.0"'));
+      expect(meta, isNot(contains(cliVersion)));
+
+      // Re-running after resolving the markers must still do the upgrade.
+      File(
+        p.join(project.path, 'lib', 'a.dart'),
+      ).writeAsStringSync('alpha v2\n');
+      final second = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+      expect(second, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, '.fluframe.json')).readAsStringSync(),
+        contains('"cliVersion": "$cliVersion"'),
+      );
+    });
+
+    test('preserves non-ASCII content through a clean merge', () async {
+      // Regression: the merged bytes used to travel back through a pipe
+      // decoded with the OS codepage (cp949 on Korean Windows), which
+      // destroyed every multi-byte character — and the closing quote with
+      // it, leaving `Unterminated string literal`.
+      const korean = "  expect(find.text('한국어'), findsOneWidget);\n";
+      const japanese = "  expect(find.text('日本語'), findsOneWidget);\n";
+      // base == ours, upstream appends a line -> clean merge path.
+      writeFile(p.join(oldTemplates.path, 'app'), 'test/l.dart', korean);
+      writeFile(newTemplate.path, 'test/l.dart', korean + japanese);
+      writeFile(project.path, 'test/l.dart', korean);
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      final merged = File(
+        p.join(project.path, 'test', 'l.dart'),
+      ).readAsStringSync();
+      expect(merged, contains('한국어'));
+      expect(merged, contains('日本語'));
+      expect(merged, isNot(contains('?')));
+      expect(merged, isNot(contains('�')));
+    });
+
+    test('--apply refuses when the app is not a git repository', () async {
+      final code = await upgrader().run(projectDir: project, apply: true);
+
+      expect(code, ExitCode.usage.code, reason: log.toString());
+      expect(log.toString(), contains('not a git repository'));
+      // Nothing was written.
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha\n',
+      );
+      expect(File(p.join(project.path, 'lib', 'b.dart')).existsSync(), isFalse);
+    });
+
+    test('--apply refuses on a dirty git working tree', () async {
+      await gitCommitAll(project);
+      File(
+        p.join(project.path, 'lib', 'a.dart'),
+      ).writeAsStringSync('alpha uncommitted\n');
+
+      final code = await upgrader().run(projectDir: project, apply: true);
+
+      expect(code, ExitCode.usage.code, reason: log.toString());
+      expect(log.toString(), contains('uncommitted changes'));
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha uncommitted\n',
+      );
+    });
+
+    test('--apply proceeds on a clean git working tree', () async {
+      await gitCommitAll(project);
+
+      final code = await upgrader().run(projectDir: project, apply: true);
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
     });
 
     test('already up to date short-circuits', () async {

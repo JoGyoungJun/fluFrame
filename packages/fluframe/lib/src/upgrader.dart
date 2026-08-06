@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/bundle_archive.dart';
+import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/version.dart';
 import 'package:io/io.dart';
@@ -36,7 +37,7 @@ class Upgrader {
     RunProcess? runProcess,
     StringSink? log,
   }) : _oldBundle = oldBundleProvider ?? downloadPublishedBundle,
-       _runProcess = runProcess ?? _defaultRunProcess,
+       _runProcess = runProcess ?? defaultRunProcess,
        _log = log ?? stdout;
 
   /// The currently installed `templates/app` directory.
@@ -46,25 +47,16 @@ class Upgrader {
   final RunProcess _runProcess;
   final StringSink _log;
 
-  static Future<ProcessResult> _defaultRunProcess(
-    String executable,
-    List<String> arguments, {
-    String? workingDirectory,
-  }) {
-    return Process.run(
-      executable,
-      arguments,
-      workingDirectory: workingDirectory,
-      runInShell: true,
-    );
-  }
-
   /// Runs the upgrade; dry-run unless [apply] is set. Returns an exit
   /// code.
+  ///
+  /// [force] skips the "can this be undone" gate that [apply] otherwise
+  /// requires (a git repository with a clean working tree).
   Future<int> run({
     required Directory projectDir,
     String? fromOverride,
     bool apply = false,
+    bool force = false,
   }) async {
     final metaFile = File(p.join(projectDir.path, '.fluframe.json'));
     var meta = const <String, dynamic>{};
@@ -94,6 +86,28 @@ class Upgrader {
     final backend = meta['backend'] as String?;
     final errorReporting = meta['errorReporting'] as String?;
     final analytics = meta['analytics'] as String?;
+
+    // Both gates run before the bundle download: being told "commit first"
+    // after a minute of network I/O is a worse experience than being told
+    // immediately.
+    final gitAvailable = await _probeGit();
+    if (apply && !gitAvailable) {
+      _log.writeln(
+        'git not found on PATH — fluframe merges template updates with '
+        'git merge-file. Install git (https://git-scm.com/downloads), or '
+        'drop --apply to see the differences as a report.',
+      );
+      return ExitCode.unavailable.code;
+    }
+    if (apply && !force && !await _canUndo(projectDir)) {
+      return ExitCode.usage.code;
+    }
+    if (!gitAvailable) {
+      _log.writeln(
+        'git not found on PATH — reporting differences only; install git '
+        'to let fluframe merge them (--apply is disabled).',
+      );
+    }
 
     _log.writeln('Fetching the fluframe $from template bundle...');
     final oldTemplates = await _oldBundle(from);
@@ -131,14 +145,6 @@ class Upgrader {
     final theirsDir = await bare(currentTemplate, 'theirs');
     if (baseDir == null || theirsDir == null) return ExitCode.software.code;
 
-    final gitAvailable = await _probeGit();
-    if (!gitAvailable) {
-      _log.writeln(
-        'git not found on PATH — reporting differences only; install git '
-        'to let fluframe merge them (--apply is disabled).',
-      );
-    }
-
     final results = <String, UpgradeStatus>{};
     final merged = <String, String>{};
     var unchanged = 0;
@@ -174,7 +180,9 @@ class Upgrader {
         theirs: theirs,
       );
       results[relative] = status;
-      merged[relative] = content;
+      // A hard merge failure yields no content; leave the file untouched
+      // rather than overwriting it with nothing.
+      if (content != null) merged[relative] = content;
     }
 
     for (final relative in _walk(baseDir)) {
@@ -185,7 +193,7 @@ class Upgrader {
 
     _report(from, results, unchanged, apply: apply);
 
-    if (apply && gitAvailable) {
+    if (apply) {
       for (final entry in results.entries) {
         final content = merged[entry.key];
         if (content == null) continue; // removedUpstream: never delete.
@@ -193,19 +201,33 @@ class Upgrader {
           ..parent.createSync(recursive: true)
           ..writeAsStringSync(content);
       }
-      meta = {...meta, 'cliVersion': cliVersion};
-      metaFile.writeAsStringSync(
-        '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
-      );
+      final conflicts = results.values
+          .where((status) => status == UpgradeStatus.conflict)
+          .length;
+      // Record the new version only once the tree actually matches it.
+      // Otherwise the `from == cliVersion` short-circuit above locks the
+      // user out of re-running after they resolve the markers, and the
+      // only way back is hand-editing .fluframe.json.
+      if (conflicts == 0) {
+        meta = {...meta, 'cliVersion': cliVersion};
+        metaFile.writeAsStringSync(
+          '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
+        );
+      }
       _log
         ..writeln()
-        ..writeln('Applied. Next steps:')
-        ..writeln('  flutter pub get && dart fix --apply && flutter test')
-        ..writeln(
-          '  resolve any files marked CONFLICT (standard git markers)',
-        );
-    } else if (apply && !gitAvailable) {
-      return ExitCode.unavailable.code;
+        ..writeln('Applied. Next steps:');
+      if (conflicts > 0) {
+        _log
+          ..writeln(
+            '  resolve $conflicts file(s) marked CONFLICT '
+            '(standard git markers)',
+          )
+          ..writeln('  then re-run: fluframe upgrade --apply')
+          ..writeln('  (.fluframe.json stays at $from until they are gone)');
+        return ExitCode.software.code;
+      }
+      _log.writeln('  flutter pub get && dart fix --apply && flutter test');
     } else if (results.isNotEmpty) {
       _log.writeln('\nDry run — re-run with --apply to write these changes.');
     }
@@ -221,7 +243,47 @@ class Upgrader {
     }
   }
 
-  Future<(UpgradeStatus, String)> _mergeFile({
+  /// Whether `--apply` can be undone.
+  ///
+  /// `--apply` overwrites files in place and keeps no backup, so the user
+  /// needs their own way back: a git repository with a clean working
+  /// tree. `flutter create` does not run `git init`, so a freshly
+  /// generated app fails this check until the user makes their first
+  /// commit.
+  Future<bool> _canUndo(Directory projectDir) async {
+    final ProcessResult status;
+    try {
+      status = await _runProcess(
+        'git',
+        ['status', '--porcelain'],
+        workingDirectory: projectDir.path,
+      );
+    } on ProcessException catch (error) {
+      _log.writeln('Could not inspect ${projectDir.path}: ${error.message}');
+      return false;
+    }
+    if (status.exitCode != 0) {
+      _log.writeln(
+        'This app is not a git repository, so --apply could not be undone.\n'
+        '  git init && git add -A && git commit -m "before fluframe upgrade"\n'
+        'then re-run, or pass --force to skip this check.',
+      );
+      return false;
+    }
+    if (status.stdout.toString().trim().isNotEmpty) {
+      _log.writeln(
+        'Working tree has uncommitted changes, so --apply could not be '
+        'undone. Commit or stash them first, or pass --force.',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /// Three-way merges one file, returning its new content — or `null`
+  /// when git could not merge it at all, in which case the caller must
+  /// leave the user's copy alone.
+  Future<(UpgradeStatus, String?)> _mergeFile({
     required String base,
     required String ours,
     required String theirs,
@@ -232,9 +294,11 @@ class Upgrader {
       final baseFile = File(p.join(dir.path, 'base'))..writeAsStringSync(base);
       final theirsFile = File(p.join(dir.path, 'theirs'))
         ..writeAsStringSync(theirs);
+      // No `-p`: git writes the merged result back into `oursFile`, so the
+      // bytes never round-trip through a pipe — where they would be
+      // re-encoded and, on a non-UTF-8 console codepage, corrupted.
       final result = await _runProcess('git', [
         'merge-file',
-        '-p',
         '-L',
         'yours',
         '-L',
@@ -245,7 +309,17 @@ class Upgrader {
         baseFile.path,
         theirsFile.path,
       ]);
-      final content = result.stdout.toString();
+      // git merge-file exits with the conflict count (clamped to 127), or
+      // negatively on a hard error such as binary input. Anything outside
+      // 0..127 means nothing was merged.
+      if (result.exitCode < 0 || result.exitCode > 127) {
+        _log.writeln(
+          'git merge-file failed (${result.stderr.toString().trim()}) — '
+          'leaving this file untouched.',
+        );
+        return (UpgradeStatus.conflict, null);
+      }
+      final content = oursFile.readAsStringSync().replaceAll('\r\n', '\n');
       return result.exitCode == 0
           ? (UpgradeStatus.cleanMerge, content)
           : (UpgradeStatus.conflict, content);

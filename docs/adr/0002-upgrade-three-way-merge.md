@@ -1,6 +1,7 @@
 # 0002 — Upgrades via three-way merge against reconstructed bases
 
-- **Status**: Accepted
+- **Status**: Accepted (amended 2026-08-06 — see *Amendment: apply
+  safety*)
 - **Date**: 2026-08-03
 - **Related**: design spec 002, issues #80 #81, milestone v0.14.0
 
@@ -51,3 +52,26 @@ We will implement `fluframe upgrade` as a per-file **three-way merge**:
   files need attention.
 - `cliVersion` moves to `lib/src/version.dart`; release tooling and
   docs update their sed targets once.
+
+## Amendment: apply safety (2026-08-06)
+
+Shipping 1.1.0 exposed three ways `--apply` could damage an app without
+saying so. The merge strategy above is unchanged; these constrain it.
+
+- **The merged bytes never cross a pipe.** `git merge-file` is invoked
+  without `-p`, so git writes the result into the OURS temp file and
+  fluframe reads it back. Reading merged content from stdout meant it was
+  decoded with the OS codepage (cp949 on Korean Windows), which silently
+  destroyed every non-ASCII character in the user's files — and, on a
+  hard merge error, overwrote them with empty output.
+- **`--apply` requires an undo.** It rewrites files in place and keeps no
+  backup, while `flutter create` does not `git init`. So `--apply`
+  refuses unless the app is a git repository with a clean working tree.
+  `--force` opts out for users who have their own safety net (a container,
+  a copy, an editor's local history).
+- **`.fluframe.json` advances only on a fully clean result.** Recording
+  the new version while conflict markers are still in the tree made the
+  `already up to date` short-circuit permanent: the only escape was
+  hand-editing the metadata. Conflicts now leave the recorded version
+  alone and exit non-zero, so a re-run after resolution works and CI can
+  see the failure.
