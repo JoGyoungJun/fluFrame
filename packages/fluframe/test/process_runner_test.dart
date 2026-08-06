@@ -66,7 +66,10 @@ void main() => stdout.write(Directory.current.path);
       expect(result.exitCode, 0, reason: result.stderr.toString());
       expect(
         p.canonicalize(result.stdout.toString().trim()),
-        p.canonicalize(nested.path),
+        // resolveSymbolicLinksSync, not canonicalize alone: macOS reports
+        // the temp dir as /private/var while systemTemp says /var, and
+        // canonicalize normalizes without following links.
+        p.canonicalize(nested.resolveSymbolicLinksSync()),
       );
     });
   });
