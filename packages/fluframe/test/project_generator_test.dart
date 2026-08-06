@@ -51,8 +51,18 @@ import 'package:fluframe_app/app/app.dart';
       final rewritable = {'.dart', '.arb', '.yaml', '.yml', '.json', '.md'};
       final leaks = <String>[];
 
-      for (final root in ['../../template/lib', '../../template/test']) {
-        for (final entity in Directory(root).listSync(recursive: true)) {
+      for (final root in [
+        '../../template/lib',
+        '../../template/test',
+        // Ships from the template root rather than a source tree, and its
+        // entire subject is "this app", so it is the likeliest place to
+        // write the template's own name by hand.
+        '../../template/AGENTS.md',
+      ]) {
+        final entities = FileSystemEntity.isDirectorySync(root)
+            ? Directory(root).listSync(recursive: true)
+            : <FileSystemEntity>[File(root)];
+        for (final entity in entities) {
           if (entity is! File) continue;
           if (!rewritable.contains(p.extension(entity.path))) continue;
           final rewritten = rewriteTemplateContent(
@@ -124,10 +134,19 @@ version: 0.1.0+1
       File(
         p.join(templateDir.path, 'test', 'app_test.dart'),
       ).writeAsStringSync('// FluFrame App smoke test\n');
-      // Bundled layout stores .gitignore dot-less.
+      File(
+        p.join(templateDir.path, 'AGENTS.md'),
+      ).writeAsStringSync('# FluFrame App\n\nPackage: fluframe_app\n');
+      // Bundled layout stores dot-prefixed entries dot-less.
       File(
         p.join(templateDir.path, 'gitignore'),
       ).writeAsStringSync('env/*.local.json\n');
+      Directory(
+        p.join(templateDir.path, 'github', 'workflows'),
+      ).createSync(recursive: true);
+      File(
+        p.join(templateDir.path, 'github', 'workflows', 'ci.yml'),
+      ).writeAsStringSync('name: CI\n');
       calls = [];
       log.clear();
       generator = ProjectGenerator(
@@ -199,6 +218,53 @@ version: 0.1.0+1
       );
       expect(gitignore.existsSync(), isTrue);
       expect(gitignore.readAsStringSync(), contains('env/*.local.json'));
+    });
+
+    test('restores the dot-less bundled github dir as .github', () async {
+      // Without the remap the generated app ships no CI at all: the bundle
+      // cannot carry a literal `.github`, because pub would then register
+      // the template's workflows on the repository publishing the CLI.
+      await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      final workflow = File(
+        p.join(temp.path, 'demo_app', '.github', 'workflows', 'ci.yml'),
+      );
+      expect(workflow.existsSync(), isTrue, reason: log.toString());
+      expect(workflow.readAsStringSync(), contains('name: CI'));
+      expect(
+        Directory(p.join(temp.path, 'demo_app', 'github')).existsSync(),
+        isFalse,
+        reason: 'the bundled spelling must not survive into the app',
+      );
+    });
+
+    test('every dot-prefixed overlay entry has a bundled name', () {
+      // The bundle cannot contain dotfiles that tooling would act on, so
+      // adding e.g. `.vscode` to overlayEntries without a remap silently
+      // drops it from every published release.
+      expect(
+        overlayEntries.where((entry) => entry.startsWith('.')),
+        everyElement(isIn(bundledOverlayNames.keys)),
+      );
+    });
+
+    test('ships AGENTS.md with its tokens rewritten', () async {
+      await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      final agents = File(
+        p.join(temp.path, 'demo_app', 'AGENTS.md'),
+      ).readAsStringSync();
+      expect(agents, contains('# Demo App'));
+      expect(agents, contains('Package: demo_app'));
+      expect(agents, isNot(contains('fluframe_app')));
     });
 
     test('warns about a missing optional overlay entry', () async {

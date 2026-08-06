@@ -27,7 +27,20 @@ enum UpgradeStatus {
   /// Existed in the base template but the user removed or renamed it;
   /// reported only, never restored (unless `--restore-deleted`).
   deletedLocally,
+
+  /// One of the three sides holds no UTF-8 text (a binary asset, or a
+  /// file saved in a legacy encoding), so it cannot be diffed or merged;
+  /// reported and skipped, never written.
+  unreadable,
 }
+
+/// One side of a merge, loaded from disk.
+///
+/// `text` has every line ending normalized to `\n` so the three sides are
+/// compared and merged on content alone; `lineEnding` is what the bytes on
+/// disk actually used, so a merged result can be written back in the style
+/// the file already had.
+typedef _Loaded = ({String text, String lineEnding});
 
 /// Applies template updates to an existing generated app via a
 /// per-file three-way merge (ADR 0002): BASE = the bundle of the
@@ -68,6 +81,20 @@ class Upgrader {
     bool restoreDeleted = false,
   }) async {
     final metaFile = File(p.join(projectDir.path, '.fluframe.json'));
+    // Neither marker means this is not an app fluframe can upgrade, and
+    // --apply would unpack a whole template into whatever directory the
+    // shell happened to be in. --from stays usable for pre-0.14.0 apps:
+    // they carry no metadata, but they do have a pubspec.yaml.
+    if (!metaFile.existsSync() &&
+        !File(p.join(projectDir.path, 'pubspec.yaml')).existsSync()) {
+      _log.writeln(
+        '${p.normalize(projectDir.absolute.path)} does not look like a '
+        'generated app: no .fluframe.json and no pubspec.yaml. Run '
+        'fluframe upgrade from the root of the app, or point at it with '
+        '--project-dir.',
+      );
+      return ExitCode.usage.code;
+    }
     var meta = const <String, dynamic>{};
     if (metaFile.existsSync()) {
       meta = jsonDecode(metaFile.readAsStringSync()) as Map<String, dynamic>;
@@ -185,19 +212,41 @@ class Upgrader {
 
     final results = <String, UpgradeStatus>{};
     final merged = <String, String>{};
-    var unchanged = 0;
+    var upToDate = 0;
+    var localEdits = 0;
 
     final theirFiles = _walk(theirsDir);
     for (final relative in theirFiles) {
-      final theirs = _readNormalized(File(p.join(theirsDir.path, relative)));
+      final theirsFile = File(p.join(theirsDir.path, relative));
       final baseFile = File(p.join(baseDir.path, relative));
       final ourFile = File(p.join(projectDir.path, relative));
-      final base = baseFile.existsSync() ? _readNormalized(baseFile) : null;
-      final ours = ourFile.existsSync() ? _readNormalized(ourFile) : null;
+      final theirs = _load(theirsFile);
+      final base = baseFile.existsSync() ? _load(baseFile) : null;
+      final ours = ourFile.existsSync() ? _load(ourFile) : null;
 
-      if (base == theirs) {
-        unchanged++;
-        continue; // Nothing changed upstream; local state wins untouched.
+      // A side that exists but cannot be decoded has to be skipped: it can
+      // be neither compared nor rewritten. Skipped per file, though — one
+      // binary asset used to take the whole run down with an uncaught
+      // FormatException out of readAsStringSync.
+      if (theirs == null ||
+          (baseFile.existsSync() && base == null) ||
+          (ourFile.existsSync() && ours == null)) {
+        results[relative] = UpgradeStatus.unreadable;
+        continue;
+      }
+
+      if (base?.text == theirs.text) {
+        // Nothing changed upstream, so there is nothing to merge in and
+        // the local copy stands either way. Which one it is still has to
+        // be looked at: counting these as "unchanged" without opening the
+        // user's file reported a fact about the two bundles as though it
+        // were one about their app.
+        if (ours?.text == theirs.text) {
+          upToDate++;
+        } else {
+          localEdits++;
+        }
+        continue;
       }
       if (ours == null) {
         if (base != null && !restoreDeleted) {
@@ -210,11 +259,11 @@ class Upgrader {
           continue;
         }
         results[relative] = UpgradeStatus.added;
-        merged[relative] = theirs;
+        merged[relative] = _restoreLineEndings(theirs);
         continue;
       }
-      if (ours == theirs) {
-        unchanged++;
+      if (ours.text == theirs.text) {
+        upToDate++;
         continue; // Local already matches the new template.
       }
       if (!gitAvailable) {
@@ -222,14 +271,19 @@ class Upgrader {
         continue;
       }
       final (status, content) = await _mergeFile(
-        base: base ?? '',
-        ours: ours,
-        theirs: theirs,
+        base: base?.text ?? '',
+        ours: ours.text,
+        theirs: theirs.text,
       );
       results[relative] = status;
       // A hard merge failure yields no content; leave the file untouched
       // rather than overwriting it with nothing.
-      if (content != null) merged[relative] = content;
+      if (content != null) {
+        merged[relative] = _restoreLineEndings((
+          text: content,
+          lineEnding: ours.lineEnding,
+        ));
+      }
     }
 
     for (final relative in _walk(baseDir)) {
@@ -238,7 +292,13 @@ class Upgrader {
       results[relative] = UpgradeStatus.removedUpstream;
     }
 
-    _report(from, results, unchanged, apply: apply);
+    _report(
+      from,
+      results,
+      upToDate: upToDate,
+      localEdits: localEdits,
+      apply: apply,
+    );
 
     if (apply) {
       for (final entry in results.entries) {
@@ -405,49 +465,99 @@ class Upgrader {
     ]..sort();
   }
 
-  String _readNormalized(File file) =>
-      file.readAsStringSync().replaceAll('\r\n', '\n');
+  /// Reads [file] as one side of a merge, or `null` when it holds no
+  /// UTF-8 text — see [UpgradeStatus.unreadable].
+  _Loaded? _load(File file) {
+    final String raw;
+    try {
+      raw = file.readAsStringSync();
+    } on FileSystemException {
+      // dart:io wraps a UTF-8 decode failure in a FileSystemException;
+      // FormatException is what the decoder itself throws, so catch both
+      // rather than depend on which layer surfaces it.
+      return null;
+    } on FormatException {
+      return null;
+    }
+    // First terminator wins: a stray CRLF in an otherwise LF file should
+    // not flip the whole file over on write.
+    final newline = raw.indexOf('\n');
+    final crlf = newline > 0 && raw.codeUnitAt(newline - 1) == 0x0d;
+    return (
+      text: raw.replaceAll('\r\n', '\n'),
+      lineEnding: crlf ? '\r\n' : '\n',
+    );
+  }
 
+  /// Puts [file]'s own line terminators back into its normalized text.
+  ///
+  /// Everything is compared and merged as LF, but writing LF back into a
+  /// file the user keeps as CRLF rewrites every line of it — one merged
+  /// hunk turns into a whole-file diff in their next commit.
+  String _restoreLineEndings(_Loaded file) => file.lineEnding == '\n'
+      ? file.text
+      : file.text.replaceAll('\n', file.lineEnding);
+
+  /// Prints the per-file report.
+  ///
+  /// [upToDate] and [localEdits] cover the files that produced no result
+  /// row: the user's copy already matches the current template, or it
+  /// differs from a template that did not change, so the upgrade leaves
+  /// it alone.
   void _report(
     String from,
-    Map<String, UpgradeStatus> results,
-    int unchanged, {
+    Map<String, UpgradeStatus> results, {
+    required int upToDate,
+    required int localEdits,
     required bool apply,
   }) {
     final counts = <UpgradeStatus, int>{};
     for (final status in results.values) {
       counts[status] = (counts[status] ?? 0) + 1;
     }
+    final summary = [
+      'up to date: $upToDate',
+      'your edits kept: $localEdits',
+      'added: ${counts[UpgradeStatus.added] ?? 0}',
+      'merged: ${counts[UpgradeStatus.cleanMerge] ?? 0}',
+      'conflicts: ${counts[UpgradeStatus.conflict] ?? 0}',
+      'removed upstream: ${counts[UpgradeStatus.removedUpstream] ?? 0}',
+      if (counts[UpgradeStatus.deletedLocally] != null)
+        'deleted locally: ${counts[UpgradeStatus.deletedLocally]}',
+      if (counts[UpgradeStatus.unreadable] != null)
+        'unreadable: ${counts[UpgradeStatus.unreadable]}',
+    ];
     _log
       ..writeln()
       ..writeln(
         'Upgrade $from -> $cliVersion (${apply ? 'apply' : 'dry run'})',
       )
-      ..writeln(
-        '  unchanged: $unchanged   '
-        'added: ${counts[UpgradeStatus.added] ?? 0}   '
-        'clean: ${counts[UpgradeStatus.cleanMerge] ?? 0}   '
-        'conflicts: ${counts[UpgradeStatus.conflict] ?? 0}   '
-        'removed upstream: ${counts[UpgradeStatus.removedUpstream] ?? 0}',
-      );
+      ..writeln('  ${summary.join('   ')}');
     final labels = {
       UpgradeStatus.added: '+',
       UpgradeStatus.cleanMerge: '~',
       UpgradeStatus.conflict: '!',
       UpgradeStatus.removedUpstream: '-',
       UpgradeStatus.deletedLocally: '-',
+      UpgradeStatus.unreadable: '?',
     };
     for (final entry in results.entries) {
       final suffix = switch (entry.value) {
         UpgradeStatus.conflict => ' (CONFLICT)',
         UpgradeStatus.removedUpstream => ' (removed upstream - kept)',
         UpgradeStatus.deletedLocally => ' (deleted locally - not restored)',
+        UpgradeStatus.unreadable => ' (not UTF-8 text - skipped)',
         _ => '',
       };
       _log.writeln('  ${labels[entry.value]} ${entry.key}$suffix');
     }
     if (results.isEmpty) {
-      _log.writeln('  Nothing to change — the app already matches.');
+      _log.writeln(
+        localEdits == 0
+            ? '  Nothing to change — the app already matches.'
+            : '  Nothing to change — this template update does not touch '
+                  'the $localEdits file(s) you edited.',
+      );
     }
   }
 }

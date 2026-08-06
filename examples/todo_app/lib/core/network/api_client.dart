@@ -53,6 +53,20 @@ ApiException mapDioException(DioException exception) {
     DioExceptionType.badResponse => ServerException(
       'The server responded with an error.',
       statusCode: exception.response?.statusCode,
+      // The backend's own error envelope. Without it the app can only
+      // ever show the sentence above, however precise the API was, and
+      // `DioException` never reaches the presentation layer to be asked.
+      data: exception.response?.data,
+    ),
+    // Cancellation is the app's own doing and a rejected certificate is a
+    // trust failure — neither is "unexpected". Reporting both as
+    // UnknownApiException sent readers of a crash report hunting for a
+    // bug that was not there.
+    DioExceptionType.cancel => const RequestCancelledException(
+      'The request was cancelled.',
+    ),
+    DioExceptionType.badCertificate => const CertificateException(
+      'The server certificate could not be verified.',
     ),
     _ => UnknownApiException(exception.message ?? 'Unexpected error.'),
   };

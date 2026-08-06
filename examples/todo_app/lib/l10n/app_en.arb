@@ -67,5 +67,17 @@
   "languageSection": "Language",
   "languageSystem": "System",
   "languageEnglish": "English",
-  "languageKorean": "한국어"
+  "languageKorean": "한국어",
+  "routeNotFoundTitle": "Page not found",
+  "routeNotFoundMessage": "No screen matches {location}.",
+  "@routeNotFoundMessage": {
+    "placeholders": {
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "routeNotFoundAction": "Go to home",
+  "presetTeal": "Teal",
+  "languageJapanese": "Japanese"
 }

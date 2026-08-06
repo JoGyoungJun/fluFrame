@@ -6,9 +6,14 @@ import 'package:weather_app/features/posts/data/posts_repository.dart';
 import 'package:weather_app/features/posts/domain/post.dart';
 
 /// Offline fallback decorator over [PostsRepository]: every successful
-/// fetch is cached in the [KeyValueStore]; when the network fails with an
-/// [ApiException], the last cached response is served instead. Without a
-/// cache the failure propagates untouched.
+/// fetch is cached in the [KeyValueStore]; when the device cannot reach
+/// the server ([NetworkException]), the last cached response is served
+/// instead. Without a cache the failure propagates untouched.
+///
+/// Only [NetworkException] falls back. A [ServerException] means the
+/// server answered — a 404 for a deleted post, a 500 for a broken
+/// endpoint — and serving a stale copy would hide it: the 404 branch in
+/// `PostDetailScreen` was unreachable for exactly that reason.
 class CachedPostsRepository implements PostsRepository {
   /// Wraps [inner], persisting responses in [store].
   CachedPostsRepository(PostsRepository inner, KeyValueStore store)
@@ -29,7 +34,7 @@ class CachedPostsRepository implements PostsRepository {
         jsonEncode([for (final post in posts) post.toJson()]),
       );
       return posts;
-    } on ApiException {
+    } on NetworkException {
       final cached = await _readCache();
       if (cached == null) rethrow;
       return cached;
@@ -40,7 +45,7 @@ class CachedPostsRepository implements PostsRepository {
   Future<Post> fetchPost(int id) async {
     try {
       return await _inner.fetchPost(id);
-    } on ApiException {
+    } on NetworkException {
       final cached = await _readCache();
       if (cached != null) {
         for (final post in cached) {

@@ -1,8 +1,10 @@
 @Tags(['e2e'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/host_capabilities.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_source.dart';
@@ -162,16 +164,41 @@ void main() {
         ).existsSync(),
         isTrue,
       );
-      final mainContent = File(
+      final mainContent = _readNormalized(
         p.join(projectPath, 'lib', 'main.dart'),
-      ).readAsStringSync();
+      );
+      // Every SDK initializer has to land AFTER this line. It is where
+      // uncaught errors start being reported, and it runs before runApp —
+      // so anything that throws above it escapes into the root zone with
+      // no handler and no widget tree to show it in.
+      final hooksAt = mainContent.indexOf(
+        'platformDispatcher.onError = onPlatformError;',
+      );
+      expect(
+        hooksAt,
+        isNonNegative,
+        reason: 'the template error hooks are the anchor for both addons',
+      );
       // The SDK is given the app runner, which is what installs
       // RunZonedGuardedIntegration and chains its handlers onto the
       // template's. It replaces the hand-rolled Sentry.captureException
       // calls that used to be patched into error_handlers.dart, reported
       // every error as `handled: true`, and lost crash-free sessions.
       expect(mainContent, contains('SentryFlutter.init'));
-      expect(mainContent, contains('appRunner: start'));
+      expect(
+        mainContent,
+        contains('appRunner: start'),
+        reason:
+            'without appRunner the SDK never guards the zone runApp '
+            'runs in, and zone errors are lost',
+      );
+      expect(
+        mainContent.indexOf('SentryFlutter.init'),
+        greaterThan(hooksAt),
+        reason:
+            'initialising above the template handlers lets those two '
+            'assignments overwrite the ones the SDK just installed',
+      );
       expect(
         File(
           p.join(projectPath, 'lib', 'core', 'logging', 'error_handlers.dart'),
@@ -180,27 +207,14 @@ void main() {
         reason: 'the SDK integrations capture; manual calls would duplicate',
       );
       expect(mainContent, contains('Supabase.initialize'));
+      expect(
+        mainContent.indexOf('Supabase.initialize'),
+        greaterThan(hooksAt),
+        reason:
+            'initialize() throws on an empty URL; above the hooks that '
+            'throw is a black screen with the error nowhere to be seen',
+      );
       expect(mainContent, isNot(contains('InMemoryAuthRepository(store)')));
-      expect(
-        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
-        contains('supabase_flutter'),
-      );
-      expect(
-        File(p.join(projectPath, 'env', 'dev.json')).readAsStringSync(),
-        contains('SUPABASE_URL'),
-      );
-      expect(
-        File(p.join(projectPath, 'env', 'dev.json')).readAsStringSync(),
-        contains('SENTRY_DSN'),
-      );
-      expect(
-        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
-        contains('sentry_flutter'),
-      );
-      expect(
-        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
-        contains('amplitude_flutter'),
-      );
       expect(
         File(
           p.join(
@@ -213,6 +227,19 @@ void main() {
         ).readAsStringSync(),
         contains('AmplitudeAnalyticsService'),
       );
+
+      final pubspec = _readNormalized(p.join(projectPath, 'pubspec.yaml'));
+      for (final addon in [supabaseAddon, sentryAddon, amplitudeAddon]) {
+        _expectPinnedDependencies(pubspec, addon);
+      }
+      _expectAddonTestsShipped(projectPath, 'supabase');
+      _expectAddonTestsShipped(projectPath, 'amplitude');
+      _expectEmptyEnvPlaceholders(projectPath, const [
+        'SUPABASE_URL',
+        'SUPABASE_PUBLISHABLE_KEY',
+        'SENTRY_DSN',
+        'AMPLITUDE_API_KEY',
+      ]);
 
       final analyze = await Process.run(
         'flutter',
@@ -290,15 +317,46 @@ void main() {
         File(p.join(projectPath, 'lib', 'firebase_options.dart')).existsSync(),
         isTrue,
       );
-      final mainContent = File(
+      final mainContent = _readNormalized(
         p.join(projectPath, 'lib', 'main.dart'),
-      ).readAsStringSync();
-      expect(mainContent, contains('Firebase.initializeApp'));
-      expect(mainContent, isNot(contains('InMemoryAuthRepository(store)')));
-      expect(
-        File(p.join(projectPath, 'pubspec.yaml')).readAsStringSync(),
-        contains('firebase_auth'),
       );
+      final hooksAt = mainContent.indexOf(
+        'platformDispatcher.onError = onPlatformError;',
+      );
+      expect(
+        hooksAt,
+        isNonNegative,
+        reason: 'the template error hooks are the anchor for this addon',
+      );
+      expect(mainContent, contains('Firebase.initializeApp'));
+      expect(
+        mainContent.indexOf('Firebase.initializeApp'),
+        greaterThan(hooksAt),
+        reason: 'initializeApp must run after the error hooks exist',
+      );
+      // DefaultFirebaseOptions.currentPlatform throws until `flutterfire
+      // configure` has run, i.e. on the first launch of every generated
+      // app. Unguarded, that throw also precedes runApp, so it used to be
+      // a black screen with the error reported nowhere.
+      expect(
+        mainContent,
+        matches(
+          RegExp(
+            r'try \{\s*await Firebase\.initializeApp\([\s\S]*?\}\s*'
+            r'on Object catch \(error, stackTrace\) \{\s*'
+            r'onPlatformError\(error, stackTrace\);',
+          ),
+        ),
+        reason:
+            'initializeApp must sit in a try/catch that reports the '
+            'failure through the app error seam',
+      );
+      expect(mainContent, isNot(contains('InMemoryAuthRepository(store)')));
+      _expectPinnedDependencies(
+        _readNormalized(p.join(projectPath, 'pubspec.yaml')),
+        firebaseAddon,
+      );
+      _expectAddonTestsShipped(projectPath, 'firebase');
 
       final analyze = await Process.run(
         'flutter',
@@ -390,4 +448,88 @@ void main() {
         : 'the windows/linux platform plugins need symlink support '
               '(on Windows: Developer Mode)',
   );
+}
+
+/// Contract tests each addon ships into the generated app, by addon name.
+///
+/// The addon SDKs only resolve inside a generated project, so those tests
+/// live in `template_addons/<name>/test/` and are run by the `flutter
+/// test` in every case above. Nothing else notices when they stop being
+/// copied, and a suite that quietly disappears is worse than none.
+const Map<String, String> _addonTestFiles = {
+  'supabase': 'test/features/auth/data/supabase_auth_repository_test.dart',
+  'firebase': 'test/features/auth/data/firebase_auth_repository_test.dart',
+  'amplitude': 'test/core/analytics/amplitude_analytics_service_test.dart',
+};
+
+/// Reads [path] with CRLF normalised away.
+///
+/// The addon patcher rewrites every file it touches with `\n` endings, so
+/// assertions on multi-line shapes must not depend on how git checked the
+/// template out on this machine.
+String _readNormalized(String path) =>
+    File(path).readAsStringSync().replaceAll('\r\n', '\n');
+
+/// Asserts [pubspec] pins every dependency [addon] declares to the
+/// constraint the addon asked for.
+///
+/// `flutter pub add <name>` writes whatever is latest at generation time,
+/// so a bare name in the pubspec means the next upstream major breaks
+/// newly generated apps on its release day, with no fluframe change to
+/// blame. The constraint is written in afterwards precisely because it
+/// cannot survive the command line on Windows.
+void _expectPinnedDependencies(String pubspec, BackendAddon addon) {
+  for (final dependency in addon.dependencies) {
+    final (name, constraint) = splitDependency(dependency);
+    expect(
+      constraint,
+      isNotNull,
+      reason: '${addon.name}: $name must declare a version constraint',
+    );
+    expect(
+      pubspec,
+      contains('  $name: $constraint\n'),
+      reason:
+          'pubspec.yaml must carry "$name: $constraint", not the bare name '
+          'pub add resolved on its own',
+    );
+  }
+}
+
+/// Asserts the addon named [addonName] shipped its contract tests into the
+/// project at [projectPath].
+void _expectAddonTestsShipped(String projectPath, String addonName) {
+  final relative = _addonTestFiles[addonName];
+  expect(relative, isNotNull, reason: 'no contract tests for $addonName');
+  final path = p.join(projectPath, p.joinAll(relative!.split('/')));
+  expect(
+    File(path).existsSync(),
+    isTrue,
+    reason:
+        'the $addonName addon must copy its test/ directory into the '
+        'generated app; flutter test below is what runs it',
+  );
+}
+
+/// Asserts every [keys] entry is present and EMPTY in the generated
+/// `env/dev.json` and `env/prod.json`.
+///
+/// Empty is the contract, not an oversight: these files are committed, and
+/// a placeholder host or key would make a fresh app dial a stranger
+/// instead of staying inert on its in-memory fallbacks. Decoding them also
+/// proves the addon env patches spliced valid JSON — a bad splice
+/// otherwise surfaces only at `--dart-define-from-file` time.
+void _expectEmptyEnvPlaceholders(String projectPath, List<String> keys) {
+  for (final file in ['dev.json', 'prod.json']) {
+    final env =
+        jsonDecode(_readNormalized(p.join(projectPath, 'env', file)))
+            as Map<String, dynamic>;
+    for (final key in keys) {
+      expect(
+        env,
+        containsPair(key, ''),
+        reason: 'env/$file must ship $key as an empty placeholder',
+      );
+    }
+  }
 }

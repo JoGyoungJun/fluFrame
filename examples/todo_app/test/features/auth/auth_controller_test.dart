@@ -70,5 +70,42 @@ void main() {
       expect(container.read(authControllerProvider), isNull);
       expect(await store.getString('auth.session.email'), isNull);
     });
+
+    test('an invalidation does not resurrect a signed-out session', () async {
+      // Regression: build() read the boot-time snapshot, so rebuilding the
+      // controller — ref.invalidate, a hot reload — signed the user back
+      // in with the session they had just ended.
+      final container = createContainer(
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
+          initialUserProvider.overrideWithValue(
+            const User(email: 'dev@example.com'),
+          ),
+        ],
+      );
+      await container.read(authControllerProvider.notifier).signOut();
+
+      container.invalidate(authControllerProvider);
+
+      expect(container.read(authControllerProvider), isNull);
+    });
+
+    test('an invalidation keeps a session signed in after signIn', () async {
+      final container = createContainer(
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
+        ],
+      );
+      await container
+          .read(authControllerProvider.notifier)
+          .signIn(email: 'dev@example.com', password: 'secret1');
+
+      container.invalidate(authControllerProvider);
+
+      expect(
+        container.read(authControllerProvider),
+        const User(email: 'dev@example.com'),
+      );
+    });
   });
 }
