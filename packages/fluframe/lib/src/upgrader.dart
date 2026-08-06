@@ -22,6 +22,10 @@ enum UpgradeStatus {
   /// Existed in the base template but the current one dropped it;
   /// reported only, never deleted.
   removedUpstream,
+
+  /// Existed in the base template but the user removed or renamed it;
+  /// reported only, never restored (unless `--restore-deleted`).
+  deletedLocally,
 }
 
 /// Applies template updates to an existing generated app via a
@@ -52,11 +56,15 @@ class Upgrader {
   ///
   /// [force] skips the "can this be undone" gate that [apply] otherwise
   /// requires (a git repository with a clean working tree).
+  ///
+  /// [restoreDeleted] brings back template files the user removed, which
+  /// is off by default — see [UpgradeStatus.deletedLocally].
   Future<int> run({
     required Directory projectDir,
     String? fromOverride,
     bool apply = false,
     bool force = false,
+    bool restoreDeleted = false,
   }) async {
     final metaFile = File(p.join(projectDir.path, '.fluframe.json'));
     var meta = const <String, dynamic>{};
@@ -162,6 +170,15 @@ class Upgrader {
         continue; // Nothing changed upstream; local state wins untouched.
       }
       if (ours == null) {
+        if (base != null && !restoreDeleted) {
+          // The file shipped in the version this app was generated with,
+          // so the user deleted or renamed it. ADR 0002 never deletes on
+          // their behalf; restoring is the same overreach in reverse —
+          // and a renamed file comes back as a second declaration of the
+          // same class, which does not compile.
+          results[relative] = UpgradeStatus.deletedLocally;
+          continue;
+        }
         results[relative] = UpgradeStatus.added;
         merged[relative] = theirs;
         continue;
@@ -370,11 +387,13 @@ class Upgrader {
       UpgradeStatus.cleanMerge: '~',
       UpgradeStatus.conflict: '!',
       UpgradeStatus.removedUpstream: '-',
+      UpgradeStatus.deletedLocally: '-',
     };
     for (final entry in results.entries) {
       final suffix = switch (entry.value) {
         UpgradeStatus.conflict => ' (CONFLICT)',
         UpgradeStatus.removedUpstream => ' (removed upstream - kept)',
+        UpgradeStatus.deletedLocally => ' (deleted locally - not restored)',
         _ => '',
       };
       _log.writeln('  ${labels[entry.value]} ${entry.key}$suffix');

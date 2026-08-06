@@ -26,8 +26,16 @@ void onFlutterError(FlutterErrorDetails details) {
 
 /// Handles uncaught asynchronous errors from the platform dispatcher.
 ///
-/// Returning `true` marks the error as handled so it is not rethrown.
+/// Returns `false` — "not handled" — on purpose, so Flutter's default
+/// handler still writes the error to the device log (logcat, Console).
+/// The only sink above is [AppLogger], which goes through
+/// `dart:developer`: a VM-service channel that does not exist in a
+/// release build. Claiming the error as handled there made every
+/// uncaught async error in production vanish without a trace.
+///
+/// Return `true` here only once a real reporter — Sentry, Crashlytics —
+/// is wired in above and has actually accepted the error.
 bool onPlatformError(Object error, StackTrace stackTrace) {
   _logger.error('Uncaught platform error', error, stackTrace);
-  return true;
+  return false;
 }

@@ -49,6 +49,35 @@
   reinstall pointer.
 - e2e now covers the shipped default platform set (all six), which no test
   had ever generated, and runs on Windows and macOS.
+- **Fixed: generated apps still showed fluFrame's name.** The home screen
+  greeted users with "Welcome to fluFrame!" in every locale and the root
+  widget was called `FluFrameApp`, because the rewriter only replaces four
+  exact tokens and none of those spellings is one. The greeting now uses
+  the `FluFrame App` / `FluFrame 앱` / `FluFrame アプリ` tokens, the widget
+  is `AppRoot`, and a test walks the real template sources so this cannot
+  come back.
+- **Fixed: `upgrade --apply` resurrected files you deleted.** A missing
+  local file was treated as new, so deleted files came back — and a
+  renamed one came back beside its copy, declaring the same class twice.
+  They are now reported as `deleted locally - not restored`;
+  `--restore-deleted` opts in.
+- Template: **uncaught async errors no longer vanish in release builds.**
+  `onPlatformError` returned `true`, suppressing Flutter's default log
+  path, while the app's only sink was `dart:developer` — a VM service
+  channel that does not exist in release.
+- Template: **an unmatched deep link is no longer a dead end.** There was
+  no `errorBuilder`, so go_router's default error page took over, and its
+  only button navigates to `/` — a route the app did not define. There is
+  now a localized not-found screen and a `/` → `/home` redirect.
+- Template: **the offline cache no longer hides server errors.** It caught
+  every `ApiException`, so a 404 or a 500 was answered with a stale copy
+  and `PostDetailScreen`'s 404 branch could never run. Only
+  `NetworkException` falls back now.
+- Template: screen-view analytics report the route **pattern**
+  (`/home/posts/:id`), not the resolved path — concrete paths explode
+  dashboard cardinality and would ship path secrets to a third party. The
+  router also `read`s the analytics provider instead of watching it, which
+  would have rebuilt the router and lost the navigation stack.
 
 ## 1.1.0
 

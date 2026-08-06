@@ -4,23 +4,33 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('error handlers', () {
-    test('onPlatformError marks the error as handled', () {
-      final handled = onPlatformError(
-        Exception('boom'),
-        StackTrace.current,
-      );
+    test('onFlutterError presents the details it was given', () {
+      // The old test only asserted "does not throw", which an empty body
+      // also satisfies. Spy on the sink instead.
+      final presented = <FlutterErrorDetails>[];
+      final original = FlutterError.presentError;
+      addTearDown(() => FlutterError.presentError = original);
+      FlutterError.presentError = presented.add;
 
-      expect(handled, isTrue);
+      final details = FlutterErrorDetails(exception: Exception('boom'));
+      onFlutterError(details);
+
+      expect(presented, [same(details)]);
     });
 
-    test('onFlutterError does not throw', () {
-      // presentError prints to the console in tests — expected noise.
-      expect(
-        () => onFlutterError(
-          FlutterErrorDetails(exception: Exception('boom')),
-        ),
-        returnsNormally,
-      );
+    test('onPlatformError leaves the error unhandled', () {
+      // `false` is the contract, not an implementation detail: it is what
+      // keeps Flutter's default handler writing the error to the device
+      // log. The app's only other sink is dart:developer, a VM service
+      // channel absent from release builds — so returning `true` here
+      // made every uncaught async error in production disappear.
+      //
+      // Invoked through a parameter of PlatformDispatcher.onError's exact
+      // type, so the signature main.dart wires up is pinned here too.
+      bool asPlatformHandler(bool Function(Object, StackTrace) handler) =>
+          handler(Exception('boom'), StackTrace.current);
+
+      expect(asPlatformHandler(onPlatformError), isFalse);
     });
   });
 }

@@ -52,7 +52,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get weatherErrorMessage => 'Couldn\'t load the weather.';
 
   @override
-  String get homeGreeting => 'Welcome to fluFrame!';
+  String get homeGreeting => 'Welcome to Weather App!';
 
   @override
   String get homeDescription =>

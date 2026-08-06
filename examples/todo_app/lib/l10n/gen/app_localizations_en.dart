@@ -36,7 +36,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get emptyTodos => 'Nothing yet - add your first todo above.';
 
   @override
-  String get homeGreeting => 'Welcome to fluFrame!';
+  String get homeGreeting => 'Welcome to Todo App!';
 
   @override
   String get homeDescription =>

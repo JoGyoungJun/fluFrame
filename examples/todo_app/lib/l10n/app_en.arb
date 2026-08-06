@@ -9,7 +9,7 @@
   "addTodoTooltip": "Add todo",
   "deleteTodoTooltip": "Delete todo",
   "emptyTodos": "Nothing yet - add your first todo above.",
-  "homeGreeting": "Welcome to fluFrame!",
+  "homeGreeting": "Welcome to Todo App!",
   "homeDescription": "A production-ready Flutter starter with Riverpod, go_router, theming, and localization built in.",
   "counterLabel": "{count, plural, =1{Button pushed 1 time} other{Button pushed {count} times}}",
   "@counterLabel": {

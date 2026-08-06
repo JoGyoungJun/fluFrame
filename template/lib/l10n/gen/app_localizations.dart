@@ -121,7 +121,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeGreeting.
   ///
   /// In en, this message translates to:
-  /// **'Welcome to fluFrame!'**
+  /// **'Welcome to FluFrame App!'**
   String get homeGreeting;
 
   /// No description provided for @homeDescription.
@@ -183,6 +183,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Post not found.'**
   String get postNotFound;
+
+  /// No description provided for @routeNotFoundTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Page not found'**
+  String get routeNotFoundTitle;
+
+  /// No description provided for @routeNotFoundMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'No screen matches {location}.'**
+  String routeNotFoundMessage(String location);
+
+  /// No description provided for @routeNotFoundAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to home'**
+  String get routeNotFoundAction;
 
   /// No description provided for @profileTab.
   ///

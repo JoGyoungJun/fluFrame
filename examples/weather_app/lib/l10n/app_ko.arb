@@ -13,7 +13,7 @@
   "temperatureValue": "{value}°C",
   "windValue": "바람 {value} km/h",
   "weatherErrorMessage": "날씨를 불러오지 못했습니다.",
-  "homeGreeting": "fluFrame에 오신 것을 환영합니다!",
+  "homeGreeting": "Weather App 앱에 오신 것을 환영합니다!",
   "homeDescription": "Riverpod, go_router, 테마, 다국어 지원이 내장된 프로덕션 수준의 Flutter 스타터입니다.",
   "counterLabel": "{count, plural, other{버튼을 {count}번 눌렀습니다}}",
   "increment": "증가",

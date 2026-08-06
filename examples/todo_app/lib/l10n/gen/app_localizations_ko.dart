@@ -36,7 +36,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get emptyTodos => '아직 없어요 - 위에서 첫 할 일을 추가해 보세요.';
 
   @override
-  String get homeGreeting => 'fluFrame에 오신 것을 환영합니다!';
+  String get homeGreeting => 'Todo App 앱에 오신 것을 환영합니다!';
 
   @override
   String get homeDescription =>

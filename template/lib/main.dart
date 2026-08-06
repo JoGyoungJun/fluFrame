@@ -46,7 +46,7 @@ Future<void> main() async {
         initialLocaleProvider.overrideWithValue(locale),
         initialUserProvider.overrideWithValue(initialUser),
       ],
-      child: const FluFrameApp(),
+      child: const AppRoot(),
     ),
   );
 }

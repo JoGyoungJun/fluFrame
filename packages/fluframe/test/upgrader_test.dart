@@ -209,6 +209,49 @@ void main() {
       expect(merged, isNot(contains('�')));
     });
 
+    test('a file the user deleted is reported, not resurrected', () async {
+      // Regression: a locally deleted file was indistinguishable from a
+      // new one, so --apply brought it back. Worse for a rename — the
+      // original returned alongside the copy, declaring the same class
+      // twice, and the report showed both as plain `+`.
+      File(p.join(project.path, 'lib', 'a.dart')).deleteSync();
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).existsSync(),
+        isFalse,
+      );
+      expect(log.toString(), contains('deleted locally - not restored'));
+      // A genuinely new file is still added.
+      expect(
+        File(p.join(project.path, 'lib', 'b.dart')).readAsStringSync(),
+        'brand new\n',
+      );
+    });
+
+    test('--restore-deleted brings it back on request', () async {
+      File(p.join(project.path, 'lib', 'a.dart')).deleteSync();
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+        restoreDeleted: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
+    });
+
     test('--apply refuses when the app is not a git repository', () async {
       final code = await upgrader().run(projectDir: project, apply: true);
 

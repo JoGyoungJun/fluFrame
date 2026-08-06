@@ -8,9 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Root widget: wires the router, themes, and localization together.
-class FluFrameApp extends ConsumerWidget {
+class AppRoot extends ConsumerWidget {
   /// Creates the root app widget.
-  const FluFrameApp({super.key});
+  const AppRoot({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

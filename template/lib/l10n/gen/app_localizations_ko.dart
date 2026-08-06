@@ -18,7 +18,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsTab => '설정';
 
   @override
-  String get homeGreeting => 'fluFrame에 오신 것을 환영합니다!';
+  String get homeGreeting => 'FluFrame 앱에 오신 것을 환영합니다!';
 
   @override
   String get homeDescription =>
@@ -59,6 +59,17 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get postNotFound => '게시글을 찾을 수 없습니다.';
+
+  @override
+  String get routeNotFoundTitle => '페이지를 찾을 수 없습니다';
+
+  @override
+  String routeNotFoundMessage(String location) {
+    return '$location 에 해당하는 화면이 없습니다.';
+  }
+
+  @override
+  String get routeNotFoundAction => '홈으로 이동';
 
   @override
   String get profileTab => '프로필';

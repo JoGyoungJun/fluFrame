@@ -18,7 +18,7 @@ class AppLocalizationsJa extends AppLocalizations {
   String get settingsTab => '設定';
 
   @override
-  String get homeGreeting => 'fluFrameへようこそ！';
+  String get homeGreeting => 'FluFrame アプリへようこそ！';
 
   @override
   String get homeDescription =>
@@ -59,6 +59,17 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get postNotFound => '投稿が見つかりません。';
+
+  @override
+  String get routeNotFoundTitle => 'ページが見つかりません';
+
+  @override
+  String routeNotFoundMessage(String location) {
+    return '$location に一致する画面がありません。';
+  }
+
+  @override
+  String get routeNotFoundAction => 'ホームへ移動';
 
   @override
   String get profileTab => 'プロフィール';
