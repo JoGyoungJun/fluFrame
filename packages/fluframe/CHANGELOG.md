@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+- **Fixed: unexpected failures printed a raw stack trace and exited -1.**
+  Only `UsageException` was handled, so a corrupt `.fluframe.json` or an
+  unpublished `--from` version dumped a trace with no advice. Each now
+  gets a sentence and a real exit code; genuine bugs still print the
+  trace, after the message.
+- **Fixed: a malicious bundle could write outside the extraction
+  directory.** `templates/../../../probe.txt` passed the
+  `startsWith('templates/')` check. Entries are now resolved against the
+  destination and rejected by name, and every failure path cleans up its
+  temp directory.
+- **Fixed: `upgrade --apply` rewrote every line ending on Windows.** Line
+  endings are normalized for comparison only; each file keeps the style
+  it had. One non-UTF-8 file no longer aborts the whole run either — it is
+  reported and skipped.
+- **Fixed: `upgrade` ran happily in a directory that was not an app.**
+  In an unrelated empty folder it reported "unchanged: 65 / added: 3" and
+  exited 0. It now refuses without a `.fluframe.json` or a `pubspec.yaml`,
+  and the `unchanged` count means what it says.
+- Template: **boot survives a storage failure.** Four reads ran before
+  `runApp` with no error handling, so one failure meant no widget tree at
+  all. They fall back to defaults and report through the error seam.
+- Template: **`AsyncValueWidget` can show a refresh over existing
+  content.** Retry looked dead (so users tapped again, firing duplicate
+  requests) and a failed pull-to-refresh discarded the list being read.
+- Template: **the login button awaits its own work** and no longer loses
+  non-`AuthException` failures; **`authController` stops resurrecting a
+  signed-out session** when it is invalidated.
+- Template: **`ApiException` carries the backend's response body**, so a
+  generated app can read the server's own error code; `cancel` and
+  `badCertificate` are no longer both "unknown".
+- **Generated apps now ship their own CI workflow and an `AGENTS.md`**
+  describing the app's conventions to a coding agent. Both are rewritten
+  to the project's name.
+- **Added: an example-drift gate.** `examples/` had lost
+  `core/logging/error_handlers.dart` — the template's crash-reporting seam
+  — while the docs claimed CI meant they "cannot rot". Both are re-synced
+  (and gained the Japanese locale they were missing), and
+  `tool/check_example_drift.dart` now fails CI on new drift.
+- Coverage is measured for the CLI as well as the template, published to
+  the job summary, uploaded as an artifact, and gated by a floor for the
+  CLI. Addon sources are format-checked, since they ship into user apps.
+- Docs: ADR 0003 (Riverpod without provider codegen) and ADR 0004
+  (committed code generation) record two decisions the whole product
+  rests on; `docs/architecture.md` no longer claims three rename tokens
+  or an en+ko-only template.
+
 - **Fixed: `upgrade --apply` corrupted non-ASCII source files.** Child
   process output was decoded with the OS codepage (cp949 on Korean
   Windows, cp932 on Japanese), so a merged `find.text('한국어')` came back

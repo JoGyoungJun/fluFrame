@@ -8,6 +8,12 @@ import 'package:todo_app/features/settings/presentation/theme_mode_controller.da
 import 'package:todo_app/features/settings/presentation/theme_preset_controller.dart';
 import 'package:todo_app/l10n/gen/app_localizations.dart';
 
+/// Sentinel for "follow the device locale" in the language picker.
+const String _systemLanguage = 'system';
+
+/// Language codes offered in settings, in display order.
+const List<String> _languageCodes = [_systemLanguage, 'en', 'ko', 'ja'];
+
 /// Lets the user pick the theme mode and language; both persist.
 class SettingsScreen extends ConsumerWidget {
   /// Creates the settings screen.
@@ -85,34 +91,35 @@ class SettingsScreen extends ConsumerWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-          SegmentedButton<String>(
-            segments: [
-              ButtonSegment(
-                value: 'system',
-                label: Text(l10n.languageSystem),
-              ),
-              ButtonSegment(
-                value: 'en',
-                label: Text(l10n.languageEnglish),
-              ),
-              ButtonSegment(
-                value: 'ko',
-                label: Text(l10n.languageKorean),
-              ),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final code in _languageCodes)
+                ChoiceChip(
+                  label: Text(_languageLabel(l10n, code)),
+                  selected: (locale?.languageCode ?? _systemLanguage) == code,
+                  onSelected: (_) => unawaited(
+                    ref
+                        .read(localeProvider.notifier)
+                        .setLocale(
+                          code == _systemLanguage ? null : Locale(code),
+                        ),
+                  ),
+                ),
             ],
-            selected: {locale?.languageCode ?? 'system'},
-            onSelectionChanged: (selection) {
-              final code = selection.first;
-              unawaited(
-                ref
-                    .read(localeProvider.notifier)
-                    .setLocale(code == 'system' ? null : Locale(code)),
-              );
-            },
           ),
         ],
       ),
     );
+  }
+
+  String _languageLabel(AppLocalizations l10n, String code) {
+    return switch (code) {
+      'en' => l10n.languageEnglish,
+      'ko' => l10n.languageKorean,
+      'ja' => l10n.languageJapanese,
+      _ => l10n.languageSystem,
+    };
   }
 
   String _presetLabel(AppLocalizations l10n, ThemePreset preset) {
@@ -122,6 +129,7 @@ class SettingsScreen extends ConsumerWidget {
       ThemePreset.crimson => l10n.presetCrimson,
       ThemePreset.amber => l10n.presetAmber,
       ThemePreset.violet => l10n.presetViolet,
+      ThemePreset.teal => l10n.presetTeal,
     };
   }
 }

@@ -30,9 +30,10 @@ void main() {
 
   for (final entry in overlayEntries) {
     final source = p.join(repoTemplate.path, entry);
-    // Store .gitignore dot-less so its rules cannot influence pub's file
-    // selection when publishing; the CLI overlay restores the real name.
-    final destName = entry == '.gitignore' ? 'gitignore' : entry;
+    // Dot-prefixed entries ship under the dot-less name the CLI overlay
+    // restores — see bundledOverlayNames for why, and edit it there so the
+    // two sides cannot disagree about a spelling.
+    final destName = bundledOverlayNames[entry] ?? entry;
     final destination = p.join(bundleRoot.path, destName);
     if (FileSystemEntity.isDirectorySync(source)) {
       _copyDirectory(Directory(source), Directory(destination));

@@ -23,8 +23,7 @@ AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
 /// `main.dart`.
 class SupabaseAuthRepository implements AuthRepository {
   /// Whether this build was given a Supabase project to talk to.
-  static const bool isConfigured =
-      String.fromEnvironment('SUPABASE_URL') != '';
+  static const bool isConfigured = String.fromEnvironment('SUPABASE_URL') != '';
 
   supabase.SupabaseClient get _client => supabase.Supabase.instance.client;
 

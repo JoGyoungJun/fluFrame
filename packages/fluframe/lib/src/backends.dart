@@ -172,12 +172,18 @@ const BackendAddon supabaseAddon = BackendAddon(
           "import 'package:fluframe_app/features/auth/data/supabase_auth_repository.dart';",
     ),
     // main.dart: SDK import (sorted after shared_preferences).
+    //
+    // Prefixed: supabase_flutter exports a `User`, and so does the
+    // template's own auth domain — which main.dart names in its boot
+    // state. An unprefixed import makes both ambiguous and the generated
+    // app fails to analyze.
     AddonPatch(
       file: 'lib/main.dart',
       anchor: "import 'package:shared_preferences/shared_preferences.dart';",
       replacement:
           "import 'package:shared_preferences/shared_preferences.dart';\n"
-          "import 'package:supabase_flutter/supabase_flutter.dart';",
+          "import 'package:supabase_flutter/supabase_flutter.dart' "
+          'as supabase;',
     ),
     // main.dart: initialize Supabase from --dart-define-from-file config.
     //
@@ -196,7 +202,7 @@ const BackendAddon supabaseAddon = BackendAddon(
           'onPlatformError;\n'
           '\n'
           '  if (SupabaseAuthRepository.isConfigured) {\n'
-          '    await Supabase.initialize(\n'
+          '    await supabase.Supabase.initialize(\n'
           "      url: const String.fromEnvironment('SUPABASE_URL'),\n"
           '      publishableKey: const String.fromEnvironment(\n'
           "        'SUPABASE_PUBLISHABLE_KEY',\n"

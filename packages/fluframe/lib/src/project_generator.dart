@@ -27,9 +27,8 @@ const String templateDisplayNameJa = 'FluFrame アプリ';
 /// Files and directories copied from the template over a fresh
 /// `flutter create` output.
 ///
-/// `.gitignore` is stored as `gitignore` (no dot) inside the published
-/// bundle so its rules cannot influence pub's file selection; the overlay
-/// restores the real name.
+/// Entries listed in [bundledOverlayNames] live under a different name
+/// inside the published bundle; the overlay restores the name here.
 const List<String> overlayEntries = [
   'lib',
   'test',
@@ -37,9 +36,25 @@ const List<String> overlayEntries = [
   'l10n.yaml',
   'analysis_options.yaml',
   'README.md',
+  'AGENTS.md',
   'pubspec.yaml',
   '.gitignore',
+  '.github',
 ];
+
+/// Overlay entries whose name inside the published bundle differs from the
+/// name the generated app gets, keyed by the generated-app name.
+///
+/// Dot-prefixed entries are stored dot-less so the tooling that reads them
+/// by name cannot act on the bundle itself: a `.gitignore` inside the
+/// package would filter what `pub publish` collects, and a `.github` would
+/// register workflows on the repository that merely *ships* the template.
+/// Both the sync tool and the overlay read this map, so the two spellings
+/// cannot drift apart.
+const Map<String, String> bundledOverlayNames = {
+  '.gitignore': 'gitignore',
+  '.github': 'github',
+};
 
 /// Overlay entries whose absence leaves a generated app that cannot run.
 ///
@@ -510,10 +525,15 @@ class ProjectGenerator {
     }
 
     for (final entry in overlayEntries) {
-      // Inside the published bundle .gitignore is stored dot-less.
+      // The monorepo template carries the real names; the published bundle
+      // carries the renamed ones (see bundledOverlayNames). Prefer the real
+      // name so a checkout of the repo generates the same app as the
+      // package does.
+      final bundledName = bundledOverlayNames[entry];
       var source = p.join(templateDirectory.path, entry);
-      if (entry == '.gitignore' && !FileSystemEntity.isFileSync(source)) {
-        source = p.join(templateDirectory.path, 'gitignore');
+      if (bundledName != null &&
+          FileSystemEntity.typeSync(source) == FileSystemEntityType.notFound) {
+        source = p.join(templateDirectory.path, bundledName);
       }
       final destination = p.join(targetPath, entry);
       if (FileSystemEntity.isDirectorySync(source)) {

@@ -46,5 +46,10 @@
   "languageSection": "언어",
   "languageSystem": "시스템",
   "languageEnglish": "English",
-  "languageKorean": "한국어"
+  "languageKorean": "한국어",
+  "routeNotFoundTitle": "페이지를 찾을 수 없습니다",
+  "routeNotFoundMessage": "{location} 에 해당하는 화면이 없습니다.",
+  "routeNotFoundAction": "홈으로 이동",
+  "presetTeal": "틸",
+  "languageJapanese": "日本語"
 }

@@ -110,6 +110,23 @@ void main() {
       expect(File(p.join(project.path, 'lib', 'b.dart')).existsSync(), false);
     });
 
+    test('the summary counts the user tree, not the template diff', () async {
+      // Regression: `unchanged` was incremented on `base == theirs` alone,
+      // without ever opening the user's copy — so a file they had
+      // rewritten was still reported to them as unchanged.
+      writeFile(p.join(oldTemplates.path, 'app'), 'lib/same.dart', 'same\n');
+      writeFile(newTemplate.path, 'lib/same.dart', 'same\n');
+      writeFile(project.path, 'lib/same.dart', 'same\n');
+      writeFile(project.path, 'pubspec.yaml', 'name: demo_app\n# mine\n');
+
+      final code = await upgrader().run(projectDir: project);
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      // lib/same.dart matches the template; pubspec.yaml is the user's.
+      expect(log.toString(), contains('up to date: 1'));
+      expect(log.toString(), contains('your edits kept: 1'));
+    });
+
     test('--apply writes clean merges and additions, keeps removals', () async {
       final code = await upgrader().run(
         projectDir: project,
@@ -208,6 +225,108 @@ void main() {
       expect(merged, contains('日本語'));
       expect(merged, isNot(contains('?')));
       expect(merged, isNot(contains('�')));
+    });
+
+    test('a merge keeps the user edit and the upstream edit', () async {
+      // Every other clean-merge case here has OURS byte-identical to BASE,
+      // so git merge-file degenerates to "take theirs" and a plain
+      // overwrite would satisfy them. Here the two sides edited different
+      // regions of one file: both have to survive, unconflicted.
+      const base =
+          'header\n'
+          'region a\n'
+          'filler 1\n'
+          'filler 2\n'
+          'filler 3\n'
+          'filler 4\n'
+          'filler 5\n'
+          'region b\n'
+          'footer\n';
+      writeFile(p.join(oldTemplates.path, 'app'), 'lib/wide.dart', base);
+      writeFile(
+        newTemplate.path,
+        'lib/wide.dart',
+        base.replaceAll('region b', 'region b, upstream'),
+      );
+      writeFile(
+        project.path,
+        'lib/wide.dart',
+        base.replaceAll('region a', 'region a, yours'),
+      );
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      final content = File(
+        p.join(project.path, 'lib', 'wide.dart'),
+      ).readAsStringSync();
+      expect(content, contains('region a, yours'));
+      expect(content, contains('region b, upstream'));
+      expect(content, isNot(contains('<<<<<<<')));
+      expect(log.toString(), contains('~ lib/wide.dart'));
+    });
+
+    test('a CRLF file keeps its line endings through a merge', () async {
+      // Regression: everything is normalized to LF to compare, and the
+      // merged result used to be written back that way — turning one
+      // merged hunk into a whole-file diff on a Windows checkout.
+      writeFile(
+        p.join(oldTemplates.path, 'app'),
+        'lib/crlf.dart',
+        'one\ntwo\n',
+      );
+      writeFile(newTemplate.path, 'lib/crlf.dart', 'one\ntwo\nthree\n');
+      writeFile(project.path, 'lib/crlf.dart', 'one\r\ntwo\r\n');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, 'lib', 'crlf.dart')).readAsStringSync(),
+        'one\r\ntwo\r\nthree\r\n',
+      );
+      // ...and an LF file is not converted the other way.
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
+    });
+
+    test('a file that is not UTF-8 is reported, not fatal', () async {
+      // Regression: one undecodable file anywhere in the tree aborted the
+      // entire run with an uncaught FormatException from readAsStringSync.
+      const bytes = [0x89, 0x50, 0x4e, 0x47, 0xff, 0x0a];
+      writeFile(p.join(oldTemplates.path, 'app'), 'lib/logo.png', 'stub\n');
+      writeFile(newTemplate.path, 'lib/logo.png', 'stub\n');
+      File(p.join(project.path, 'lib', 'logo.png')).writeAsBytesSync(bytes);
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(log.toString(), contains('? lib/logo.png'));
+      expect(log.toString(), contains('not UTF-8 text'));
+      // Left byte for byte as it was...
+      expect(
+        File(p.join(project.path, 'lib', 'logo.png')).readAsBytesSync(),
+        bytes,
+      );
+      // ...and the rest of the upgrade still happened.
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
     });
 
     test('a file the user deleted is reported, not resurrected', () async {
@@ -407,6 +526,43 @@ void main() {
 
       expect(code, 64);
       expect(log.toString(), contains('--from'));
+    });
+
+    test('refuses a directory that is not a generated app', () async {
+      // Regression: --from made any directory upgradable, so running this
+      // one folder too high reported a full template as "added" — and
+      // --apply would have unpacked it there.
+      final stranger = Directory(p.join(temp.path, 'not_an_app'))..createSync();
+
+      final code = await upgrader().run(
+        projectDir: stranger,
+        fromOverride: '0.1.0',
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.usage.code, reason: log.toString());
+      expect(log.toString(), contains('does not look like a generated app'));
+      expect(stranger.listSync(), isEmpty);
+    });
+
+    test('--from still upgrades a pre-0.14.0 app with no metadata', () async {
+      // That refusal must not close the escape hatch it names: apps from
+      // before 0.14.0 have a pubspec.yaml but no .fluframe.json.
+      File(p.join(project.path, '.fluframe.json')).deleteSync();
+
+      final code = await upgrader().run(
+        projectDir: project,
+        fromOverride: '0.1.0',
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
     });
   });
 }
