@@ -40,15 +40,29 @@ jobs:
         run: dart format --set-exit-if-changed template_addons
       - run: flutter analyze
       - run: flutter test --coverage
-      - name: Coverage summary
+      - name: Coverage floor
         # `--coverage` used to write lcov.info and nothing ever read it.
-        # Sum the lcov counters onto the job summary so the number is
-        # visible on the PR without downloading anything.
+        # Publish the number to the job summary so it is visible on the PR
+        # without downloading anything, and fail below the floor.
+        env:
+          # A ratchet, not a target. Measured 78.49% (613/781 lines) on the
+          # 1.2.0 tree; the floor sits a few points under so an ordinary PR
+          # does not go red on a one-point dip, while a deleted test file or
+          # a large untested module still trips it. Raise it as coverage
+          # rises; never lower it to make CI green.
+          FLOOR: '72'
         run: |
           pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
                          END { printf "%.2f", f ? 100 * h / f : 0 }' \
                 coverage/lcov.info)
-          echo "Template line coverage: ${pct}%" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Template line coverage: ${pct}% (floor ${FLOOR}%)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v pct="$pct" -v floor="$FLOOR" 'BEGIN {
+            if (pct < floor) {
+              print "::error::Template coverage " pct "% < floor " floor "%"
+              exit 1
+            }
+          }'
       - uses: actions/upload-artifact@v7
         with:
           name: template-coverage
