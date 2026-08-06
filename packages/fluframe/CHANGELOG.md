@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
+
+**Correctness release.** A full audit of 1.1.0 found that the two things
+fluframe promises — generate an app, then keep it up to date — could both
+fail while reporting success. `upgrade --apply` destroyed every non-ASCII
+character in a Korean or Japanese app and printed `conflicts: 0`; a
+generated Firebase app opened to a black screen; `doctor` said "All set"
+a minute before `create` died. Nothing below is a new feature.
+
+Everything here is backwards compatible. Two behaviours changed on
+purpose: `upgrade --apply` now requires a clean git working tree
+(`--force` opts out), and it exits non-zero when conflicts remain.
 
 - **Fixed: unexpected failures printed a raw stack trace and exited -1.**
   Only `UsageException` was handled, so a corrupt `.fluframe.json` or an
