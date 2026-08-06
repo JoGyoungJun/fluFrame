@@ -29,3 +29,5 @@ Statuses: `Proposed` → `Accepted` | `Rejected`; later `Superseded by
 |---|---|---|
 | [0001](0001-backend-addon-overlays.md) | Backend addons as anchored patch overlays | Accepted |
 | [0002](0002-upgrade-three-way-merge.md) | Upgrades via three-way merge against reconstructed bases | Accepted |
+| [0003](0003-riverpod-manual-notifiers.md) | Riverpod 3 with hand-written notifiers, no provider codegen | Accepted |
+| [0004](0004-committed-codegen.md) | Code generation for models and strings, output committed | Accepted |

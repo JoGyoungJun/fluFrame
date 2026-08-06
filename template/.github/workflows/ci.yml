@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # lib/l10n/gen is committed, but regenerate before analysis: the
+      # generated localizations depend on the Flutter version that produced
+      # them, and CI must analyze what this SDK generates from the ARBs.
+      - run: flutter gen-l10n
+      # very_good_analysis is configured with infos fatal, so this is a real
+      # gate, not advisory output.
+      - run: flutter analyze
+      - run: flutter test
+
+# This is a starting point — edit it. Things you may want next:
+#   * dart format --set-exit-if-changed lib test
+#   * dart run build_runner build --delete-conflicting-outputs, plus a diff
+#     check, once your team agrees on when to regenerate freezed/json code
+#   * flutter test --coverage with an upload step
+#   * flutter build apk/ipa/web --dart-define-from-file=env/prod.json
+#     (put real secrets in repository secrets, never in env/*.json)

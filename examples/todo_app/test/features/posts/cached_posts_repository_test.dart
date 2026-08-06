@@ -9,13 +9,18 @@ import '../../helpers/helpers.dart';
 class _SwitchableInner implements PostsRepository {
   bool fail = false;
 
+  /// Raised instead of a [NetworkException] when set.
+  ApiException? failWith;
+
   static const posts = [
     Post(id: 1, userId: 1, title: 'cached title', body: 'body'),
   ];
 
   @override
-  Future<List<Post>> fetchPosts() async =>
-      fail ? throw const NetworkException('down') : posts;
+  Future<List<Post>> fetchPosts() async {
+    if (failWith != null) throw failWith!;
+    return fail ? throw const NetworkException('down') : posts;
+  }
 
   @override
   Future<Post> fetchPost(int id) async =>
@@ -51,6 +56,29 @@ void main() {
       inner.fail = true;
 
       expect(repository.fetchPosts, throwsA(isA<NetworkException>()));
+    });
+
+    test('a server error is never masked by the cache', () async {
+      // Regression: the fallback caught every ApiException, so a 404 or a
+      // 500 was answered with a stale copy. PostDetailScreen's 404 branch
+      // could therefore never run, and a broken endpoint looked healthy.
+      await repository.fetchPosts();
+      inner.failWith = const ServerException('gone', statusCode: 404);
+
+      await expectLater(
+        repository.fetchPosts,
+        throwsA(isA<ServerException>()),
+      );
+      await expectLater(
+        () => repository.fetchPost(1),
+        throwsA(
+          isA<ServerException>().having(
+            (error) => error.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
     });
 
     test('fetchPost falls back to the cached list', () async {

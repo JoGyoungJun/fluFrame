@@ -1,0 +1,83 @@
+{
+  "@@locale": "ja",
+  "appTitle": "FluFrame アプリ",
+  "homeTab": "ホーム",
+  "settingsTab": "設定",
+  "todosTab": "やること",
+  "todosTitle": "やること",
+  "addTodoHint": "何をしますか？",
+  "addTodoTooltip": "やることを追加",
+  "deleteTodoTooltip": "やることを削除",
+  "emptyTodos": "まだありません — 上から最初のやることを追加してください。",
+  "homeGreeting": "FluFrame アプリへようこそ！",
+  "homeDescription": "Riverpod、go_router、テーマ、多言語対応を備えたプロダクション品質のFlutterスターターです。",
+  "counterLabel": "{count, plural, other{ボタンを{count}回押しました}}",
+  "@counterLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "increment": "増やす",
+  "viewPosts": "サンプル投稿を見る",
+  "postsTitle": "投稿",
+  "postsErrorMessage": "投稿を読み込めませんでした。",
+  "genericErrorMessage": "問題が発生しました。",
+  "retry": "再試行",
+  "postDetailTitle": "投稿 #{id}",
+  "@postDetailTitle": {
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "postNotFound": "投稿が見つかりません。",
+  "profileTab": "プロフィール",
+  "profileTitle": "プロフィール",
+  "profileSignedInAs": "{email} でログイン中",
+  "@profileSignedInAs": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "loginTitle": "おかえりなさい",
+  "emailLabel": "メールアドレス",
+  "passwordLabel": "パスワード",
+  "signInButton": "ログイン",
+  "signOutButton": "ログアウト",
+  "emailRequired": "メールアドレスを入力してください。",
+  "emailInvalid": "有効なメールアドレスを入力してください。",
+  "passwordRequired": "パスワードを入力してください。",
+  "loginFailedMessage": "ログインに失敗しました。入力内容を確認してください。",
+  "settingsTitle": "設定",
+  "appearanceSection": "外観",
+  "themeModeSystem": "システム",
+  "themeModeLight": "ライト",
+  "themeModeDark": "ダーク",
+  "colorSection": "テーマカラー",
+  "presetIndigo": "インディゴ",
+  "presetEmerald": "エメラルド",
+  "presetCrimson": "クリムゾン",
+  "presetAmber": "アンバー",
+  "presetViolet": "バイオレット",
+  "languageSection": "言語",
+  "languageSystem": "システム",
+  "languageEnglish": "English",
+  "languageKorean": "한국어",
+  "routeNotFoundTitle": "ページが見つかりません",
+  "routeNotFoundMessage": "{location} に一致する画面がありません。",
+  "@routeNotFoundMessage": {
+    "placeholders": {
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "routeNotFoundAction": "ホームへ移動",
+  "presetTeal": "ティール",
+  "languageJapanese": "日本語"
+}

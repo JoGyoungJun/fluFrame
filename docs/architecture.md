@@ -22,7 +22,13 @@ flowchart LR
   (and addons) travel inside the published package, synced by
   `tool/sync_template.dart` at release time.
 - **`examples/`** — apps generated with the CLI and extended by the
-  documented conventions; CI runs them in a matrix so they cannot rot.
+  documented conventions. CI runs each in a matrix (they compile and their
+  suites pass) *and* runs `tool/check_example_drift.dart`, which compares
+  every shared file against the token-rewritten template. The matrix alone
+  was not enough: both examples had silently lost
+  `core/logging/error_handlers.dart` while this line claimed they could
+  not rot. Files an example legitimately owns are listed, with reasons, in
+  that tool.
 
 ## The generation pipeline
 
@@ -33,8 +39,10 @@ flowchart LR
 2. **Overlay** — the bundled template's `lib/`, `test/`, `env/`, configs
    are copied over the scaffold.
 3. **Token rewrite** — `fluframe_app` → project name, `FluFrame App` →
-   humanized title, `FluFrame 앱` → title + ` 앱`, applied to every text
-   file.
+   humanized title, `FluFrame 앱` → title + ` 앱`, `FluFrame アプリ` →
+   title + ` アプリ`, applied to every text file (committed generated
+   code included, which is why it survives the rename —
+   [ADR 0004](adr/0004-committed-codegen.md)).
 4. **Backend addon** (optional, [ADR 0001](adr/0001-backend-addon-overlays.md)) —
    extra deps via `flutter pub add`, addon files, and anchored patches
    that FAIL LOUDLY if the template drifted.
@@ -50,17 +58,21 @@ lib/
 ├── core/          # config, network (dio+ApiException), storage
 │                  # (KeyValueStore), logging (+ error_handlers), widgets
 ├── features/<f>/  # data/ (repos) · domain/ (freezed) · presentation/
-└── l10n/          # ARB (en+ko) + generated code (committed)
+└── l10n/          # ARB (en+ko+ja) + generated code (committed)
 ```
 
 Patterns to copy when adding features: repository behind a provider,
-`Notifier`/`AsyncNotifier` (no provider codegen), `AsyncValueWidget` for
-async UI, `initialXProvider` overrides for pre-`runApp` state.
+hand-written `Notifier`/`AsyncNotifier`
+([ADR 0003](adr/0003-riverpod-manual-notifiers.md) — no provider
+codegen, family args go to the constructor, `flutter_riverpod/legacy.dart`
+is off-limits), `AsyncValueWidget` for async UI, `initialXProvider`
+overrides for pre-`runApp` state. Models are freezed + json_serializable
+with the output committed ([ADR 0004](adr/0004-committed-codegen.md)).
 
 ## Invariants (break one and CI/e2e will catch you)
 
-1. **Rename tokens** must appear exactly: `fluframe_app`,
-   `FluFrame App`, `FluFrame 앱`.
+1. **Rename tokens** must appear exactly, all four: `fluframe_app`,
+   `FluFrame App`, `FluFrame 앱`, `FluFrame アプリ`.
 2. **Anchored addon patches**: certain `template/lib/main.dart` and
    `auth_repository.dart` lines are patch anchors — edit them and the
    addon e2e fails until `packages/fluframe/lib/src/backends.dart` is
@@ -68,8 +80,11 @@ async UI, `initialXProvider` overrides for pre-`runApp` state.
 3. **`.pubignore` patterns stay slash-anchored** (`/test/` not `test/`)
    or the published bundle loses its test suite.
 4. **Generated code is committed** (`*.freezed.dart`, `*.g.dart`,
-   `lib/l10n/gen/`) and CI verifies it is up to date.
-5. **Every UI string in BOTH ARBs** (`app_en.arb`, `app_ko.arb`).
+   `lib/l10n/gen/`) and CI verifies it is up to date —
+   [ADR 0004](adr/0004-committed-codegen.md).
+5. **Every UI string in ALL THREE ARBs** (`app_en.arb`, `app_ko.arb`,
+   `app_ja.arb`). `flutter gen-l10n` falls back to English and only
+   warns, so nothing but review catches a missing locale.
 6. Generated-app tests stay backend-agnostic: test helpers pin
    `authRepositoryProvider` to the in-memory fake.
 

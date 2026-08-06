@@ -161,4 +161,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get languageKorean => '한국어';
+
+  @override
+  String get routeNotFoundTitle => 'Page not found';
+
+  @override
+  String routeNotFoundMessage(String location) {
+    return 'No screen matches $location.';
+  }
+
+  @override
+  String get routeNotFoundAction => 'Go to home';
+
+  @override
+  String get presetTeal => 'Teal';
+
+  @override
+  String get languageJapanese => 'Japanese';
 }

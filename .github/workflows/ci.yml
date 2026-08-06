@@ -32,8 +32,30 @@ jobs:
           git add -A lib
           git diff --cached --exit-code -- lib
       - run: dart format --set-exit-if-changed lib test
+      - name: Addon sources are format-clean too
+        # template_addons/ ships verbatim into generated apps, and the CI
+        # workflow those apps receive suggests a format gate — so
+        # unformatted addon code would become the user's red build.
+        working-directory: .
+        run: dart format --set-exit-if-changed template_addons
       - run: flutter analyze
       - run: flutter test --coverage
+      - name: Coverage summary
+        # `--coverage` used to write lcov.info and nothing ever read it.
+        # Sum the lcov counters onto the job summary so the number is
+        # visible on the PR without downloading anything.
+        run: |
+          pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
+                         END { printf "%.2f", f ? 100 * h / f : 0 }' \
+                coverage/lcov.info)
+          echo "Template line coverage: ${pct}%" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: template-coverage
+          # Job-level working-directory does not apply to `uses:` steps.
+          path: template/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
 
   cli:
     name: CLI — analyze & unit tests
@@ -49,7 +71,49 @@ jobs:
       - run: dart pub get
       - run: dart format --set-exit-if-changed lib test tool
       - run: dart analyze
-      - run: dart test -x e2e
+      - run: dart test -x e2e --coverage=coverage
+      - name: Convert coverage to lcov
+        # `coverage` is activated rather than added as a dev_dependency:
+        # format_coverage is a CI-only tool and the CLI's dependency list is
+        # part of what users audit before installing it. Pinned to a major
+        # so an upstream release cannot change the flags under us.
+        run: |
+          dart pub global activate coverage '^1.15.0'
+          dart pub global run coverage:format_coverage \
+            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Coverage floor
+        # The floor is computed from the emitted lcov, NOT from
+        # format_coverage's own --fail-under: that flag scores the whole
+        # collected hitmap (SDK and pub dependencies included, 10.7% here)
+        # instead of the --report-on=lib subset, so it gates on a number
+        # nobody is looking at.
+        env:
+          # A ratchet, not a target. Measured 77-79% while hardening 1.1.0
+          # (552/715 lines at the low end), so this sits a few points under
+          # the trough — enough slack for the OS-conditional branches only
+          # one runner takes, tight enough to catch a deleted test file or
+          # a large untested module. Raise it as coverage rises; never
+          # lower it to make CI green.
+          FLOOR: '70'
+        run: |
+          pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
+                         END { printf "%.2f", f ? 100 * h / f : 0 }' \
+                coverage/lcov.info)
+          echo "CLI line coverage: ${pct}% (floor ${FLOOR}%)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v pct="$pct" -v floor="$FLOOR" 'BEGIN {
+            if (pct < floor) {
+              print "::error::CLI coverage " pct "% < floor " floor "%"
+              exit 1
+            }
+          }'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-coverage
+          # Job-level working-directory does not apply to `uses:` steps.
+          path: packages/fluframe/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
 
   cli-cross-platform:
     # The CLI shells out to flutter/dart/git and feeds their output back
@@ -110,6 +174,24 @@ jobs:
           cache: true
       - run: dart pub get
       - run: dart test -t e2e --reporter expanded
+
+  example-drift:
+    # The examples job proves the examples COMPILE. It never noticed that
+    # both had lost core/logging/error_handlers.dart — the file the
+    # template calls its crash-reporting seam — while docs claimed the
+    # matrix meant they "cannot rot". This is the check that meant it.
+    name: Examples — no drift from the template
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart run tool/check_example_drift.dart
 
   examples:
     name: Example apps — analyze & test

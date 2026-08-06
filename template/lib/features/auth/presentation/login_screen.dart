@@ -1,3 +1,4 @@
+import 'package:fluframe_app/core/logging/app_logger.dart';
 import 'package:fluframe_app/features/auth/domain/auth_exception.dart';
 import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
 import 'package:fluframe_app/l10n/gen/app_localizations.dart';
@@ -35,6 +36,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _submit() async {
     final l10n = AppLocalizations.of(context);
+    // The disabled button is not the only entry point — the password
+    // field submits on Enter too, and holding it down fired a second
+    // sign-in over the first.
+    if (_submitting) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _submitting = true;
@@ -49,6 +54,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           );
     } on AuthException {
       if (mounted) setState(() => _errorMessage = l10n.loginFailedMessage);
+    } on Object catch (error, stackTrace) {
+      // Only AuthException used to be caught, so everything a real backend
+      // can raise — a socket error, a misconfigured SDK, a null
+      // dereference — escaped into the zone: the form stopped at "nothing
+      // happened", with no message and no way forward. Anything unexpected
+      // still reaches the log so the underlying bug stays findable; the
+      // user gets the generic message rather than credential advice that
+      // would be wrong here.
+      ref.read(appLoggerProvider).error('Sign-in failed', error, stackTrace);
+      if (mounted) setState(() => _errorMessage = l10n.genericErrorMessage);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -93,7 +108,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     validator: (value) => (value == null || value.isEmpty)
                         ? l10n.passwordRequired
                         : null,
-                    onFieldSubmitted: (_) => _submit(),
+                    onFieldSubmitted: (_) async {
+                      await _submit();
+                    },
                   ),
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 12),
@@ -106,7 +123,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ],
                   const SizedBox(height: 24),
                   FilledButton(
-                    onPressed: _submitting ? null : _submit,
+                    // Both entry points await _submit inside the callback
+                    // instead of handing it over as a tear-off, so the
+                    // progress state and the error handling inside it run
+                    // as one sequence rather than as a dropped Future.
+                    onPressed: _submitting
+                        ? null
+                        : () async {
+                            await _submit();
+                          },
                     child: _submitting
                         ? const SizedBox(
                             width: 20,

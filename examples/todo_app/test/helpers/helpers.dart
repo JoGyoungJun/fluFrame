@@ -9,6 +9,7 @@ import 'package:todo_app/l10n/gen/app_localizations.dart';
 import 'in_memory_key_value_store.dart';
 
 export 'in_memory_key_value_store.dart';
+export 'recording_analytics_service.dart';
 
 /// Tests always run against the in-memory auth repository, regardless of
 /// which backend the app itself is wired to (`--backend` addons swap

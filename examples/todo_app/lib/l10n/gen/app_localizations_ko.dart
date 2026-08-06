@@ -160,4 +160,21 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get languageKorean => '한국어';
+
+  @override
+  String get routeNotFoundTitle => '페이지를 찾을 수 없습니다';
+
+  @override
+  String routeNotFoundMessage(String location) {
+    return '$location 에 해당하는 화면이 없습니다.';
+  }
+
+  @override
+  String get routeNotFoundAction => '홈으로 이동';
+
+  @override
+  String get presetTeal => '틸';
+
+  @override
+  String get languageJapanese => '日本語';
 }
