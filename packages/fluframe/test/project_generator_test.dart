@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/project_generator.dart';
+import 'package:io/io.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -76,6 +77,10 @@ version: 0.1.0+1
       File(p.join(templateDir.path, 'lib', 'main.dart')).writeAsStringSync(
         "import 'package:fluframe_app/app.dart'; // FluFrame App\n",
       );
+      Directory(p.join(templateDir.path, 'test')).createSync();
+      File(
+        p.join(templateDir.path, 'test', 'app_test.dart'),
+      ).writeAsStringSync('// FluFrame App smoke test\n');
       // Bundled layout stores .gitignore dot-less.
       File(
         p.join(templateDir.path, 'gitignore'),
@@ -153,21 +158,141 @@ version: 0.1.0+1
       expect(gitignore.readAsStringSync(), contains('env/*.local.json'));
     });
 
-    test(
-      'warns about missing overlay entries instead of silently skipping',
-      () async {
+    test('warns about a missing optional overlay entry', () async {
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      // env/ is absent from this fixture but an app runs without it.
+      expect(code, 0);
+      expect(log.toString(), contains('Warning: template entry "env"'));
+    });
+
+    for (final entry in requiredOverlayEntries) {
+      test('fails when the bundle is missing "$entry"', () async {
         // Regression: a template stripped by packaging (e.g. the unanchored
-        // .pubignore test/ pattern) used to produce a "successful" project
-        // with entire directories silently absent.
-        await generator.generate(
+        // .pubignore `test/` pattern that once removed templates/app/test)
+        // used to produce a "successful" project with entire directories
+        // absent — and the overlay deletes the scaffold's lib/ first, so a
+        // missing lib/ left no source at all.
+        final source = p.join(templateDir.path, entry);
+        if (FileSystemEntity.isDirectorySync(source)) {
+          Directory(source).deleteSync(recursive: true);
+        } else {
+          File(source).deleteSync();
+        }
+
+        final code = await generator.generate(
           name: 'demo_app',
           org: 'dev.example',
           outputDirectory: temp.path,
         );
 
-        expect(log.toString(), contains('Warning: template entry "test"'));
-      },
-    );
+        expect(code, ExitCode.software.code, reason: log.toString());
+        final report = log.toString();
+        expect(report, contains('bundle is incomplete'));
+        expect(report, contains(entry));
+        expect(report, contains('dart pub global activate fluframe'));
+        // And the user is told how to retry.
+        expect(report, contains('Partial output left at:'));
+      });
+    }
+
+    test('points at the partial output when pub get fails', () async {
+      // Regression: exit 70 left 230 files behind and the obvious retry hit
+      // `Directory "..." already exists. Aborting.` with no explanation.
+      final generator = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: (executable, arguments, {workingDirectory}) async {
+          calls.add((executable, arguments, workingDirectory));
+          return arguments.join(' ') == 'pub get'
+              ? ProcessResult(
+                  0,
+                  1,
+                  '',
+                  'Building with plugins requires '
+                      'symlink support.',
+                )
+              : ProcessResult(0, 0, '', '');
+        },
+        log: log,
+      );
+
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      expect(code, ExitCode.software.code);
+      final report = log.toString();
+      expect(report, contains('flutter pub get failed'));
+      expect(report, contains('Partial output left at:'));
+      expect(report, contains(p.join(temp.path, 'demo_app')));
+      if (Platform.isWindows) {
+        // The one failure mode a Windows user cannot diagnose alone.
+        expect(report, contains('Developer Mode'));
+      }
+      // A half-generated app must not look upgradable.
+      expect(
+        File(p.join(temp.path, 'demo_app', '.fluframe.json')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('keeps warnings from dart fix and gen-l10n non-fatal', () async {
+      final generator = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: (executable, arguments, {workingDirectory}) async {
+          final joined = arguments.join(' ');
+          return joined == 'fix --apply' || joined == 'gen-l10n'
+              ? ProcessResult(0, 1, '', 'boom')
+              : ProcessResult(0, 0, '', '');
+        },
+        log: log,
+      );
+
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      expect(code, 0, reason: log.toString());
+      expect(log.toString(), contains('Warning: dart fix failed'));
+      expect(log.toString(), contains('flutter gen-l10n failed'));
+    });
+
+    test('uses the documented default platforms', () async {
+      await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+      );
+
+      expect(
+        calls.first.$2,
+        contains('--platforms=${defaultPlatforms.join(',')}'),
+      );
+      expect(
+        defaultPlatforms,
+        ['android', 'ios', 'web', 'windows', 'macos', 'linux'],
+        reason: 'the README and e2e document this exact set',
+      );
+    });
+
+    test('passes an explicit platform list through', () async {
+      await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        platforms: const ['web'],
+      );
+
+      expect(calls.first.$2, contains('--platforms=web'));
+    });
 
     test('writes a custom description into pubspec.yaml', () async {
       await generator.generate(

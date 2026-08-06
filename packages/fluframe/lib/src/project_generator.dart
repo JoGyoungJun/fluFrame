@@ -41,6 +41,27 @@ const List<String> overlayEntries = [
   '.gitignore',
 ];
 
+/// Overlay entries whose absence leaves a generated app that cannot run.
+///
+/// The overlay deletes the scaffold's `lib/` before copying, so a bundle
+/// missing `lib` produces a project with no source at all — previously a
+/// warning followed by "Created my_app at ...". Addons already fail loudly
+/// on a missing file (ADR 0001); the app itself must too.
+const Set<String> requiredOverlayEntries = {'lib', 'test', 'pubspec.yaml'};
+
+/// Platforms `flutter create` is asked for when the user does not choose.
+///
+/// Single source of truth for `ProjectGenerator.generate` and the
+/// `--platforms` option, which drifted apart as two copies of the literal.
+const List<String> defaultPlatforms = [
+  'android',
+  'ios',
+  'web',
+  'windows',
+  'macos',
+  'linux',
+];
+
 /// File extensions treated as text and run through the token rewriter.
 const Set<String> _textExtensions = {
   '.dart',
@@ -107,14 +128,7 @@ class ProjectGenerator {
     String? backend,
     String? errorReporting,
     String? analytics,
-    List<String> platforms = const [
-      'android',
-      'ios',
-      'web',
-      'windows',
-      'macos',
-      'linux',
-    ],
+    List<String> platforms = defaultPlatforms,
     bool runPub = true,
     bool bareOverlay = false,
   }) async {
@@ -168,6 +182,10 @@ class ProjectGenerator {
       // Upgrade support (spec 002): produce ONLY the overlay output —
       // no platform scaffold, no pub, no metadata — as merge input.
       Directory(targetPath).createSync(recursive: true);
+      // Deliberately not gated on requiredOverlayEntries: this rebuilds an
+      // arbitrary historical bundle for the upgrader, and a gap there is
+      // better reported as a per-file difference than as a hard stop that
+      // makes the app un-upgradable.
       _applyOverlay(targetPath, name: name, description: description);
       for (final selected in [addon, reporting, analyticsAddon]) {
         if (selected == null) continue;
@@ -213,11 +231,16 @@ class ProjectGenerator {
       _log
         ..writeln('flutter create failed:')
         ..writeln(create.stderr);
+      _logPartialOutput(targetPath);
       return ExitCode.software.code;
     }
 
     _log.writeln('Applying the fluFrame template...');
-    _applyOverlay(targetPath, name: name, description: description);
+    final incomplete = _rejectIncompleteBundle(
+      _applyOverlay(targetPath, name: name, description: description),
+      targetPath,
+    );
+    if (incomplete != null) return incomplete;
 
     for (final selected in [addon, reporting, analyticsAddon]) {
       if (selected == null) continue;
@@ -227,22 +250,11 @@ class ProjectGenerator {
         addon: selected,
         name: name,
       );
-      if (addonExit != 0) return addonExit;
+      if (addonExit != 0) {
+        _logPartialOutput(targetPath);
+        return addonExit;
+      }
     }
-
-    // Generation metadata — the contract `fluframe upgrade` reads to
-    // reconstruct this exact generation later (design spec 002).
-    File(p.join(targetPath, '.fluframe.json')).writeAsStringSync(
-      '${const JsonEncoder.withIndent('  ').convert({
-        'schema': 1,
-        'cliVersion': cliVersion,
-        'name': name,
-        'org': org,
-        'backend': backend,
-        'errorReporting': errorReporting,
-        'analytics': analytics,
-      })}\n',
-    );
 
     if (runPub) {
       _log.writeln('Resolving dependencies...');
@@ -254,6 +266,16 @@ class ProjectGenerator {
         _log
           ..writeln('flutter pub get failed:')
           ..writeln(pubGet.stderr);
+        if (Platform.isWindows &&
+            pubGet.stderr.toString().toLowerCase().contains('symlink')) {
+          _log.writeln(
+            'The default platforms include windows and linux, whose plugins '
+            'need symbolic links. Enable Developer Mode '
+            '(start ms-settings:developers) and retry — fluframe doctor '
+            'checks this up front.',
+          );
+        }
+        _logPartialOutput(targetPath);
         return ExitCode.software.code;
       }
       // Renaming the package can change the alphabetical order of imports
@@ -283,6 +305,23 @@ class ProjectGenerator {
           ..writeln(genL10n.stderr);
       }
     }
+
+    // Generation metadata — the contract `fluframe upgrade` reads to
+    // reconstruct this exact generation later (design spec 002). Written
+    // last so its presence means "this app was generated successfully";
+    // a half-written directory the user is told to delete must not look
+    // upgradable.
+    File(p.join(targetPath, '.fluframe.json')).writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert({
+        'schema': 1,
+        'cliVersion': cliVersion,
+        'name': name,
+        'org': org,
+        'backend': backend,
+        'errorReporting': errorReporting,
+        'analytics': analytics,
+      })}\n',
+    );
 
     _log
       ..writeln()
@@ -389,11 +428,15 @@ class ProjectGenerator {
       ..writeln('Then verify with: flutter --version');
   }
 
-  void _applyOverlay(
+  /// Copies the template over the `flutter create` scaffold.
+  ///
+  /// Returns the overlay entries that were missing from the bundle.
+  List<String> _applyOverlay(
     String targetPath, {
     required String name,
     String? description,
   }) {
+    final missing = <String>[];
     // The template's lib/ fully replaces the scaffold's lib/.
     final scaffoldLib = Directory(p.join(targetPath, 'lib'));
     if (scaffoldLib.existsSync()) {
@@ -412,20 +455,56 @@ class ProjectGenerator {
       } else if (FileSystemEntity.isFileSync(source)) {
         _copyFile(File(source), File(destination), name: name);
       } else {
+        missing.add(entry);
         _log.writeln(
           'Warning: template entry "$entry" not found — skipped.',
         );
       }
     }
 
-    if (description != null) {
-      final pubspec = File(p.join(targetPath, 'pubspec.yaml'));
+    // Guarded on existence: a bundle without pubspec.yaml is rejected by
+    // the caller, and throwing here would pre-empt that message.
+    final pubspec = File(p.join(targetPath, 'pubspec.yaml'));
+    if (description != null && pubspec.existsSync()) {
       final content = pubspec.readAsStringSync().replaceFirst(
         RegExp('^description: .*', multiLine: true),
         'description: "${_escapeYamlDoubleQuoted(description)}"',
       );
       pubspec.writeAsStringSync(content);
     }
+    return missing;
+  }
+
+  /// Fails the run when the bundle was missing something the app needs.
+  ///
+  /// Returns `null` when [missing] contains nothing essential.
+  int? _rejectIncompleteBundle(List<String> missing, String targetPath) {
+    final essential = missing.where(requiredOverlayEntries.contains).toList();
+    if (essential.isEmpty) return null;
+    _log.writeln(
+      'The fluFrame template bundle is incomplete (missing: '
+      '${essential.join(', ')}), so the generated app would not run. '
+      'Reinstall with: dart pub global activate fluframe',
+    );
+    _logPartialOutput(targetPath);
+    return ExitCode.software.code;
+  }
+
+  /// Tells the user where the half-written project is and how to clear it.
+  ///
+  /// Every failure that reaches here happens after we created [targetPath]
+  /// ourselves — the `existsSync` guard in [generate] runs before anything
+  /// is written, so the directory is never one the user already had.
+  /// Without this, a retry after fixing the cause hits
+  /// `Directory "..." already exists. Aborting.`
+  void _logPartialOutput(String targetPath) {
+    _log
+      ..writeln()
+      ..writeln('Partial output left at: $targetPath')
+      ..writeln(
+        'Remove it before retrying: '
+        '${Platform.isWindows ? 'rmdir /s /q' : 'rm -rf'} $targetPath',
+      );
   }
 
   void _copyDirectory(

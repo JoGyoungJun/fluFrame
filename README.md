@@ -23,6 +23,7 @@ Straight out of `fluframe create` — no edits.
 
 ```sh
 dart pub global activate fluframe
+fluframe doctor    # first: confirm this machine can build Flutter apps
 fluframe create my_app --org com.mycompany --backend supabase
 cd my_app
 flutter run --dart-define-from-file=env/dev.json

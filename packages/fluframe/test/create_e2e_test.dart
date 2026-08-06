@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fluframe/src/host_capabilities.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_source.dart';
 import 'package:path/path.dart' as p;
@@ -315,5 +316,70 @@ void main() {
         reason: 'flutter test failed:\n${testRun.stdout}\n${testRun.stderr}',
       );
     },
+  );
+
+  test(
+    'the shipped default platform set generates and analyzes',
+    () async {
+      // The three cases above all pin platforms to android+web, so until
+      // now nothing ever generated what an argument-less
+      // `fluframe create my_app` actually produces. That is the command in
+      // the README, and the one that broke: `windows` and `linux` pull in
+      // plugins that need symlinks, and `flutter pub get` fails without
+      // them. Skipped rather than pinned, so the gate is real wherever it
+      // can run instead of quietly testing something else everywhere.
+      final sync = await Process.run(
+        'dart',
+        ['run', 'tool/sync_template.dart'],
+        runInShell: true,
+      );
+      expect(sync.exitCode, 0, reason: '${sync.stdout}\n${sync.stderr}');
+
+      final resolved = await resolveTemplateDirectory();
+      expect(resolved, isNotNull);
+
+      final temp = Directory.systemTemp.createTempSync('fluframe_e2e_def_');
+      addTearDown(() {
+        try {
+          temp.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can hold locks briefly; leaking a temp dir is harmless.
+        }
+      });
+
+      final generator = ProjectGenerator(templateDirectory: resolved!);
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        // No `platforms:` — that is the whole point of this case.
+      );
+      expect(code, 0);
+
+      final projectPath = p.join(temp.path, 'demo_app');
+      for (final platform in defaultPlatforms) {
+        expect(
+          Directory(p.join(projectPath, platform)).existsSync(),
+          isTrue,
+          reason: 'flutter create should have scaffolded $platform/',
+        );
+      }
+
+      final analyze = await Process.run(
+        'flutter',
+        ['analyze'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(
+        analyze.exitCode,
+        0,
+        reason: 'flutter analyze failed:\n${analyze.stdout}\n${analyze.stderr}',
+      );
+    },
+    skip: canCreateSymlink()
+        ? null
+        : 'the windows/linux platform plugins need symlink support '
+              '(on Windows: Developer Mode)',
   );
 }

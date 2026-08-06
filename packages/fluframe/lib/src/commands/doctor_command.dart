@@ -1,19 +1,26 @@
 import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
+import 'package:fluframe/src/host_capabilities.dart' as host;
 import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/template_source.dart';
 import 'package:io/io.dart';
 
 /// `fluframe doctor` — diagnoses the environment before a first create.
 class DoctorCommand extends Command<int> {
-  /// Creates the command; [runProcess] is injectable for tests.
-  DoctorCommand({RunProcess? runProcess, StringSink? out})
-    : _runProcess = runProcess ?? defaultRunProcess,
-      _out = out ?? io.stdout;
+  /// Creates the command; [runProcess] and [canCreateSymlink] are
+  /// injectable for tests.
+  DoctorCommand({
+    RunProcess? runProcess,
+    StringSink? out,
+    bool Function()? canCreateSymlink,
+  }) : _runProcess = runProcess ?? defaultRunProcess,
+       _out = out ?? io.stdout,
+       _canCreateSymlink = canCreateSymlink ?? host.canCreateSymlink;
 
   final RunProcess _runProcess;
   final StringSink _out;
+  final bool Function() _canCreateSymlink;
 
   @override
   String get name => 'doctor';
@@ -81,6 +88,31 @@ class DoctorCommand extends Command<int> {
       );
     } else {
       _out.writeln('[ok] template bundle: ${template.path}');
+    }
+
+    // The default --platforms include windows and linux, whose plugins are
+    // wired up with symbolic links. Without them `flutter pub get` fails
+    // and `create` dies a minute in — so do not promise "All set" first.
+    if (_canCreateSymlink()) {
+      _out.writeln('[ok] symbolic links available');
+    } else {
+      fatal = true;
+      _out
+        ..writeln('[!!] Symbolic links are unavailable on this machine.')
+        ..writeln(
+          '     Flutter needs them to build with plugins, so '
+          'flutter pub get',
+        )
+        ..writeln('     fails for the windows and linux platforms.');
+      if (io.Platform.isWindows) {
+        _out.writeln(
+          '     Enable Developer Mode: start ms-settings:developers',
+        );
+      }
+      _out.writeln(
+        '     Or scope the app: '
+        'fluframe create my_app --platforms=android,ios,web',
+      );
     }
 
     _out.writeln(

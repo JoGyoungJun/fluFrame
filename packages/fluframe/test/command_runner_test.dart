@@ -21,6 +21,18 @@ void main() {
       expect(await runner.run(['create', 'BadName']), 64);
     });
 
+    test('create rejects names that would break generation', () async {
+      final runner = FluframeCommandRunner();
+
+      // Each of these used to be accepted, and generation then failed
+      // after writing the whole project.
+      expect(await runner.run(['create', 'dio']), 64);
+      expect(await runner.run(['create', 'shared_preferences']), 64);
+      expect(await runner.run(['create', 'firebase_core']), 64);
+      expect(await runner.run(['create', 'con']), 64);
+      expect(await runner.run(['create', '_private']), 64);
+    });
+
     test('create rejects an invalid --org before running anything', () async {
       final runner = FluframeCommandRunner();
 
