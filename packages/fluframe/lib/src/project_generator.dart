@@ -3,30 +3,12 @@ import 'dart:io';
 
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/package_name.dart';
+import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/version.dart';
 import 'package:io/io.dart';
 import 'package:path/path.dart' as p;
 
-/// Signature of a process launcher, injectable for tests.
-typedef RunProcess =
-    Future<ProcessResult> Function(
-      String executable,
-      List<String> arguments, {
-      String? workingDirectory,
-    });
-
-Future<ProcessResult> _defaultRunProcess(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-}) {
-  return Process.run(
-    executable,
-    arguments,
-    workingDirectory: workingDirectory,
-    runInShell: true,
-  );
-}
+export 'package:fluframe/src/process_runner.dart' show RunProcess;
 
 /// Template package name that gets rewritten into the new project's name.
 const String templatePackageName = 'fluframe_app';
@@ -101,7 +83,7 @@ class ProjectGenerator {
     Map<String, BackendAddon>? addons,
     Map<String, BackendAddon>? errorAddons,
     Map<String, BackendAddon>? analytics,
-  }) : _runProcess = runProcess ?? _defaultRunProcess,
+  }) : _runProcess = runProcess ?? defaultRunProcess,
        _log = log ?? stdout,
        _addons = addons ?? backendAddons,
        _errorAddons = errorAddons ?? errorReportingAddons,

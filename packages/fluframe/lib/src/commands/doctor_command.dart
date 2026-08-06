@@ -1,28 +1,15 @@
 import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
-import 'package:fluframe/src/project_generator.dart' show RunProcess;
+import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/template_source.dart';
 import 'package:io/io.dart';
-
-Future<io.ProcessResult> _defaultRunProcess(
-  String executable,
-  List<String> arguments, {
-  String? workingDirectory,
-}) {
-  return io.Process.run(
-    executable,
-    arguments,
-    workingDirectory: workingDirectory,
-    runInShell: true,
-  );
-}
 
 /// `fluframe doctor` — diagnoses the environment before a first create.
 class DoctorCommand extends Command<int> {
   /// Creates the command; [runProcess] is injectable for tests.
   DoctorCommand({RunProcess? runProcess, StringSink? out})
-    : _runProcess = runProcess ?? _defaultRunProcess,
+    : _runProcess = runProcess ?? defaultRunProcess,
       _out = out ?? io.stdout;
 
   final RunProcess _runProcess;

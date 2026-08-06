@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: `upgrade --apply` corrupted non-ASCII source files.** Child
+  process output was decoded with the OS codepage (cp949 on Korean
+  Windows, cp932 on Japanese), so a merged `find.text('한국어')` came back
+  as `find.text('?쒓뎅??` — closing quote and all. Every process the CLI
+  launches now decodes as UTF-8, and `git merge-file` writes its result to
+  a file instead of stdout so the merged bytes never cross a pipe. The
+  damage was silent: the run reported `conflicts: 0` and exited 0.
+- **Fixed: a failed merge could blank a file.** A hard `git merge-file`
+  error (binary input, unreadable file) produced empty output that was
+  written over the user's copy. Such files are now reported and left
+  untouched.
+- **Fixed: unresolved conflicts sealed off the re-run.** `--apply` bumped
+  `.fluframe.json` to the new version even with conflict markers still in
+  the tree, so the next run answered `nothing to upgrade` and the only way
+  out was hand-editing the metadata. The recorded version now advances
+  only on a clean result, and a run with conflicts exits non-zero.
+- **Added: `--apply` refuses when it could not be undone.** It keeps no
+  backup and `flutter create` does not `git init`, so it now requires a
+  git repository with a clean working tree. `fluframe upgrade --apply
+  --force` opts out. The check runs before the bundle download, not after.
+- CLI unit tests also run on Windows and macOS in CI.
+
 ## 1.1.0
 
 - Template: the settings **language picker no longer clips its labels on

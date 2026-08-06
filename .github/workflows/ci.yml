@@ -51,6 +51,28 @@ jobs:
       - run: dart analyze
       - run: dart test -x e2e
 
+  cli-cross-platform:
+    # The CLI shells out to flutter/dart/git and feeds their output back
+    # into user source files, so encoding and path behaviour must be
+    # verified off Linux too. Kept as a separate job (not a matrix on
+    # `cli`) because that job's name is a required status check.
+    name: CLI — unit tests on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart test -x e2e
+
   e2e:
     name: CLI — end-to-end (generate & verify app)
     runs-on: ubuntu-latest
