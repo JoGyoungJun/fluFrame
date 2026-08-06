@@ -52,6 +52,7 @@ flutter run --dart-define-from-file=env/dev.json
 |---|---|
 | Run (dev flavor) | `flutter run --dart-define-from-file=env/dev.json` |
 | Build (prod flavor) | `flutter build apk --dart-define-from-file=env/prod.json` |
+| Run with real keys | `flutter run --dart-define-from-file=env/dev.local.json` — `env/*.json` is committed and holds safe defaults; `env/*.local.json` is gitignored and is where secrets belong |
 | Regenerate models | `dart run build_runner build --delete-conflicting-outputs` |
 | Regenerate localizations | `flutter gen-l10n` |
 | Analyze | `flutter analyze` |

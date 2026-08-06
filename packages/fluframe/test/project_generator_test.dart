@@ -494,6 +494,40 @@ version: 0.1.0+1
       );
     });
 
+    test('--no-pub skips addon pub add and says what is missing', () async {
+      // Regression: --no-pub skipped `pub get` but still ran one
+      // `pub add` per addon, so the flag resolved over the network
+      // anyway — the opposite of what it promises.
+      Directory(
+        p.join(temp.path, 'template_addons', 'fake', 'lib'),
+      ).createSync(recursive: true);
+      const fake = BackendAddon(
+        name: 'fake',
+        dependencies: ['fake_pkg:^1.2.3'],
+        patches: [],
+      );
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+        runPub: false,
+      );
+
+      expect(code, 0, reason: log.toString());
+      // flutter create and nothing else.
+      expect(calls, hasLength(1));
+      // And the user is told how to finish the job by hand.
+      expect(log.toString(), contains('flutter pub add "fake_pkg:^1.2.3"'));
+    });
+
     test('a missing patch anchor fails loudly', () async {
       Directory(
         p.join(temp.path, 'template_addons', 'fake'),

@@ -69,6 +69,21 @@ saying so. The merge strategy above is unchanged; these constrain it.
   refuses unless the app is a git repository with a clean working tree.
   `--force` opts out for users who have their own safety net (a container,
   a copy, an editor's local history).
+- **Deletions are symmetric.** The original decision promised never to
+  delete a file on the user's behalf; restoring one is the same overreach
+  in reverse. A file present in BASE but missing locally was
+  indistinguishable from a new file, so `--apply` brought deleted files
+  back — and a *renamed* one back beside its copy, declaring the same
+  class twice. Such files are now reported as `deleted locally - not
+  restored`, with `--restore-deleted` to opt in.
+- **Each bundle carries its own addon definitions.** BASE is rebuilt by
+  replaying the recorded addon patches, whose anchors are exact strings
+  from the template of that era. Replaying the *current* CLI's anchors
+  against an archived bundle broke as soon as the template moved one of
+  those lines, and the upgrade aborted at exit 70 for every app that used
+  any addon. Bundles now ship `templates/addons.json`; when it is absent
+  (every version through 1.1.0) or the addons cannot be replayed anyway,
+  both sides are rebuilt without addons and the report says so.
 - **`.fluframe.json` advances only on a fully clean result.** Recording
   the new version while conflict markers are still in the tree made the
   `already up to date` short-circuit permanent: the only escape was

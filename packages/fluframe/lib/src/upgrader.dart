@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/project_generator.dart';
@@ -121,37 +122,66 @@ class Upgrader {
     final oldTemplates = await _oldBundle(from);
 
     final work = Directory.systemTemp.createTempSync('fluframe_upgrade_');
-    Future<Directory?> bare(Directory template, String label) async {
+    Future<Directory?> bare(
+      Directory template,
+      String label, {
+      bool withAddons = true,
+    }) async {
+      // Prefer the addon definitions the bundle ships with. Patch anchors
+      // are exact strings from the template of that era, so applying this
+      // CLI's anchors to an older bundle breaks the moment the template
+      // moves one of those lines.
+      final registry = _readAddonRegistry(template.parent);
       final generator = ProjectGenerator(
         templateDirectory: template,
         runProcess: _runProcess,
         log: _log,
+        addons: registry?.backends,
+        errorAddons: registry?.errorReporting,
+        analytics: registry?.analytics,
       );
       final code = await generator.generate(
         name: name,
         org: org,
         outputDirectory: p.join(work.path, label),
-        backend: backend,
-        errorReporting: errorReporting,
-        analytics: analytics,
+        backend: withAddons ? backend : null,
+        errorReporting: withAddons ? errorReporting : null,
+        analytics: withAddons ? analytics : null,
         bareOverlay: true,
       );
-      if (code != 0) {
-        _log.writeln(
-          'Could not reconstruct the $label overlay (see above) — the '
-          'recorded addon set may predate the current addon definitions.',
-        );
-        return null;
-      }
+      if (code != 0) return null;
       return Directory(p.join(work.path, label, name));
     }
 
-    final baseDir = await bare(
-      Directory(p.join(oldTemplates.path, 'app')),
-      'base',
-    );
-    final theirsDir = await bare(currentTemplate, 'theirs');
-    if (baseDir == null || theirsDir == null) return ExitCode.software.code;
+    final oldApp = Directory(p.join(oldTemplates.path, 'app'));
+    var baseDir = await bare(oldApp, 'base');
+    var theirsDir = baseDir == null
+        ? null
+        : await bare(currentTemplate, 'theirs');
+    if (baseDir == null || theirsDir == null) {
+      // Degrade rather than abort, and degrade BOTH sides so they stay
+      // comparable. The addons may be unreplayable because the old bundle
+      // predates the current anchors, or because the addon has since been
+      // dropped from the CLI. Either way the files those addons touch
+      // simply report as conflicts, which a user can resolve — whereas
+      // giving up here left every app generated with any addon
+      // permanently un-upgradable, at exit 70.
+      _log.writeln(
+        'Could not replay the recorded addons against both the fluframe '
+        '$from bundle and this one, so the merge base was rebuilt without '
+        'them. Files those addons touch will likely report as conflicts.',
+      );
+      baseDir = await bare(oldApp, 'base-plain', withAddons: false);
+      theirsDir = await bare(
+        currentTemplate,
+        'theirs-plain',
+        withAddons: false,
+      );
+    }
+    if (baseDir == null || theirsDir == null) {
+      _log.writeln('Could not reconstruct the templates to compare.');
+      return ExitCode.software.code;
+    }
 
     final results = <String, UpgradeStatus>{};
     final merged = <String, String>{};
@@ -249,6 +279,24 @@ class Upgrader {
       _log.writeln('\nDry run — re-run with --apply to write these changes.');
     }
     return ExitCode.success.code;
+  }
+
+  /// Reads `addons.json` from a bundle root, or `null` when the bundle
+  /// predates it (every version through 1.1.0) or the file is unusable.
+  AddonRegistry? _readAddonRegistry(Directory bundleRoot) {
+    final file = File(p.join(bundleRoot.path, addonRegistryFileName));
+    if (!file.existsSync()) return null;
+    try {
+      return decodeAddonRegistry(
+        jsonDecode(file.readAsStringSync()) as Map<String, Object?>,
+      );
+    } on FormatException catch (error) {
+      _log.writeln(
+        'Ignoring ${file.path}: ${error.message}. Falling back to this '
+        "version's addon definitions.",
+      );
+      return null;
+    }
   }
 
   Future<bool> _probeGit() async {

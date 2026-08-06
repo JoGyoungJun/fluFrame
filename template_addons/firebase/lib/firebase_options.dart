@@ -10,8 +10,11 @@ import 'package:firebase_core/firebase_core.dart';
 /// flutterfire configure
 /// ```
 ///
-/// Until then the app throws this error at startup on purpose — a loud,
-/// honest reminder instead of a silently broken Firebase connection.
+/// Until then this getter throws. `main.dart` catches it, reports it
+/// through the app's error seam, and starts anyway on the in-memory auth
+/// fake — a loud, honest reminder that still leaves you an app to look
+/// at, instead of the black screen an uncaught throw before `runApp`
+/// produces.
 class DefaultFirebaseOptions {
   /// Options for the current platform.
   static FirebaseOptions get currentPlatform => throw UnsupportedError(
