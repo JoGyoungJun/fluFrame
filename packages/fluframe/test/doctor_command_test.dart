@@ -14,12 +14,26 @@ void main() {
         List<String> arguments, {
         String? workingDirectory,
       })
-      runProcess,
-    ) {
+      runProcess, {
+      bool canCreateSymlink = true,
+    }) {
       out = StringBuffer();
-      return CommandRunner<int>('test', 'test')
-        ..addCommand(DoctorCommand(runProcess: runProcess, out: out));
+      return CommandRunner<int>('test', 'test')..addCommand(
+        DoctorCommand(
+          runProcess: runProcess,
+          out: out,
+          // Pinned so the suite is not at the mercy of whether the
+          // machine running it has Developer Mode on.
+          canCreateSymlink: () => canCreateSymlink,
+        ),
+      );
     }
+
+    Future<ProcessResult> allToolsPresent(
+      String executable,
+      List<String> arguments, {
+      String? workingDirectory,
+    }) async => ProcessResult(0, 0, '$executable 1.0.0\n', '');
 
     test('all tools present reports ok and exits 0', () async {
       final runner = runnerWith((executable, arguments, {workingDirectory}) {
@@ -64,6 +78,33 @@ void main() {
 
       expect(code, 0, reason: out.toString());
       expect(out.toString(), contains('[--] git not found'));
+    });
+
+    test('no symlink support is fatal, before "All set" is printed', () async {
+      // Regression: doctor declared "All set", then `create` spent a minute
+      // scaffolding and died in `flutter pub get` because the default
+      // platforms include windows/linux, whose plugins need symlinks.
+      final runner = runnerWith(allToolsPresent, canCreateSymlink: false);
+
+      final code = await runner.run(['doctor']);
+
+      expect(code, 69, reason: out.toString());
+      final report = out.toString();
+      expect(report, contains('[!!] Symbolic links are unavailable'));
+      expect(report, contains('--platforms=android,ios,web'));
+      expect(report, isNot(contains('All set')));
+      if (Platform.isWindows) {
+        expect(report, contains('ms-settings:developers'));
+      }
+    });
+
+    test('symlink support is reported as a passing check', () async {
+      final runner = runnerWith(allToolsPresent);
+
+      final code = await runner.run(['doctor']);
+
+      expect(code, 0, reason: out.toString());
+      expect(out.toString(), contains('[ok] symbolic links available'));
     });
   });
 }

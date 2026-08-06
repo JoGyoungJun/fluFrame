@@ -29,7 +29,7 @@ class CreateCommand extends Command<int> {
       )
       ..addMultiOption(
         'platforms',
-        defaultsTo: ['android', 'ios', 'web', 'windows', 'macos', 'linux'],
+        defaultsTo: defaultPlatforms,
         help: 'Platforms passed through to flutter create.',
       )
       ..addOption(
@@ -79,11 +79,9 @@ class CreateCommand extends Command<int> {
       usageException('Specify exactly one project name.');
     }
     final projectName = results.rest.first;
-    if (!isValidPackageName(projectName)) {
-      usageException(
-        '"$projectName" is not a valid Dart package name '
-        '(lower_snake_case, no leading digit, not a reserved word).',
-      );
+    final rejection = packageNameRejection(projectName);
+    if (rejection != null) {
+      usageException('Cannot create "$projectName": $rejection.');
     }
     final org = results['org'] as String;
     if (!isValidOrg(org)) {

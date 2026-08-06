@@ -88,6 +88,29 @@ jobs:
       - run: dart pub get
       - run: dart test -t e2e --reporter expanded
 
+  e2e-cross-platform:
+    # `fluframe create` is a Windows-first pain point (symlinks, cmd.exe
+    # exit codes, path separators) and the release gate never ran there.
+    # Separate job, not a matrix on `e2e`: that job's name is a required
+    # status check.
+    name: CLI — end-to-end on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart test -t e2e --reporter expanded
+
   examples:
     name: Example apps — analyze & test
     runs-on: ubuntu-latest

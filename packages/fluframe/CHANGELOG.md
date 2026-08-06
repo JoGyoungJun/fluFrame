@@ -23,6 +23,32 @@
   git repository with a clean working tree. `fluframe upgrade --apply
   --force` opts out. The check runs before the bundle download, not after.
 - CLI unit tests also run on Windows and macOS in CI.
+- **Fixed: a failed `create` left you unable to retry.** Every failure path
+  now prints where the half-written project is and the exact command to
+  remove it — previously the obvious retry hit `Directory "./my_app"
+  already exists. Aborting.` with no hint. `.fluframe.json` is written
+  last, so a partial directory never looks upgradable.
+- **Fixed: `doctor` said "All set" and then `create` failed.** It now
+  checks that this machine can create symbolic links, which Flutter needs
+  for the `windows` and `linux` plugins in the default platform set. On
+  Windows the fix is Developer Mode; the message says so, and says how to
+  scope the app instead. `create` repeats the hint if `pub get` still
+  fails that way. The README quick start now starts with `fluframe doctor`.
+- **Fixed: project names that could not work were accepted.** `dio`,
+  `intl`, `go_router`, `shared_preferences`, `firebase_core` and the rest
+  of the generated app's own dependencies were let through, then failed
+  with `A package may not list itself as a dependency` — after generation
+  had written the whole project. Windows device names (`con`, `aux`,
+  `nul`, `com1`…`lpt9`) and leading underscores are refused too, and the
+  rejection message now names the actual reason. A test fails if the
+  dependency list drifts from `template/pubspec.yaml` or the addons.
+- **Fixed: an incomplete template bundle produced a "successful" empty
+  app.** The overlay deletes the scaffold's `lib/` before copying, so a
+  bundle missing `lib`, `test` or `pubspec.yaml` yielded a project with no
+  source — reported as a warning, exit 0. It is now a hard failure with a
+  reinstall pointer.
+- e2e now covers the shipped default platform set (all six), which no test
+  had ever generated, and runs on Windows and macOS.
 
 ## 1.1.0
 

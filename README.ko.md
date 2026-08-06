@@ -22,6 +22,7 @@ fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_ap
 
 ```sh
 dart pub global activate fluframe
+fluframe doctor    # 먼저: 이 머신이 Flutter 앱을 빌드할 수 있는지 확인
 fluframe create my_app --org com.mycompany --backend supabase
 cd my_app
 flutter run --dart-define-from-file=env/dev.json
