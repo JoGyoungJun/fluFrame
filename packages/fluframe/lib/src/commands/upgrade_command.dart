@@ -23,6 +23,13 @@ class UpgradeCommand extends Command<int> {
             'Apply even when the app is not a clean git working tree '
             '(--apply keeps no backup, so there would be no way back).',
       )
+      ..addFlag(
+        'restore-deleted',
+        negatable: false,
+        help:
+            'Bring back template files you deleted or renamed (they are '
+            'reported but left alone by default).',
+      )
       ..addOption(
         'from',
         help:
@@ -61,6 +68,7 @@ class UpgradeCommand extends Command<int> {
       fromOverride: results['from'] as String?,
       apply: results['apply'] as bool,
       force: results['force'] as bool,
+      restoreDeleted: results['restore-deleted'] as bool,
     );
   }
 }

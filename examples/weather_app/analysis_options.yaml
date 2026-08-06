@@ -9,5 +9,5 @@ analyzer:
 linter:
   rules:
     # Generated l10n keys are referenced across features; keep package imports
-    # everywhere for consistency (also required by the fluFrame CLI's renamer).
+    # everywhere for consistency (they also survive a project rename).
     always_use_package_imports: true

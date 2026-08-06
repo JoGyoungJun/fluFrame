@@ -10,14 +10,14 @@ import 'package:weather_app/features/settings/presentation/settings_screen.dart'
 import '../helpers/helpers.dart';
 
 void main() {
-  group('FluFrameApp', () {
+  group('AppRoot', () {
     testWidgets('boots to the home screen with bottom navigation', (
       tester,
     ) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: appTestOverrides(),
-          child: const FluFrameApp(),
+          child: const AppRoot(),
         ),
       );
       await tester.pumpAndSettle();
@@ -30,7 +30,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: appTestOverrides(),
-          child: const FluFrameApp(),
+          child: const AppRoot(),
         ),
       );
       await tester.pumpAndSettle();
@@ -47,7 +47,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: appTestOverrides(),
-          child: const FluFrameApp(),
+          child: const AppRoot(),
         ),
       );
       await tester.pumpAndSettle();
@@ -64,7 +64,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: appTestOverrides(),
-          child: const FluFrameApp(),
+          child: const AppRoot(),
         ),
       );
       await tester.pumpAndSettle();

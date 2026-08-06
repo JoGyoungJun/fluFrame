@@ -27,7 +27,7 @@
     }
   },
   "weatherErrorMessage": "Couldn't load the weather.",
-  "homeGreeting": "Welcome to fluFrame!",
+  "homeGreeting": "Welcome to Weather App!",
   "homeDescription": "A production-ready Flutter starter with Riverpod, go_router, theming, and localization built in.",
   "counterLabel": "{count, plural, =1{Button pushed 1 time} other{Button pushed {count} times}}",
   "@counterLabel": {

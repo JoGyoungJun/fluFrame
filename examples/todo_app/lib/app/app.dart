@@ -8,9 +8,9 @@ import 'package:todo_app/features/settings/presentation/theme_preset_controller.
 import 'package:todo_app/l10n/gen/app_localizations.dart';
 
 /// Root widget: wires the router, themes, and localization together.
-class FluFrameApp extends ConsumerWidget {
+class AppRoot extends ConsumerWidget {
   /// Creates the root app widget.
-  const FluFrameApp({super.key});
+  const AppRoot({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

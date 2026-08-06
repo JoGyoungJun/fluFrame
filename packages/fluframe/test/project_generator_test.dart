@@ -35,6 +35,49 @@ import 'package:fluframe_app/app/app.dart';
       expect(rewritten, '"appTitle": "My Cool App アプリ"');
     });
 
+    test('leaves no fluFrame branding in the real template sources', () {
+      // Regression: the rewriter only replaces four exact tokens, so
+      // `Welcome to fluFrame!` (lowercase f) and `class FluFrameApp`
+      // sailed through — every generated app greeted its users with the
+      // template's name. Walk the actual shipped sources rather than a
+      // fixture, because the fixture is what let this through.
+      final branding = RegExp('flu_?frame', caseSensitive: false);
+      // An explicit link back to the project is attribution, not leftover
+      // template prose; a bare mention of "the fluFrame repository" in a
+      // generated app's source is the latter.
+      final attributionLink = RegExp(
+        r'https://github\.com/JoGyoungJun/fluFrame\S*',
+      );
+      final rewritable = {'.dart', '.arb', '.yaml', '.yml', '.json', '.md'};
+      final leaks = <String>[];
+
+      for (final root in ['../../template/lib', '../../template/test']) {
+        for (final entity in Directory(root).listSync(recursive: true)) {
+          if (entity is! File) continue;
+          if (!rewritable.contains(p.extension(entity.path))) continue;
+          final rewritten = rewriteTemplateContent(
+            entity.readAsStringSync(),
+            projectName: 'my_cool_app',
+          );
+          for (final (index, line) in rewritten.split('\n').indexed) {
+            if (branding.hasMatch(line.replaceAll(attributionLink, ''))) {
+              leaks.add('${p.relative(entity.path)}:${index + 1}: $line');
+            }
+          }
+        }
+      }
+
+      expect(
+        leaks,
+        isEmpty,
+        reason:
+            'These lines reach a generated app verbatim. Spell one of the '
+            'rename tokens (fluframe_app / FluFrame App / FluFrame 앱 / '
+            'FluFrame アプリ) so the CLI rewrites them, or drop the '
+            'reference:\n${leaks.join('\n')}',
+      );
+    });
+
     test('replaces the Korean display name token', () {
       // Regression: app_ko.arb's appTitle ("FluFrame 앱") used to survive
       // generation, leaving fluFrame branding in the Korean locale.

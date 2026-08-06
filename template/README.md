@@ -9,11 +9,11 @@ A Flutter app generated from the
 |---|---|
 | State management | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod) 3 (manual notifiers, no codegen) |
 | Navigation | [go_router](https://pub.dev/packages/go_router) with `StatefulShellRoute` bottom tabs |
-| Auth | Backend-neutral `AuthRepository` scaffold — login/profile flow, gated `/profile` route, persisted session; swap in Supabase/Firebase via the fluFrame guides |
+| Auth | Backend-neutral `AuthRepository` scaffold — login/profile flow, gated `/profile` route, persisted session; swap in Supabase/Firebase via the [guides](https://github.com/JoGyoungJun/fluFrame/tree/main/docs/guides) |
 | Models | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable |
 | Networking | [dio](https://pub.dev/packages/dio) with typed `ApiException` mapping |
 | Persistence | `KeyValueStore` interface over `SharedPreferencesAsync` |
-| Localization | `flutter gen-l10n` (en, ko) — generated into `lib/l10n/gen` |
+| Localization | `flutter gen-l10n` (en, ko, ja) — generated into `lib/l10n/gen` |
 | Theming | Material 3 light/dark with persisted `ThemeMode` |
 | Config | `--dart-define-from-file` flavors (`env/dev.json`, `env/prod.json`) |
 | Lints | [very_good_analysis](https://pub.dev/packages/very_good_analysis) |

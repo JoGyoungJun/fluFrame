@@ -5,9 +5,10 @@ import 'package:todo_app/features/auth/domain/user.dart';
 
 /// Authenticates users and restores persisted sessions.
 ///
-/// This interface is the single seam a real backend plugs into — the
-/// Firebase and Supabase guides in the fluFrame repository show the
-/// exact swap.
+/// This interface is the single seam a real backend plugs into. The
+/// Firebase and Supabase guides at
+/// https://github.com/JoGyoungJun/fluFrame/tree/main/docs/guides show
+/// the exact swap.
 abstract interface class AuthRepository {
   /// Signs in with [email] and [password].
   ///

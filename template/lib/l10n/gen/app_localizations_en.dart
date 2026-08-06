@@ -18,7 +18,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsTab => 'Settings';
 
   @override
-  String get homeGreeting => 'Welcome to fluFrame!';
+  String get homeGreeting => 'Welcome to FluFrame App!';
 
   @override
   String get homeDescription =>
@@ -60,6 +60,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get postNotFound => 'Post not found.';
+
+  @override
+  String get routeNotFoundTitle => 'Page not found';
+
+  @override
+  String routeNotFoundMessage(String location) {
+    return 'No screen matches $location.';
+  }
+
+  @override
+  String get routeNotFoundAction => 'Go to home';
 
   @override
   String get profileTab => 'Profile';

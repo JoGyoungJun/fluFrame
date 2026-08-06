@@ -3,7 +3,7 @@
   "appTitle": "FluFrame App",
   "homeTab": "Home",
   "settingsTab": "Settings",
-  "homeGreeting": "Welcome to fluFrame!",
+  "homeGreeting": "Welcome to FluFrame App!",
   "homeDescription": "A production-ready Flutter starter with Riverpod, go_router, theming, and localization built in.",
   "counterLabel": "{count, plural, =1{Button pushed 1 time} other{Button pushed {count} times}}",
   "@counterLabel": {
@@ -28,6 +28,16 @@
     }
   },
   "postNotFound": "Post not found.",
+  "routeNotFoundTitle": "Page not found",
+  "routeNotFoundMessage": "No screen matches {location}.",
+  "@routeNotFoundMessage": {
+    "placeholders": {
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "routeNotFoundAction": "Go to home",
   "profileTab": "Profile",
   "profileTitle": "Profile",
   "profileSignedInAs": "Signed in as {email}",

@@ -9,7 +9,7 @@
   "addTodoTooltip": "할 일 추가",
   "deleteTodoTooltip": "할 일 삭제",
   "emptyTodos": "아직 없어요 - 위에서 첫 할 일을 추가해 보세요.",
-  "homeGreeting": "fluFrame에 오신 것을 환영합니다!",
+  "homeGreeting": "Todo App 앱에 오신 것을 환영합니다!",
   "homeDescription": "Riverpod, go_router, 테마, 다국어 지원이 내장된 프로덕션 수준의 Flutter 스타터입니다.",
   "counterLabel": "{count, plural, other{버튼을 {count}번 눌렀습니다}}",
   "increment": "증가",

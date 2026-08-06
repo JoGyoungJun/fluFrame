@@ -155,7 +155,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeGreeting.
   ///
   /// In en, this message translates to:
-  /// **'Welcome to fluFrame!'**
+  /// **'Welcome to Todo App!'**
   String get homeGreeting;
 
   /// No description provided for @homeDescription.

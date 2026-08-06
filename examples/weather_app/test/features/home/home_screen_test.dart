@@ -8,7 +8,7 @@ void main() {
     testWidgets('renders the intro and the counter', (tester) async {
       await tester.pumpApp(const HomeScreen());
 
-      expect(find.text('Welcome to fluFrame!'), findsOneWidget);
+      expect(find.text('Welcome to Weather App!'), findsOneWidget);
       expect(find.text('Button pushed 0 times'), findsOneWidget);
     });
 

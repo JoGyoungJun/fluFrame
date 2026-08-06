@@ -52,7 +52,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get weatherErrorMessage => '날씨를 불러오지 못했습니다.';
 
   @override
-  String get homeGreeting => 'fluFrame에 오신 것을 환영합니다!';
+  String get homeGreeting => 'Weather App 앱에 오신 것을 환영합니다!';
 
   @override
   String get homeDescription =>
