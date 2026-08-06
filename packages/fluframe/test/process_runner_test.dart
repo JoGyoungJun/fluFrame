@@ -54,7 +54,7 @@ void main() {
         ..writeAsStringSync('''
 import 'dart:io';
 
-void main() => stdout.write(Directory.current.path);
+void main() => stdout.write(Directory.current.resolveSymbolicLinksSync());
 ''');
       final nested = Directory(p.join(temp.path, 'nested'))..createSync();
 
@@ -66,9 +66,10 @@ void main() => stdout.write(Directory.current.path);
       expect(result.exitCode, 0, reason: result.stderr.toString());
       expect(
         p.canonicalize(result.stdout.toString().trim()),
-        // resolveSymbolicLinksSync, not canonicalize alone: macOS reports
-        // the temp dir as /private/var while systemTemp says /var, and
-        // canonicalize normalizes without following links.
+        // Both sides fully resolved: macOS reports the temp dir as
+        // /private/var while systemTemp says /var, and Windows hands back
+        // the 8.3 short form (runner~1) for a long user name.
+        // canonicalize alone normalizes without following either.
         p.canonicalize(nested.resolveSymbolicLinksSync()),
       );
     });
