@@ -72,6 +72,19 @@ const Set<String> _textExtensions = {
   '.md',
 };
 
+/// Splits `package:constraint` into its two halves.
+///
+/// A dependency with no `:` has no constraint.
+(String, String?) splitDependency(String dependency) {
+  final separator = dependency.indexOf(':');
+  return separator == -1
+      ? (dependency, null)
+      : (
+          dependency.substring(0, separator),
+          dependency.substring(separator + 1),
+        );
+}
+
 /// Rewrites template tokens in [content] for a project called [projectName].
 String rewriteTemplateContent(String content, {required String projectName}) {
   final displayName = humanizePackageName(projectName);
@@ -249,6 +262,10 @@ class ProjectGenerator {
         targetPath,
         addon: selected,
         name: name,
+        // --no-pub used to skip `pub get` but still run one `pub add` per
+        // addon, so the flag resolved dependencies over the network
+        // anyway — the opposite of what it promises.
+        installDependencies: runPub,
       );
       if (addonExit != 0) {
         _logPartialOutput(targetPath);
@@ -328,8 +345,24 @@ class ProjectGenerator {
       ..writeln('Created $name at $targetPath.')
       ..writeln()
       ..writeln('Next steps:')
-      ..writeln('  cd $targetPath')
-      ..writeln('  flutter run --dart-define-from-file=env/dev.json');
+      ..writeln('  cd $targetPath');
+    if (!runPub) {
+      // Nothing was resolved, so say what the app still needs — silence
+      // here leaves an unbuildable project.
+      final pending = [
+        ...?addon?.dependencies,
+        ...?reporting?.dependencies,
+        ...?analyticsAddon?.dependencies,
+      ];
+      _log.writeln('  flutter pub get');
+      if (pending.isNotEmpty) {
+        // Quoted: cmd.exe would otherwise eat the `^` in the constraint.
+        final quoted = pending.map((d) => '"$d"').join(' ');
+        _log.writeln('  flutter pub add $quoted');
+      }
+      _log.writeln('  flutter gen-l10n');
+    }
+    _log.writeln('  flutter run --dart-define-from-file=env/dev.json');
     for (final note in [
       ...?addon?.postCreateNotes,
       ...?reporting?.postCreateNotes,
@@ -404,10 +437,16 @@ class ProjectGenerator {
       _log.writeln(
         'Adding dependencies: ${addon.dependencies.join(', ')}...',
       );
+      // Only the NAMES go on the command line. Processes run through a
+      // shell, and on Windows that is cmd.exe, where `^` is the escape
+      // character — twice over, because `flutter` is a batch file that
+      // re-parses its arguments. `pkg:^2.17.0` arrives as `pkg:2.17.0`,
+      // an exact pin that resolves to nothing and fails version solving.
+      // The constraint is written into pubspec.yaml afterwards instead.
       final pubAdd = await _runProcess('flutter', [
         'pub',
         'add',
-        ...addon.dependencies,
+        ...addon.dependencies.map((d) => splitDependency(d).$1),
       ], workingDirectory: targetPath);
       if (pubAdd.exitCode != 0) {
         _log
@@ -415,8 +454,35 @@ class ProjectGenerator {
           ..writeln(pubAdd.stderr);
         return ExitCode.software.code;
       }
+      _pinDependencies(targetPath, addon.dependencies);
     }
     return ExitCode.success.code;
+  }
+
+  /// Replaces the constraint `pub add` chose with the addon's declared
+  /// one, so the app is pinned to the major its injected sources target.
+  ///
+  /// `pub add <name>` pins to whatever is latest at generation time, so an
+  /// upstream major release would break newly generated apps on its
+  /// release day with no fluframe change to blame.
+  void _pinDependencies(String targetPath, List<String> dependencies) {
+    final pubspec = File(p.join(targetPath, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) return;
+    var content = pubspec.readAsStringSync();
+    for (final dependency in dependencies) {
+      final (name, constraint) = splitDependency(dependency);
+      if (constraint == null) continue;
+      final entry = RegExp('^  $name:.*\$', multiLine: true);
+      if (!entry.hasMatch(content)) {
+        _log.writeln(
+          'Warning: $name is not in pubspec.yaml after pub add — leaving '
+          'its version unpinned.',
+        );
+        continue;
+      }
+      content = content.replaceFirst(entry, '  $name: $constraint');
+    }
+    pubspec.writeAsStringSync(content);
   }
 
   void _logFlutterMissing() {

@@ -29,24 +29,31 @@ Future<void> main() async {
   final locale = await settings.loadLocale();
   final initialUser = await InMemoryAuthRepository(store).restoreSession();
 
-  runApp(
-    ProviderScope(
-      // Riverpod 3 retries failing providers with exponential backoff by
-      // default, which keeps AsyncValueWidget in its loading state for
-      // ~40s before the error/retry UI ever appears. Typed API failures
-      // are surfaced immediately; anything else gets one quick retry.
-      retry: (retryCount, error) {
-        if (error is ApiException || retryCount >= 1) return null;
-        return const Duration(milliseconds: 200);
-      },
-      overrides: [
-        keyValueStoreProvider.overrideWithValue(store),
-        initialThemeModeProvider.overrideWithValue(themeMode),
-        initialThemePresetProvider.overrideWithValue(themePreset),
-        initialLocaleProvider.overrideWithValue(locale),
-        initialUserProvider.overrideWithValue(initialUser),
-      ],
-      child: const AppRoot(),
-    ),
-  );
+  // runApp lives in a named closure so a crash-reporting addon can wrap
+  // it (Sentry's `appRunner:`) and catch errors raised inside the zone,
+  // which is impossible with a bare runApp call.
+  void start() {
+    runApp(
+      ProviderScope(
+        // Riverpod 3 retries failing providers with exponential backoff by
+        // default, which keeps AsyncValueWidget in its loading state for
+        // ~40s before the error/retry UI ever appears. Typed API failures
+        // are surfaced immediately; anything else gets one quick retry.
+        retry: (retryCount, error) {
+          if (error is ApiException || retryCount >= 1) return null;
+          return const Duration(milliseconds: 200);
+        },
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(store),
+          initialThemeModeProvider.overrideWithValue(themeMode),
+          initialThemePresetProvider.overrideWithValue(themePreset),
+          initialLocaleProvider.overrideWithValue(locale),
+          initialUserProvider.overrideWithValue(initialUser),
+        ],
+        child: const AppRoot(),
+      ),
+    );
+  }
+
+  start();
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/upgrader.dart';
 import 'package:fluframe/src/version.dart';
 import 'package:io/io.dart';
@@ -290,6 +291,96 @@ void main() {
       expect(
         File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
         'alpha v2\n',
+      );
+    });
+
+    /// Rewrites the fixture's metadata to record [backend].
+    void recordBackend(String backend) {
+      final meta = {
+        'cliVersion': '0.1.0',
+        'name': 'demo_app',
+        'org': 'dev.example',
+        'backend': backend,
+      };
+      writeFile(project.path, '.fluframe.json', '${jsonEncode(meta)}\n');
+    }
+
+    test('an addon this CLI no longer knows degrades the base', () async {
+      // Regression: the merge base was rebuilt from the OLD bundle but
+      // with the CURRENT CLI's addon anchors, and a missing anchor was a
+      // hard stop — so every app generated with any addon became
+      // permanently un-upgradable the moment the template moved a line.
+      recordBackend('a-backend-from-the-future');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(log.toString(), contains('rebuilt without'));
+      // The upgrade still happened.
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
+    });
+
+    test('each bundle replays the addon anchors of its own era', () async {
+      // The published bundle carries addons.json precisely so a future
+      // CLI can rebuild the base with the anchors that matched the
+      // template of that era. Here the old anchor ('alpha') does not
+      // exist in the new template and vice versa, so reconstructing
+      // either side with the wrong definitions fails outright.
+      recordBackend('legacy');
+      void writeRegistry(String root, String anchor, String replacement) {
+        writeFile(
+          root,
+          addonRegistryFileName,
+          jsonEncode({
+            'schema': 1,
+            'backends': {
+              'legacy': BackendAddon(
+                name: 'legacy',
+                requiresFiles: false,
+                dependencies: const [],
+                patches: [
+                  AddonPatch(
+                    file: 'lib/a.dart',
+                    anchor: anchor,
+                    replacement: replacement,
+                  ),
+                ],
+              ).toJson(),
+            },
+            'errorReporting': <String, Object?>{},
+            'analytics': <String, Object?>{},
+          }),
+        );
+      }
+
+      writeRegistry(oldTemplates.path, 'alpha\n', 'alpha // legacy\n');
+      writeRegistry(
+        newTemplate.parent.path,
+        'alpha v2\n',
+        'alpha v2 // legacy\n',
+      );
+      // An app generated with the legacy addon carries its patch.
+      writeFile(project.path, 'lib/a.dart', 'alpha // legacy\n');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(log.toString(), isNot(contains('rebuilt without')));
+      // Clean merge, with the current era's patch applied.
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2 // legacy\n',
       );
     });
 

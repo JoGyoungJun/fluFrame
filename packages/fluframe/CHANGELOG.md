@@ -73,6 +73,49 @@
   every `ApiException`, so a 404 or a 500 was answered with a stale copy
   and `PostDetailScreen`'s 404 branch could never run. Only
   `NetworkException` falls back now.
+- **Fixed: `--backend firebase` opened to a black screen.**
+  `Firebase.initializeApp` ran before `runApp` with a placeholder that
+  throws until `flutterfire configure` — so the very first launch of every
+  generated app died with no widget tree, no red error screen, and nothing
+  in the log. It is now initialized after the error hooks, inside a
+  try/catch, and the app runs on the in-memory auth fake until it is
+  configured. `--backend supabase` behaves the same way with an empty
+  `SUPABASE_URL`, matching how the Sentry and Amplitude addons already
+  stayed inert without their keys.
+- **Fixed: `--error-reporting sentry` lost most of what Sentry does.**
+  `SentryFlutter.init` was called without `appRunner`, so zone errors were
+  never captured — and the template then overwrote both handlers the SDK
+  had just installed. The app now runs inside `appRunner:`, the SDK's
+  integrations chain onto the template's handlers, and the hand-rolled
+  `Sentry.captureException` calls are gone (they double-reported and
+  marked everything `handled: true`).
+- **Fixed: addon dependencies were installed unpinned.** `pub add` with no
+  constraint resolves to whatever is latest, while the injected sources
+  target one major — so an upstream major release would break newly
+  generated apps on its release day. All four addons now pin
+  `^major.minor`, and a test fails if any addon declares a dependency
+  without a constraint. The constraint is written into `pubspec.yaml`
+  rather than passed on the command line: `flutter` is a batch file on
+  Windows, and `cmd.exe` eats the `^`.
+- **Fixed: `--no-pub` still resolved dependencies.** It skipped
+  `pub get` but ran one `pub add` per addon anyway. It now installs
+  nothing and prints the `flutter pub add` line to run by hand.
+- **Fixed: setup notes sent secrets into a committed file.** All three
+  addons told users to put keys in `env/dev.json`, which the template's
+  own `.gitignore` documents as committed safe defaults — secrets belong
+  in `env/*.local.json`. The notes and the committed placeholders now
+  agree.
+- **Fixed: an addon could make an app permanently un-upgradable.**
+  `upgrade` rebuilt the merge base by replaying the *current* CLI's addon
+  anchors against an *archived* bundle, so moving any anchored template
+  line blocked the upgrade at exit 70 for every app generated with an
+  addon. Bundles now ship their own `templates/addons.json`, and when the
+  addons cannot be replayed at all both sides are rebuilt without them
+  and the report says so.
+- Fixed: the injected `firebase_options` import landed at an unsorted
+  position (its anchor named an import that stopped being last), as did
+  the Sentry SDK import. `dart fix --apply` hid both — except under
+  `--no-pub` and on the upgrade path.
 - Template: screen-view analytics report the route **pattern**
   (`/home/posts/:id`), not the resolved path — concrete paths explode
   dashboard cardinality and would ship path secrets to a third party. The

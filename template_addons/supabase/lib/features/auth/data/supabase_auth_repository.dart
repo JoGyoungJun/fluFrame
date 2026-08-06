@@ -1,7 +1,20 @@
+import 'package:fluframe_app/core/storage/key_value_store.dart';
 import 'package:fluframe_app/features/auth/data/auth_repository.dart';
 import 'package:fluframe_app/features/auth/domain/auth_exception.dart';
 import 'package:fluframe_app/features/auth/domain/user.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
+
+/// The auth backend this build should use.
+///
+/// A freshly generated app has no Supabase project yet, and
+/// `Supabase.initialize` with an empty URL throws before the first frame
+/// — a black screen with nothing on it. Until `SUPABASE_URL` is set the
+/// app keeps running on the in-memory fake, the same way the Sentry and
+/// Amplitude addons stay inert without their keys.
+AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
+    SupabaseAuthRepository.isConfigured
+    ? SupabaseAuthRepository()
+    : InMemoryAuthRepository(store);
 
 /// [AuthRepository] backed by Supabase Auth.
 ///
@@ -9,6 +22,10 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 /// SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY) via `Supabase.initialize` in
 /// `main.dart`.
 class SupabaseAuthRepository implements AuthRepository {
+  /// Whether this build was given a Supabase project to talk to.
+  static const bool isConfigured =
+      String.fromEnvironment('SUPABASE_URL') != '';
+
   supabase.SupabaseClient get _client => supabase.Supabase.instance.client;
 
   @override

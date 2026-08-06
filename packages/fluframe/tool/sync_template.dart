@@ -4,8 +4,10 @@
 // Run from the package root before publishing:
 //   dart run tool/sync_template.dart
 //   dart pub publish --dry-run
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:path/path.dart' as p;
 
@@ -56,7 +58,19 @@ void main() {
     stdout.writeln('Synced template_addons into templates/addons.');
   }
 
-  stdout.writeln('Synced ${overlayEntries.length} entries into templates/app.');
+  // Ship the addon patch definitions WITH the bundle. `fluframe upgrade`
+  // rebuilds the merge base from the bundle of the version an app was
+  // generated with, and patch anchors are exact strings from that era's
+  // template — so a future CLI must read these, not its own.
+  File(p.join(packageRoot.path, 'templates', addonRegistryFileName))
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert(encodeAddonRegistry())}\n',
+    );
+
+  stdout
+    ..writeln('Wrote templates/$addonRegistryFileName.')
+    ..writeln('Synced ${overlayEntries.length} entries into templates/app.');
 }
 
 void _copyDirectory(Directory source, Directory destination) {

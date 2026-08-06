@@ -162,15 +162,23 @@ void main() {
         ).existsSync(),
         isTrue,
       );
+      final mainContent = File(
+        p.join(projectPath, 'lib', 'main.dart'),
+      ).readAsStringSync();
+      // The SDK is given the app runner, which is what installs
+      // RunZonedGuardedIntegration and chains its handlers onto the
+      // template's. It replaces the hand-rolled Sentry.captureException
+      // calls that used to be patched into error_handlers.dart, reported
+      // every error as `handled: true`, and lost crash-free sessions.
+      expect(mainContent, contains('SentryFlutter.init'));
+      expect(mainContent, contains('appRunner: start'));
       expect(
         File(
           p.join(projectPath, 'lib', 'core', 'logging', 'error_handlers.dart'),
         ).readAsStringSync(),
-        contains('Sentry.captureException'),
+        isNot(contains('Sentry.captureException')),
+        reason: 'the SDK integrations capture; manual calls would duplicate',
       );
-      final mainContent = File(
-        p.join(projectPath, 'lib', 'main.dart'),
-      ).readAsStringSync();
       expect(mainContent, contains('Supabase.initialize'));
       expect(mainContent, isNot(contains('InMemoryAuthRepository(store)')));
       expect(
