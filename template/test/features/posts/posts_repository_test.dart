@@ -17,21 +17,31 @@ void main() {
       repository = PostsRepository(dio);
     });
 
-    test('fetchPosts decodes the response body', () async {
-      when(() => dio.get<List<dynamic>>('/posts')).thenAnswer(
+    /// Stubs `GET /posts` for any page, answering with [data].
+    void stubPosts(List<dynamic> data) {
+      when(
+        () => dio.get<List<dynamic>>(
+          '/posts',
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
-          data: <dynamic>[
-            <String, Object?>{
-              'id': 1,
-              'userId': 1,
-              'title': 'title',
-              'body': 'body',
-            },
-          ],
+          data: data,
           requestOptions: RequestOptions(path: '/posts'),
           statusCode: 200,
         ),
       );
+    }
+
+    test('fetchPosts decodes the response body', () async {
+      stubPosts(<dynamic>[
+        <String, Object?>{
+          'id': 1,
+          'userId': 1,
+          'title': 'title',
+          'body': 'body',
+        },
+      ]);
 
       final posts = await repository.fetchPosts();
 
@@ -41,8 +51,44 @@ void main() {
       );
     });
 
+    test('fetchPosts asks for the requested page', () async {
+      // Pins the paging contract: a page number the server does not
+      // receive is a list that silently never advances.
+      stubPosts(<dynamic>[]);
+
+      await repository.fetchPosts(page: 3, limit: 5);
+
+      verify(
+        () => dio.get<List<dynamic>>(
+          '/posts',
+          queryParameters: <String, Object?>{'_page': 3, '_limit': 5},
+        ),
+      ).called(1);
+    });
+
+    test('fetchPosts defaults to the first page', () async {
+      stubPosts(<dynamic>[]);
+
+      await repository.fetchPosts();
+
+      verify(
+        () => dio.get<List<dynamic>>(
+          '/posts',
+          queryParameters: <String, Object?>{
+            '_page': 1,
+            '_limit': postsPageSize,
+          },
+        ),
+      ).called(1);
+    });
+
     test('fetchPosts maps timeouts to NetworkException', () async {
-      when(() => dio.get<List<dynamic>>('/posts')).thenThrow(
+      when(
+        () => dio.get<List<dynamic>>(
+          '/posts',
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      ).thenThrow(
         DioException(
           requestOptions: RequestOptions(path: '/posts'),
           type: DioExceptionType.connectionTimeout,

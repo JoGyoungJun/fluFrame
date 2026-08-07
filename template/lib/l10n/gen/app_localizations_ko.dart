@@ -47,6 +47,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postsErrorMessage => '게시글을 불러오지 못했습니다.';
 
   @override
+  String get postsLoadingMore => '더 불러오는 중…';
+
+  @override
+  String get postsLoadMoreError => '게시글을 더 불러오지 못했습니다.';
+
+  @override
+  String get postsEndOfList => '마지막 게시글입니다.';
+
+  @override
   String get genericErrorMessage => '문제가 발생했습니다.';
 
   @override

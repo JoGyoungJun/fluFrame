@@ -14,6 +14,13 @@ import 'package:fluframe_app/features/posts/domain/post.dart';
 /// server answered — a 404 for a deleted post, a 500 for a broken
 /// endpoint — and serving a stale copy would hide it: the 404 branch in
 /// `PostDetailScreen` was unreachable for exactly that reason.
+///
+/// Only the **first** page is cached, so the offline fallback — including
+/// the one [fetchPost] uses — covers the first [postsPageSize] posts
+/// rather than every post the user ever scrolled past. Accumulating pages
+/// in the cache is deliberately out of scope
+/// (`docs/design/004-paginated-posts.md`): the offline story here is "the
+/// screen still opens", not "the whole feed is available".
 class CachedPostsRepository implements PostsRepository {
   /// Wraps [inner], persisting responses in [store].
   CachedPostsRepository(PostsRepository inner, KeyValueStore store)
@@ -26,15 +33,23 @@ class CachedPostsRepository implements PostsRepository {
   static const String _cacheKey = 'cache.posts';
 
   @override
-  Future<List<Post>> fetchPosts() async {
+  Future<List<Post>> fetchPosts({
+    int page = 1,
+    int limit = postsPageSize,
+  }) async {
     try {
-      final posts = await _inner.fetchPosts();
-      await _store.setString(
-        _cacheKey,
-        jsonEncode([for (final post in posts) post.toJson()]),
-      );
+      final posts = await _inner.fetchPosts(page: page, limit: limit);
+      if (page == 1) {
+        await _store.setString(
+          _cacheKey,
+          jsonEncode([for (final post in posts) post.toJson()]),
+        );
+      }
       return posts;
     } on NetworkException {
+      // A later page has nothing sensible to fall back to, and the list
+      // screen already keeps what it is showing and offers a retry.
+      if (page != 1) rethrow;
       final cached = await _readCache();
       if (cached == null) rethrow;
       return cached;

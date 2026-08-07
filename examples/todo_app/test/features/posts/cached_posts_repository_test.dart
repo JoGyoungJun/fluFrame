@@ -16,10 +16,18 @@ class _SwitchableInner implements PostsRepository {
     Post(id: 1, userId: 1, title: 'cached title', body: 'body'),
   ];
 
+  static const laterPage = [
+    Post(id: 2, userId: 1, title: 'page two title', body: 'body'),
+  ];
+
   @override
-  Future<List<Post>> fetchPosts() async {
+  Future<List<Post>> fetchPosts({
+    int page = 1,
+    int limit = postsPageSize,
+  }) async {
     if (failWith != null) throw failWith!;
-    return fail ? throw const NetworkException('down') : posts;
+    if (fail) throw const NetworkException('down');
+    return page == 1 ? posts : laterPage;
   }
 
   @override
@@ -93,6 +101,24 @@ void main() {
       inner.fail = true;
 
       expect(() => repository.fetchPost(99), throwsA(isA<NetworkException>()));
+    });
+
+    test('only the first page is cached', () async {
+      await repository.fetchPosts(page: 2);
+
+      expect(await store.getString('cache.posts'), isNull);
+    });
+
+    test('a later page does not fall back to the cache', () async {
+      // The cache holds page 1; answering a page-2 request with it would
+      // hand the controller a duplicate page and stall the list forever.
+      await repository.fetchPosts();
+      inner.fail = true;
+
+      expect(
+        () => repository.fetchPosts(page: 2),
+        throwsA(isA<NetworkException>()),
+      );
     });
   });
 }

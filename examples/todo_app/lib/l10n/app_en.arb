@@ -23,6 +23,18 @@
   "viewPosts": "View sample posts",
   "postsTitle": "Posts",
   "postsErrorMessage": "Failed to load posts.",
+  "postsLoadingMore": "Loading more…",
+  "@postsLoadingMore": {
+    "description": "Shown under the post list while the next page loads."
+  },
+  "postsLoadMoreError": "Couldn't load more posts.",
+  "@postsLoadMoreError": {
+    "description": "Shown under the post list when the next page fails to load."
+  },
+  "postsEndOfList": "You've reached the end.",
+  "@postsEndOfList": {
+    "description": "Shown under the post list once every post has been loaded."
+  },
   "genericErrorMessage": "Something went wrong.",
   "retry": "Retry",
   "postDetailTitle": "Post #{id}",
