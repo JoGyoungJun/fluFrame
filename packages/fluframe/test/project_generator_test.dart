@@ -48,6 +48,14 @@ import 'package:fluframe_app/app/app.dart';
       final attributionLink = RegExp(
         r'https://github\.com/JoGyoungJun/fluFrame\S*',
       );
+      // The `add feature` anchors are the same kind of exception: they are
+      // a contract token the CLI greps for, so they MUST survive rewriting
+      // verbatim (spec 003). Only the bare anchor line is allowed — prose
+      // on the same line would smuggle template branding back in, which is
+      // what this test exists to stop.
+      final scaffoldAnchor = RegExp(
+        r'^\s*// fluframe:(routes|branches|destinations)$',
+      );
       final rewritable = {'.dart', '.arb', '.yaml', '.yml', '.json', '.md'};
       final leaks = <String>[];
 
@@ -70,6 +78,7 @@ import 'package:fluframe_app/app/app.dart';
             projectName: 'my_cool_app',
           );
           for (final (index, line) in rewritten.split('\n').indexed) {
+            if (scaffoldAnchor.hasMatch(line.trimRight())) continue;
             if (branding.hasMatch(line.replaceAll(attributionLink, ''))) {
               leaks.add('${p.relative(entity.path)}:${index + 1}: $line');
             }

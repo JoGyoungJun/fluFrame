@@ -2,6 +2,7 @@ import 'dart:io' as io;
 
 import 'package:args/command_runner.dart';
 import 'package:fluframe/src/bundle_archive.dart';
+import 'package:fluframe/src/commands/add_command.dart';
 import 'package:fluframe/src/commands/create_command.dart';
 import 'package:fluframe/src/commands/doctor_command.dart';
 import 'package:fluframe/src/commands/upgrade_command.dart';
@@ -30,6 +31,7 @@ class FluframeCommandRunner extends CommandRunner<int> {
       negatable: false,
       help: 'Print the fluframe version.',
     );
+    addCommand(AddCommand());
     addCommand(CreateCommand());
     addCommand(DoctorCommand());
     addCommand(UpgradeCommand());

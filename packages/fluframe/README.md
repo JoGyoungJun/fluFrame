@@ -30,7 +30,29 @@ fluframe upgrade                     # pull template updates into an app (dry-ru
 fluframe create my_app --org com.mycompany --description "My shiny app"
 cd my_app
 flutter run --dart-define-from-file=env/dev.json
+
+fluframe add feature billing --tab   # later: scaffold your next feature
 ```
+
+## Adding a feature
+
+`create` runs once; `add feature` runs every time the app grows one:
+
+```sh
+fluframe add feature billing          # a full-screen route at /billing
+fluframe add feature billing --tab    # ...or a bottom-navigation tab
+fluframe add feature billing --dry-run
+```
+
+It writes the repository, controller, screen and two tests, registers the
+route in `lib/app/router/app_router.dart`, and adds the strings to all
+three ARBs — telling you which ones still carry the English text. Then
+run `flutter gen-l10n`.
+
+Unlike `upgrade`, it is **not** dry-run by default: it only creates new
+files and makes bounded insertions at anchors the template ships. Apps
+generated before those anchors existed need `fluframe upgrade` first; the
+command says so rather than guessing.
 
 ## Why fluframe
 

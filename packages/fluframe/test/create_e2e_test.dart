@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/backends.dart';
+import 'package:fluframe/src/command_runner.dart';
 import 'package:fluframe/src/host_capabilities.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_source.dart';
@@ -447,6 +448,90 @@ void main() {
         ? null
         : 'the windows/linux platform plugins need symlink support '
               '(on Windows: Developer Mode)',
+  );
+
+  test(
+    'add feature --tab produces an app that still analyzes and tests',
+    () async {
+      // The unit tests scaffold against a fixture router. This is the only
+      // check that the generated code actually compiles inside a real app —
+      // that the imports resolve, the anchors are where the CLI thinks, and
+      // the ARB keys survive `flutter gen-l10n`.
+      final sync = await Process.run(
+        'dart',
+        ['run', 'tool/sync_template.dart'],
+        runInShell: true,
+      );
+      expect(sync.exitCode, 0, reason: '${sync.stdout}\n${sync.stderr}');
+
+      final resolved = await resolveTemplateDirectory();
+      expect(resolved, isNotNull);
+
+      final temp = Directory.systemTemp.createTempSync('fluframe_e2e_add_');
+      addTearDown(() {
+        try {
+          temp.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can hold locks briefly; leaking a temp dir is harmless.
+        }
+      });
+
+      final generator = ProjectGenerator(templateDirectory: resolved!);
+      expect(
+        await generator.generate(
+          name: 'demo_app',
+          org: 'dev.example',
+          outputDirectory: temp.path,
+          platforms: const ['android', 'web'],
+        ),
+        0,
+      );
+      final projectPath = p.join(temp.path, 'demo_app');
+
+      final added = await FluframeCommandRunner().run([
+        'add',
+        'feature',
+        'billing',
+        '--tab',
+        '--project-dir',
+        projectPath,
+      ]);
+      expect(added, 0);
+
+      // gen-l10n is the user's step (the command says so), so run it here
+      // exactly as the printed instructions do.
+      final l10n = await Process.run(
+        'flutter',
+        ['gen-l10n'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(l10n.exitCode, 0, reason: '${l10n.stdout}\n${l10n.stderr}');
+
+      final analyze = await Process.run(
+        'flutter',
+        ['analyze'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(
+        analyze.exitCode,
+        0,
+        reason: 'flutter analyze failed:\n${analyze.stdout}\n${analyze.stderr}',
+      );
+
+      final testRun = await Process.run(
+        'flutter',
+        ['test'],
+        workingDirectory: projectPath,
+        runInShell: true,
+      );
+      expect(
+        testRun.exitCode,
+        0,
+        reason: 'flutter test failed:\n${testRun.stdout}\n${testRun.stderr}',
+      );
+    },
   );
 }
 

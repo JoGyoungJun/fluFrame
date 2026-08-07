@@ -73,6 +73,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/login',
         builder: (context, state) => const LoginScreen(),
       ),
+      // fluframe:routes
+      // Anchor for `add feature <name>`: full-screen routes are inserted
+      // directly above this line. Keep it — it is the only thing the CLI
+      // looks for, and without it routes have to be added by hand.
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppNavigationShell(navigationShell: navigationShell),
@@ -127,6 +131,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+          // fluframe:branches
+          // Anchor for `add feature <name> --tab`: tab branches are
+          // inserted directly above this line. A branch added here needs a
+          // matching destination below it, in the same order.
         ],
       ),
     ],
@@ -193,6 +201,9 @@ class AppNavigationShell extends StatelessWidget {
             selectedIcon: const Icon(Icons.settings),
             label: l10n.settingsTab,
           ),
+          // fluframe:destinations
+          // Anchor for `add feature <name> --tab`: one entry per branch
+          // above, in the same order.
         ],
       ),
     );
