@@ -10,6 +10,9 @@ fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_ap
 상태관리, 라우팅, 테마, 다국어, 네트워킹, 플레이버, 엄격한 lint, 테스트까지
 모두 연결되어 있고 전부 통과하는 feature-first Flutter 앱을 생성합니다.
 
+**▶ [브라우저에서 생성된 앱 바로 써보기](https://jogyoungjun.github.io/fluFrame/)**
+— 설치 없이, 실물 그대로.
+
 [English README](README.md)
 
 | 홈 | 샘플 REST 기능 | 테마 & 4개 언어 |

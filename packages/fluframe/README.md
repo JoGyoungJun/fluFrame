@@ -7,6 +7,9 @@ Generate production-ready Flutter apps from the
 Riverpod 3, go_router, localization, theming, dio, and tests wired out
 of the box.
 
+**▶ [Try a generated app in your browser](https://jogyoungjun.github.io/fluFrame/)**
+— the real thing, nothing installed.
+
 | Home | Sample REST feature | Theming & 4 locales |
 |:---:|:---:|:---:|
 | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/home-light.png" width="240" alt="Home tab of a generated app"> | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/posts-light.png" width="240" alt="Post list loaded over REST"> | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/settings-dark.png" width="240" alt="Settings tab in dark mode"> |
