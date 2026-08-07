@@ -6,6 +6,12 @@ import 'package:weather_app/core/storage/key_value_store.dart';
 import 'package:weather_app/features/posts/data/cached_posts_repository.dart';
 import 'package:weather_app/features/posts/domain/post.dart';
 
+/// How many posts one page holds.
+///
+/// The list is paginated rather than fetched whole; see
+/// `docs/design/004-paginated-posts.md`.
+const int postsPageSize = 20;
+
 /// Fetches [Post]s from the sample REST API.
 ///
 /// Transport errors surface as typed [ApiException]s, never as raw
@@ -16,10 +22,21 @@ class PostsRepository {
 
   final Dio _dio;
 
-  /// Fetches every post.
-  Future<List<Post>> fetchPosts() async {
+  /// Fetches one page of posts, 1-based.
+  ///
+  /// The caller detects the end of the list from the returned length: a
+  /// page shorter than [limit] — including the empty page past the end —
+  /// is the last one. No total count is read, so this works against any
+  /// endpoint that honours offset paging.
+  Future<List<Post>> fetchPosts({
+    int page = 1,
+    int limit = postsPageSize,
+  }) async {
     try {
-      final response = await _dio.get<List<dynamic>>('/posts');
+      final response = await _dio.get<List<dynamic>>(
+        '/posts',
+        queryParameters: <String, Object?>{'_page': page, '_limit': limit},
+      );
       final data = response.data ?? const <dynamic>[];
       return data
           .map((json) => Post.fromJson(json as Map<String, Object?>))

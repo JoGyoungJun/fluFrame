@@ -81,6 +81,15 @@ class AppLocalizationsJa extends AppLocalizations {
   String get postsErrorMessage => '投稿を読み込めませんでした。';
 
   @override
+  String get postsLoadingMore => 'さらに読み込み中…';
+
+  @override
+  String get postsLoadMoreError => 'これ以上の投稿を読み込めませんでした。';
+
+  @override
+  String get postsEndOfList => '最後の投稿です。';
+
+  @override
   String get genericErrorMessage => '問題が発生しました。';
 
   @override

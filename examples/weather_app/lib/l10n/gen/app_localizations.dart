@@ -220,6 +220,24 @@ abstract class AppLocalizations {
   /// **'Failed to load posts.'**
   String get postsErrorMessage;
 
+  /// Shown under the post list while the next page loads.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading more…'**
+  String get postsLoadingMore;
+
+  /// Shown under the post list when the next page fails to load.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load more posts.'**
+  String get postsLoadMoreError;
+
+  /// Shown under the post list once every post has been loaded.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve reached the end.'**
+  String get postsEndOfList;
+
   /// No description provided for @genericErrorMessage.
   ///
   /// In en, this message translates to:

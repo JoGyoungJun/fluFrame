@@ -66,6 +66,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postsErrorMessage => 'Failed to load posts.';
 
   @override
+  String get postsLoadingMore => 'Loading more…';
+
+  @override
+  String get postsLoadMoreError => 'Couldn\'t load more posts.';
+
+  @override
+  String get postsEndOfList => 'You\'ve reached the end.';
+
+  @override
   String get genericErrorMessage => 'Something went wrong.';
 
   @override
