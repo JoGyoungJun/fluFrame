@@ -11,6 +11,9 @@ feature-first Flutter application with state management, routing, theming,
 localization, networking, flavors, strict lints, and tests — already wired
 together and passing.
 
+**▶ [Try a generated app in your browser](https://jogyoungjun.github.io/fluFrame/)**
+— the real thing, nothing installed.
+
 [한국어 README](README.ko.md)
 
 | Home | Sample REST feature | Theming & 4 locales |
