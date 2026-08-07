@@ -16,7 +16,7 @@ together and passing.
 
 [한국어 README](README.ko.md)
 
-| Home | Sample REST feature | Theming & 4 locales |
+| Home | Sample REST feature | Theming & 3 locales |
 |:---:|:---:|:---:|
 | <img src="docs/assets/home-light.png" width="240" alt="Home tab of a generated app"> | <img src="docs/assets/posts-light.png" width="240" alt="Post list loaded over REST"> | <img src="docs/assets/settings-dark.png" width="240" alt="Settings tab in dark mode"> |
 
@@ -40,6 +40,21 @@ Post-1.0 stability promises are documented in
 Or use this repository as a GitHub template and start from
 [`template/`](template/) directly.
 
+## Why fluFrame
+
+Every starter is a snapshot: you generate, and from that moment your app
+and the template diverge forever. fluFrame is the only Flutter starter we
+know of that keeps the connection — `fluframe upgrade` reconstructs the
+template as it was at *your* generation version, three-way merges
+everything that changed since into your working tree, and reports genuine
+conflicts as conflicts instead of guessing. Your edits survive.
+
+That is the reason to pick it, and it is not a reason to pick it over
+everything. If your team writes Bloc, or you need a package rather than an
+app, [Very Good CLI](https://cli.vgv.dev) is the better tool.
+**[docs/comparison.md](docs/comparison.md)** lays both out honestly,
+including where fluFrame loses.
+
 ## What you get
 
 | Concern | Solution |
@@ -50,7 +65,7 @@ Or use this repository as a GitHub template and start from
 | Models | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable, sample REST feature |
 | Networking | [dio](https://pub.dev/packages/dio) with `DioException` → sealed `ApiException` mapping |
 | Persistence | `KeyValueStore` interface over `SharedPreferencesAsync` — trivially fakeable in tests |
-| Localization | `flutter gen-l10n` (English + Korean included), no synthetic packages |
+| Localization | `flutter gen-l10n` (English, Japanese and Korean included), no synthetic packages |
 | Theming | Material 3 light/dark from one seed color, persisted `ThemeMode` |
 | Flavors | `--dart-define-from-file` with `env/dev.json` / `env/prod.json` |
 | Lints | [very_good_analysis](https://pub.dev/packages/very_good_analysis) — zero warnings |

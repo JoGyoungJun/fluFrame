@@ -10,7 +10,7 @@ of the box.
 **▶ [Try a generated app in your browser](https://jogyoungjun.github.io/fluFrame/)**
 — the real thing, nothing installed.
 
-| Home | Sample REST feature | Theming & 4 locales |
+| Home | Sample REST feature | Theming & 3 locales |
 |:---:|:---:|:---:|
 | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/home-light.png" width="240" alt="Home tab of a generated app"> | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/posts-light.png" width="240" alt="Post list loaded over REST"> | <img src="https://raw.githubusercontent.com/JoGyoungJun/fluFrame/main/docs/assets/settings-dark.png" width="240" alt="Settings tab in dark mode"> |
 
@@ -32,13 +32,28 @@ cd my_app
 flutter run --dart-define-from-file=env/dev.json
 ```
 
+## Why fluframe
+
+Every starter is a snapshot: you generate, and from that moment your app
+and the template diverge forever. fluframe is the only Flutter starter we
+know of that keeps the connection — `fluframe upgrade` reconstructs the
+template as it was at *your* generation version, three-way merges
+everything that changed since into your working tree, and reports genuine
+conflicts as conflicts instead of guessing. Your edits survive.
+
+That is the reason to pick it, and it is not a reason to pick it over
+everything. If your team writes Bloc, or you need a package rather than an
+app, [Very Good CLI](https://cli.vgv.dev) is the better tool.
+**[docs/comparison.md](https://github.com/JoGyoungJun/fluFrame/blob/main/docs/comparison.md)**
+lays both out honestly, including where fluframe loses.
+
 ## What you get
 
 - **Riverpod 3** state management — manual `Notifier`/`AsyncNotifier`, no codegen for providers
 - **go_router 17** — `StatefulShellRoute` bottom tabs, nested routes
 - **freezed 3 + json_serializable** models with a sample REST feature (dio)
 - **Typed error handling** — `DioException` mapped to a sealed `ApiException`
-- **Localization** — `flutter gen-l10n` with English and Korean out of the box
+- **Localization** — `flutter gen-l10n` with English, Japanese and Korean out of the box
 - **Material 3 theming** — light/dark with a persisted `ThemeMode`
 - **Persisted settings** — `SharedPreferencesAsync` behind a testable `KeyValueStore`
 - **Flavors** — `--dart-define-from-file` with `env/dev.json` / `env/prod.json`

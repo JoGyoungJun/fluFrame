@@ -3,7 +3,7 @@
 > **fluFrame example** — generated with `fluframe create`, then extended
 > with a real REST feature against a keyless public API (Open-Meteo):
 > see `lib/features/weather/` (repository with absolute-URL dio calls,
-> selected-city Notifier, FutureProvider.family, l10n en+ko, 5 tests).
+> selected-city Notifier, FutureProvider.family, l10n en+ja+ko, 5 tests).
 
 A Flutter app generated from the
 [fluFrame](https://github.com/JoGyoungJun/fluFrame) boilerplate.

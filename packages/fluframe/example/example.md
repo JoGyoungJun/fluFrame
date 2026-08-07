@@ -22,8 +22,8 @@ flutter run --dart-define-from-file=env/dev.json
 ```
 
 You now have a feature-first Flutter app with Riverpod 3, go_router
-bottom tabs, freezed models, a dio REST sample, English + Korean
-localization, persisted dark mode, flavors, strict lints — and a test
+bottom tabs, freezed models, a dio REST sample, English, Japanese and
+Korean localization, persisted dark mode, flavors, strict lints — and a test
 suite that is already green:
 
 ```sh
