@@ -3,7 +3,7 @@
 > **fluFrame example** — generated with `fluframe create`, then extended
 > with a real feature following the documented conventions: see
 > `lib/features/todos/` (freezed domain, KeyValueStore repository,
-> AsyncNotifier, l10n en+ko, 6 tests) and the new tab registered in
+> AsyncNotifier, l10n en+ja+ko, 6 tests) and the new tab registered in
 > `lib/app/router/app_router.dart`.
 
 A Flutter app generated from the

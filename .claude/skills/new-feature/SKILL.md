@@ -1,6 +1,6 @@
 ---
 name: new-feature
-description: Add a new feature module to the template app following the fluFrame feature-first conventions — scaffolding, providers, routes, l10n (en+ko), tests, and full verification.
+description: Add a new feature module to the template app following the fluFrame feature-first conventions — scaffolding, providers, routes, l10n (en+ja+ko), tests, and full verification.
 argument-hint: "<feature-name> [description]"
 ---
 
