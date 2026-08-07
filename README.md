@@ -32,6 +32,7 @@ cd my_app
 flutter run --dart-define-from-file=env/dev.json
 
 fluframe upgrade   # later: pull template improvements into your app
+fluframe add feature billing --tab   # ...and scaffold the next feature
 ```
 
 Post-1.0 stability promises are documented in
@@ -70,6 +71,7 @@ including where fluFrame loses.
 | Flavors | `--dart-define-from-file` with `env/dev.json` / `env/prod.json` |
 | Lints | [very_good_analysis](https://pub.dev/packages/very_good_analysis) — zero warnings |
 | Tests | Unit + widget tests with mocktail and Riverpod overrides — all green out of the box |
+| Growing the app | `fluframe add feature <name> [--tab]` scaffolds the next feature module and registers its route |
 
 ## Repository layout
 

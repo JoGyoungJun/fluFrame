@@ -31,6 +31,7 @@ cd my_app
 flutter run --dart-define-from-file=env/dev.json
 
 fluframe upgrade   # 나중에: 템플릿 개선 사항을 내 앱으로 가져오기
+fluframe add feature billing --tab   # 그리고 다음 기능 스캐폴딩
 ```
 
 1.0 이후의 안정성 약속은 [docs/versioning.md](docs/versioning.md)에
@@ -68,6 +69,7 @@ Bloc을 쓴다면, 또는 앱이 아니라 패키지가 필요하다면
 | 플레이버 | `--dart-define-from-file` + `env/dev.json` / `env/prod.json` |
 | Lint | [very_good_analysis](https://pub.dev/packages/very_good_analysis) — 경고 0건 |
 | 테스트 | mocktail + Riverpod override 기반 단위/위젯 테스트 — 처음부터 전부 통과 |
+| 앱 키우기 | `fluframe add feature <name> [--tab]`으로 다음 기능 모듈을 스캐폴딩하고 라우트까지 등록 |
 
 ## 저장소 구조
 
