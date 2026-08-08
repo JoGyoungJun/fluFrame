@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.3.0
+
+**`create` was the only command you ever ran twice — by starting over.**
+This release adds the one you run every time the app grows a feature, and
+makes the project something you can look at before installing anything.
+
+Backwards compatible. `fluframe add feature` needs anchors that ship with
+this version's template, so an app generated earlier needs
+`fluframe upgrade` first — the command says so and changes nothing until
+you do.
+
+- **Added: `fluframe add feature <name> [--tab] [--dry-run]`.** Scaffolds
+  a feature module into an existing app — repository, controller, screen
+  and two tests — registers its route (or a bottom-navigation tab with
+  `--tab`), and adds the strings to all three ARBs. It names the keys
+  that still carry the English text rather than letting a silent English
+  string sit in `app_ja.arb`.
+
+  Nothing is written until the whole change has been computed: the name,
+  the app, an existing feature directory, the router anchors and every
+  ARB are checked first, and a failed write removes the feature directory
+  it had already created. `--dry-run` prints the plan and writes nothing.
+  Unlike `upgrade`, it is not dry-run by default — it only creates new
+  files and makes bounded insertions — and `--help` says so.
+
+  The scaffold deliberately contains no `freezed` model: a generated
+  `@freezed` class does not compile until `build_runner` has run, and the
+  app must analyze and test cleanly the moment the command exits. The
+  screen points at `features/posts` for the real pattern.
+
+- **Added: a live demo of a generated app** at
+  <https://jogyoungjun.github.io/fluFrame/> — the template with zero
+  edits, built for web and redeployed from `main` after every gate
+  passes. Linked from all three READMEs.
+
+- **Template: the posts list is now paginated** with infinite scroll, and
+  is the reference implementation for the four things the first attempt
+  gets wrong: appending instead of replacing, one request per frame near
+  the bottom, no representation of "there is no more", and discarding the
+  list when a later page fails.
+
+  Riverpod's `ref.invalidate` reuses the notifier instance and leaves it
+  mounted, so a page still in flight during a pull-to-refresh will
+  silently append onto the freshly reloaded first one. A generation
+  counter is what prevents that; `ref.mounted` does not.
+
+  Consequence worth knowing: the offline fallback cache holds page one
+  only, so an offline post-detail lookup now covers the first 20 posts
+  rather than all of them.
+
+- **Docs: `docs/comparison.md`** — fluFrame against `flutter create`,
+  Very Good CLI and cloning a boilerplate, with every claim about the
+  other tools taken from their current sources and the check date stated.
+  It names five cases where you should pick something else.
+
+- Corrected locale claims that went stale when Japanese was added: the
+  READMEs said "4 locales" (there are three, plus a System option) and
+  four places still described the template as English + Korean.
+
 ## 1.2.0
 
 **Correctness release.** A full audit of 1.1.0 found that the two things
