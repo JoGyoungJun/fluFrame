@@ -12,6 +12,7 @@ deliberate — contributors can see how the project learns.
 
 | Date | Milestone | Retro |
 |---|---|---|
+| 2026-08 | v1.3.0 — live demo, positioning, `add feature`, pagination | [2026-08-v1.3.0.md](2026-08-v1.3.0.md) |
 | 2026-08 | v0.11–v0.14 — addon axes, upgrade | [2026-08-v0.11-v0.14.md](2026-08-v0.11-v0.14.md) |
 | 2026-08 | v0.9.0 + v0.10.0 — error hooks, contributor readiness | [2026-08-v0.9-v0.10.md](2026-08-v0.9-v0.10.md) |
 | 2026-08 | v0.7.x + v0.8.0 — presets, offline cache, incident | [2026-08-v0.7-v0.8.md](2026-08-v0.7-v0.8.md) |
