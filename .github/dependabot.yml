@@ -1,0 +1,42 @@
+version: 2
+
+# Between manual /upgrade-deps runs, pins drift silently. Everything is
+# grouped and monthly on purpose: this repo has one maintainer, and a
+# dependency bot that files more PRs than they can read is a bot that gets
+# ignored. Actions are weekly and separate because a pinned SHA is the one
+# thing that cannot be noticed by reading a pubspec.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: 'chore(ci)'
+    labels:
+      - security
+
+  - package-ecosystem: pub
+    directory: /packages/fluframe
+    schedule:
+      interval: monthly
+    groups:
+      cli:
+        patterns: ['*']
+    commit-message:
+      prefix: 'chore(deps)'
+
+  - package-ecosystem: pub
+    directory: /template
+    schedule:
+      interval: monthly
+    groups:
+      template:
+        patterns: ['*']
+    commit-message:
+      prefix: 'chore(deps)'
+    # A template bump changes what every generated app gets, so these are
+    # reviewed by a maintainer rather than merged on green CI alone.
+    open-pull-requests-limit: 3

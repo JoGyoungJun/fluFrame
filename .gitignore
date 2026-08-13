@@ -1,0 +1,31 @@
+# fluFrame monorepo root
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Dart / Flutter (applies in template/ and packages/*)
+.dart_tool/
+.packages
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Lockfiles: the template app commits its lock; published packages do not
+packages/*/pubspec.lock
+
+# Generated artifacts kept out of VCS
+*.g.dart.bak
+.fvm/
+
+# Env secrets (env templates are committed, real secrets are not)
+**/env/*.local.json
+
+# Local session tooling residue — not part of the OSS project
+production/

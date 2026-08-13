@@ -1,0 +1,666 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:fluframe/src/backends.dart';
+import 'package:fluframe/src/import_order.dart';
+import 'package:fluframe/src/package_name.dart';
+import 'package:fluframe/src/process_runner.dart';
+import 'package:fluframe/src/version.dart';
+import 'package:io/io.dart';
+import 'package:path/path.dart' as p;
+
+export 'package:fluframe/src/process_runner.dart' show RunProcess;
+
+/// Template package name that gets rewritten into the new project's name.
+const String templatePackageName = 'fluframe_app';
+
+/// Template display name that gets rewritten into the humanized app title.
+const String templateDisplayName = 'FluFrame App';
+
+/// Korean template display name (`appTitle` in `app_ko.arb`), rewritten to
+/// the humanized app title so generated apps carry no fluFrame branding in
+/// any locale.
+const String templateDisplayNameKo = 'FluFrame 앱';
+
+/// Japanese template display name (`appTitle` in `app_ja.arb`).
+const String templateDisplayNameJa = 'FluFrame アプリ';
+
+/// Files and directories copied from the template over a fresh
+/// `flutter create` output.
+///
+/// Entries listed in [bundledOverlayNames] live under a different name
+/// inside the published bundle; the overlay restores the name here.
+const List<String> overlayEntries = [
+  'lib',
+  'test',
+  'env',
+  'l10n.yaml',
+  'analysis_options.yaml',
+  'README.md',
+  'pubspec.yaml',
+  '.gitignore',
+  '.github',
+];
+
+/// Overlay entries whose name inside the published bundle differs from the
+/// name the generated app gets, keyed by the generated-app name.
+///
+/// Dot-prefixed entries are stored dot-less so the tooling that reads them
+/// by name cannot act on the bundle itself: a `.gitignore` inside the
+/// package would filter what `pub publish` collects, and a `.github` would
+/// register workflows on the repository that merely *ships* the template.
+/// Both the sync tool and the overlay read this map, so the two spellings
+/// cannot drift apart.
+const Map<String, String> bundledOverlayNames = {
+  '.gitignore': 'gitignore',
+  '.github': 'github',
+};
+
+/// Overlay entries whose absence leaves a generated app that cannot run.
+///
+/// The overlay deletes the scaffold's `lib/` before copying, so a bundle
+/// missing `lib` produces a project with no source at all — previously a
+/// warning followed by "Created my_app at ...". Addons already fail loudly
+/// on a missing file (ADR 0001); the app itself must too.
+const Set<String> requiredOverlayEntries = {'lib', 'test', 'pubspec.yaml'};
+
+/// Platforms `flutter create` is asked for when the user does not choose.
+///
+/// Single source of truth for `ProjectGenerator.generate` and the
+/// `--platforms` option, which drifted apart as two copies of the literal.
+const List<String> defaultPlatforms = [
+  'android',
+  'ios',
+  'web',
+  'windows',
+  'macos',
+  'linux',
+];
+
+/// File extensions treated as text and run through the token rewriter.
+const Set<String> _textExtensions = {
+  '.dart',
+  '.yaml',
+  '.yml',
+  '.arb',
+  '.json',
+  '.md',
+};
+
+/// Splits `package:constraint` into its two halves.
+///
+/// A dependency with no `:` has no constraint.
+(String, String?) splitDependency(String dependency) {
+  final separator = dependency.indexOf(':');
+  return separator == -1
+      ? (dependency, null)
+      : (
+          dependency.substring(0, separator),
+          dependency.substring(separator + 1),
+        );
+}
+
+/// Rewrites template tokens in [content] for a project called [projectName].
+String rewriteTemplateContent(String content, {required String projectName}) {
+  final displayName = humanizePackageName(projectName);
+  return content
+      .replaceAll(templatePackageName, projectName)
+      .replaceAll(templateDisplayName, displayName)
+      .replaceAll(templateDisplayNameKo, '$displayName 앱')
+      .replaceAll(templateDisplayNameJa, '$displayName アプリ');
+}
+
+/// Escapes [value] for use inside a YAML double-quoted scalar.
+String _escapeYamlDoubleQuoted(String value) => value
+    .replaceAll(r'\', r'\\')
+    .replaceAll('"', r'\"')
+    .replaceAll('\r', ' ')
+    .replaceAll('\n', ' ');
+
+/// Generates a new Flutter project from the fluFrame template.
+///
+/// Pipeline: `flutter create --empty` (real platform folders for the
+/// current Flutter version) → overlay the template's `lib/`, `test/` and
+/// config files → rewrite package-name tokens → `flutter pub get` +
+/// `flutter gen-l10n`.
+class ProjectGenerator {
+  /// Creates a generator reading from [templateDirectory].
+  ProjectGenerator({
+    required this.templateDirectory,
+    RunProcess? runProcess,
+    StringSink? log,
+    Map<String, BackendAddon>? addons,
+    Map<String, BackendAddon>? errorAddons,
+    Map<String, BackendAddon>? analytics,
+  }) : _runProcess = runProcess ?? defaultRunProcess,
+       _log = log ?? stdout,
+       _addons = addons ?? backendAddons,
+       _errorAddons = errorAddons ?? errorReportingAddons,
+       _analytics = analytics ?? analyticsAddons;
+
+  /// Root of the template to copy from.
+  final Directory templateDirectory;
+
+  final RunProcess _runProcess;
+  final StringSink _log;
+  final Map<String, BackendAddon> _addons;
+  final Map<String, BackendAddon> _errorAddons;
+  final Map<String, BackendAddon> _analytics;
+
+  /// Generates the project and returns a process exit code.
+  Future<int> generate({
+    required String name,
+    required String org,
+    required String outputDirectory,
+    String? description,
+    String? backend,
+    String? errorReporting,
+    String? analytics,
+    List<String> platforms = defaultPlatforms,
+    bool runPub = true,
+    bool bareOverlay = false,
+  }) async {
+    final BackendAddon? addon;
+    if (backend == null) {
+      addon = null;
+    } else {
+      addon = _addons[backend];
+      if (addon == null) {
+        _log.writeln(
+          'Unknown backend "$backend". '
+          'Available: ${_addons.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+    final BackendAddon? reporting;
+    if (errorReporting == null) {
+      reporting = null;
+    } else {
+      reporting = _errorAddons[errorReporting];
+      if (reporting == null) {
+        _log.writeln(
+          'Unknown error-reporting service "$errorReporting". '
+          'Available: ${_errorAddons.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+    final BackendAddon? analyticsAddon;
+    if (analytics == null) {
+      analyticsAddon = null;
+    } else {
+      analyticsAddon = _analytics[analytics];
+      if (analyticsAddon == null) {
+        _log.writeln(
+          'Unknown analytics service "$analytics". '
+          'Available: ${_analytics.keys.join(', ')}.',
+        );
+        return ExitCode.usage.code;
+      }
+    }
+
+    final targetPath = p.join(outputDirectory, name);
+    if (Directory(targetPath).existsSync()) {
+      _log.writeln('Directory "$targetPath" already exists. Aborting.');
+      return ExitCode.usage.code;
+    }
+
+    if (bareOverlay) {
+      // Upgrade support (spec 002): produce ONLY the overlay output —
+      // no platform scaffold, no pub, no metadata — as merge input.
+      Directory(targetPath).createSync(recursive: true);
+      // Deliberately not gated on requiredOverlayEntries: this rebuilds an
+      // arbitrary historical bundle for the upgrader, and a gap there is
+      // better reported as a per-file difference than as a hard stop that
+      // makes the app un-upgradable.
+      _applyOverlay(targetPath, name: name, description: description);
+      for (final selected in [addon, reporting, analyticsAddon]) {
+        if (selected == null) continue;
+        final addonExit = await _applyBackendAddon(
+          targetPath,
+          addon: selected,
+          name: name,
+        );
+        if (addonExit != 0) return addonExit;
+      }
+      return ExitCode.success.code;
+    }
+
+    _log.writeln('Scaffolding $name with flutter create...');
+    final ProcessResult create;
+    try {
+      create = await _runProcess('flutter', [
+        'create',
+        targetPath,
+        '--project-name',
+        name,
+        '--org',
+        org,
+        '--platforms=${platforms.join(',')}',
+        '--empty',
+      ]);
+    } on ProcessException {
+      _logFlutterMissing();
+      return ExitCode.unavailable.code;
+    }
+    if (create.exitCode != 0) {
+      // With runInShell (Windows) a missing command surfaces as a shell
+      // error exit instead of a ProcessException: 9009 (cmd) / 127 (POSIX).
+      final stderrText = create.stderr.toString();
+      if (create.exitCode == 9009 ||
+          create.exitCode == 127 ||
+          stderrText.contains('is not recognized') ||
+          stderrText.contains('command not found')) {
+        _logFlutterMissing();
+        return ExitCode.unavailable.code;
+      }
+      _log
+        ..writeln('flutter create failed:')
+        ..writeln(create.stderr);
+      _logPartialOutput(targetPath);
+      return ExitCode.software.code;
+    }
+
+    _log.writeln('Applying the fluFrame template...');
+    final incomplete = _rejectIncompleteBundle(
+      _applyOverlay(targetPath, name: name, description: description),
+      targetPath,
+    );
+    if (incomplete != null) return incomplete;
+
+    for (final selected in [addon, reporting, analyticsAddon]) {
+      if (selected == null) continue;
+      _log.writeln('Applying the ${selected.name} addon...');
+      final addonExit = await _applyBackendAddon(
+        targetPath,
+        addon: selected,
+        name: name,
+        // --no-pub used to skip `pub get` but still run one `pub add` per
+        // addon, so the flag resolved dependencies over the network
+        // anyway — the opposite of what it promises.
+      );
+      if (addonExit != 0) {
+        _logPartialOutput(targetPath);
+        return addonExit;
+      }
+    }
+
+    if (runPub) {
+      _log.writeln('Resolving dependencies...');
+      final pubGet = await _runProcess('flutter', [
+        'pub',
+        'get',
+      ], workingDirectory: targetPath);
+      if (pubGet.exitCode != 0) {
+        _log
+          ..writeln('flutter pub get failed:')
+          ..writeln(pubGet.stderr);
+        if (Platform.isWindows &&
+            pubGet.stderr.toString().toLowerCase().contains('symlink')) {
+          _log.writeln(
+            'The default platforms include windows and linux, whose plugins '
+            'need symbolic links. Enable Developer Mode '
+            '(start ms-settings:developers) and retry — fluframe doctor '
+            'checks this up front.',
+          );
+        }
+        _logPartialOutput(targetPath);
+        return ExitCode.software.code;
+      }
+      // Renaming the package can change the alphabetical order of imports
+      // (e.g. `demo_app` sorts before `dio`); dart fix re-sorts them.
+      _log.writeln('Tidying imports (dart fix)...');
+      final fix = await _runProcess(
+        'dart',
+        ['fix', '--apply'],
+        workingDirectory: targetPath,
+      );
+      if (fix.exitCode != 0) {
+        _log
+          ..writeln(
+            'Warning: dart fix failed — run it manually, or '
+            'flutter analyze may report import-ordering issues:',
+          )
+          ..writeln(fix.stderr);
+      }
+      final genL10n = await _runProcess(
+        'flutter',
+        ['gen-l10n'],
+        workingDirectory: targetPath,
+      );
+      if (genL10n.exitCode != 0) {
+        _log
+          ..writeln('Warning: flutter gen-l10n failed (continuing):')
+          ..writeln(genL10n.stderr);
+      }
+    }
+
+    // Generation metadata — the contract `fluframe upgrade` reads to
+    // reconstruct this exact generation later (design spec 002). Written
+    // last so its presence means "this app was generated successfully";
+    // a half-written directory the user is told to delete must not look
+    // upgradable.
+    File(p.join(targetPath, '.fluframe.json')).writeAsStringSync(
+      '${const JsonEncoder.withIndent('  ').convert({
+        'schema': 1,
+        'cliVersion': cliVersion,
+        'name': name,
+        'org': org,
+        'backend': backend,
+        'errorReporting': errorReporting,
+        'analytics': analytics,
+      })}\n',
+    );
+
+    _log
+      ..writeln()
+      ..writeln('Created $name at $targetPath.')
+      ..writeln()
+      ..writeln('Next steps:')
+      ..writeln('  cd "$targetPath"');
+    if (!runPub) {
+      // Nothing was resolved, so say what the app still needs — silence
+      // here leaves an unbuildable project. Addon dependencies are already
+      // in pubspec.yaml, so plain `pub get` covers them; the old
+      // `pub add "pkg:^x"` step is gone because every shell but cmd.exe
+      // stripped the quotes and the batch re-parse ate the caret, writing
+      // exact pins (#181).
+      _log
+        ..writeln('  flutter pub get')
+        ..writeln('  flutter gen-l10n');
+    }
+    _log.writeln('  flutter run --dart-define-from-file=env/dev.json');
+    for (final note in [
+      ...?addon?.postCreateNotes,
+      ...?reporting?.postCreateNotes,
+      ...?analyticsAddon?.postCreateNotes,
+    ]) {
+      _log.writeln('  * $note');
+    }
+    return ExitCode.success.code;
+  }
+
+  /// Copies the addon's bundled files, applies its anchored patches, and
+  /// installs its dependencies. A missing addon directory or patch anchor
+  /// fails loudly (ADR 0001) — never a silently broken app.
+  Future<int> _applyBackendAddon(
+    String targetPath, {
+    required BackendAddon addon,
+    required String name,
+  }) async {
+    final parent = templateDirectory.parent.path;
+    final addonDir =
+        [
+          Directory(p.join(parent, 'addons', addon.name)),
+          Directory(p.join(parent, 'template_addons', addon.name)),
+        ].firstWhere(
+          (dir) => dir.existsSync(),
+          orElse: () => Directory(p.join(parent, 'addons', addon.name)),
+        );
+    if (!addonDir.existsSync()) {
+      if (addon.requiresFiles) {
+        _log.writeln(
+          'Addon files for "${addon.name}" not found near the '
+          'template (${addonDir.path}). Reinstall with: '
+          'dart pub global activate fluframe',
+        );
+        return ExitCode.software.code;
+      }
+      // Patch-only addon — nothing to copy.
+    } else {
+      _copyDirectory(addonDir, Directory(targetPath), name: name);
+    }
+
+    final patchedDartFiles = <String>{};
+    for (final patch in addon.patches) {
+      final file = File(p.join(targetPath, patch.file));
+      if (!file.existsSync()) {
+        _log.writeln(
+          'Addon patch target missing: ${patch.file} — the template and '
+          'the ${addon.name} addon are out of sync.',
+        );
+        return ExitCode.software.code;
+      }
+      if (p.extension(patch.file) == '.dart') {
+        patchedDartFiles.add(file.path);
+      }
+      // Normalize CRLF so multi-line anchors match regardless of how git
+      // checked the template out on this machine.
+      final content = file.readAsStringSync().replaceAll('\r\n', '\n');
+      final anchor = rewriteTemplateContent(patch.anchor, projectName: name);
+      if (!content.contains(anchor)) {
+        _log.writeln(
+          'Addon patch anchor not found in ${patch.file}:\n  $anchor\n'
+          'The template and the ${addon.name} addon are out of sync.',
+        );
+        return ExitCode.software.code;
+      }
+      file.writeAsStringSync(
+        content.replaceFirst(
+          anchor,
+          rewriteTemplateContent(patch.replacement, projectName: name),
+        ),
+      );
+    }
+
+    // Sorted AFTER all patches, not during: an anchor can span adjacent
+    // import lines, and sorting between patches would move them out from
+    // under the next anchor. Patch positions only had to be sorted for the
+    // template's own package name, so for most real names the spliced
+    // import landed out of order — repaired by `dart fix` on the create
+    // path and by nothing on the bare path the upgrader builds its merge
+    // base from (#177, #179).
+    for (final path in patchedDartFiles) {
+      final file = File(path);
+      file.writeAsStringSync(sortImports(file.readAsStringSync()));
+    }
+
+    // Written into pubspec.yaml textually, on EVERY path, instead of
+    // shelling out to `flutter pub add`. That keeps the bare overlay's
+    // pubspec identical to a created app's (#180 — the upgrader's merge
+    // base), works offline, and removes the `pub add "pkg:^x"` next-step
+    // whose caret every shell but cmd.exe quietly ate (#181). The create
+    // path's later `flutter pub get` resolves them exactly as before.
+    _addDependencies(targetPath, addon.dependencies);
+    return ExitCode.success.code;
+  }
+
+  /// Writes [dependencies] (`name:^constraint`) into the app's
+  /// pubspec.yaml `dependencies:` block, in alphabetical position.
+  ///
+  /// Textual on purpose — see the call site. The block the template ships
+  /// is alphabetical, and `flutter pub add` also keeps it that way, so an
+  /// alphabetical insert is what makes a created app and the upgrader's
+  /// bare merge base byte-identical.
+  void _addDependencies(String targetPath, List<String> dependencies) {
+    if (dependencies.isEmpty) return;
+    final pubspec = File(p.join(targetPath, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) return;
+    var lines = pubspec.readAsStringSync().split('\n');
+    for (final dependency in dependencies) {
+      final (name, constraint) = splitDependency(dependency);
+      lines = _insertDependency(lines, name, constraint ?? 'any');
+    }
+    pubspec.writeAsStringSync(lines.join('\n'));
+  }
+
+  static List<String> _insertDependency(
+    List<String> input,
+    String name,
+    String constraint,
+  ) {
+    var lines = input;
+    // Compared with the line ending stripped: a CRLF checkout leaves a
+    // trailing CR on every element, and an exact match would miss the
+    // block and append a duplicate one — which is not YAML.
+    final eol = lines.any((line) => line.endsWith('\r')) ? '\r' : '';
+    var start = lines.indexWhere((line) => line.trimRight() == 'dependencies:');
+    if (start < 0) {
+      // A bundle without the block (a minimal historical one, or a test
+      // fixture) gets one appended rather than the dependency dropped.
+      final trimmed = [...lines];
+      while (trimmed.isNotEmpty && trimmed.last.trimRight().isEmpty) {
+        trimmed.removeLast();
+      }
+      lines = [...trimmed, eol, 'dependencies:$eol', eol];
+      start = lines.length - 2;
+    }
+    // The block ends at the next top-level key; entries are two-space
+    // indented, and `sdk: flutter` continuation lines are four-space.
+    var insertAt = -1;
+    for (var i = start + 1; i < lines.length; i++) {
+      final line = lines[i].trimRight();
+      if (line.isNotEmpty && !line.startsWith(' ')) {
+        insertAt = i;
+        break;
+      }
+      final entry = RegExp('^  ([a-z0-9_]+):').firstMatch(line);
+      if (entry == null) continue;
+      final existing = entry.group(1)!;
+      if (existing == name) return lines; // already present
+      if (existing.compareTo(name) > 0) {
+        insertAt = i;
+        break;
+      }
+    }
+    if (insertAt < 0) insertAt = lines.length;
+    return [
+      ...lines.sublist(0, insertAt),
+      '  $name: $constraint$eol',
+      ...lines.sublist(insertAt),
+    ];
+  }
+
+  void _logFlutterMissing() {
+    _log
+      ..writeln('Flutter SDK not found on PATH.')
+      ..writeln(
+        'Install it first: https://docs.flutter.dev/get-started/install',
+      )
+      ..writeln('Then verify with: flutter --version');
+  }
+
+  /// Copies the template over the `flutter create` scaffold.
+  ///
+  /// Returns the overlay entries that were missing from the bundle.
+  List<String> _applyOverlay(
+    String targetPath, {
+    required String name,
+    String? description,
+  }) {
+    final missing = <String>[];
+    // The template's lib/ fully replaces the scaffold's lib/.
+    final scaffoldLib = Directory(p.join(targetPath, 'lib'));
+    if (scaffoldLib.existsSync()) {
+      scaffoldLib.deleteSync(recursive: true);
+    }
+
+    for (final entry in overlayEntries) {
+      // The monorepo template carries the real names; the published bundle
+      // carries the renamed ones (see bundledOverlayNames). Prefer the real
+      // name so a checkout of the repo generates the same app as the
+      // package does.
+      final bundledName = bundledOverlayNames[entry];
+      var source = p.join(templateDirectory.path, entry);
+      if (bundledName != null &&
+          FileSystemEntity.typeSync(source) == FileSystemEntityType.notFound) {
+        source = p.join(templateDirectory.path, bundledName);
+      }
+      final destination = p.join(targetPath, entry);
+      if (FileSystemEntity.isDirectorySync(source)) {
+        _copyDirectory(Directory(source), Directory(destination), name: name);
+      } else if (FileSystemEntity.isFileSync(source)) {
+        _copyFile(File(source), File(destination), name: name);
+      } else {
+        missing.add(entry);
+        _log.writeln(
+          'Warning: template entry "$entry" not found — skipped.',
+        );
+      }
+    }
+
+    // Guarded on existence: a bundle without pubspec.yaml is rejected by
+    // the caller, and throwing here would pre-empt that message.
+    final pubspec = File(p.join(targetPath, 'pubspec.yaml'));
+    if (description != null && pubspec.existsSync()) {
+      final content = pubspec.readAsStringSync().replaceFirst(
+        RegExp('^description: .*', multiLine: true),
+        'description: "${_escapeYamlDoubleQuoted(description)}"',
+      );
+      pubspec.writeAsStringSync(content);
+    }
+    return missing;
+  }
+
+  /// Fails the run when the bundle was missing something the app needs.
+  ///
+  /// Returns `null` when [missing] contains nothing essential.
+  int? _rejectIncompleteBundle(List<String> missing, String targetPath) {
+    final essential = missing.where(requiredOverlayEntries.contains).toList();
+    if (essential.isEmpty) return null;
+    _log.writeln(
+      'The fluFrame template bundle is incomplete (missing: '
+      '${essential.join(', ')}), so the generated app would not run. '
+      'Reinstall with: dart pub global activate fluframe',
+    );
+    _logPartialOutput(targetPath);
+    return ExitCode.software.code;
+  }
+
+  /// Tells the user where the half-written project is and how to clear it.
+  ///
+  /// Every failure that reaches here happens after we created [targetPath]
+  /// ourselves — the `existsSync` guard in [generate] runs before anything
+  /// is written, so the directory is never one the user already had.
+  /// Without this, a retry after fixing the cause hits
+  /// `Directory "..." already exists. Aborting.`
+  void _logPartialOutput(String targetPath) {
+    _log
+      ..writeln()
+      ..writeln('Partial output left at: $targetPath')
+      ..writeln(
+        'Remove it before retrying: '
+        // Quoted: cmd.exe splits an unquoted spaced path into several
+        // arguments, and `rmdir /s /q C:\temp\my folder\app` deletes
+        // C:\temp\my — silently, recursively (#186).
+        '${Platform.isWindows ? 'rmdir /s /q' : 'rm -rf'} "$targetPath"',
+      );
+  }
+
+  void _copyDirectory(
+    Directory source,
+    Directory destination, {
+    required String name,
+  }) {
+    destination.createSync(recursive: true);
+    for (final entity in source.listSync()) {
+      final basename = p.basename(entity.path);
+      final target = p.join(destination.path, basename);
+      if (entity is Directory) {
+        _copyDirectory(entity, Directory(target), name: name);
+      } else if (entity is File) {
+        _copyFile(entity, File(target), name: name);
+      }
+    }
+  }
+
+  void _copyFile(File source, File destination, {required String name}) {
+    destination.parent.createSync(recursive: true);
+    if (_textExtensions.contains(p.extension(source.path)) ||
+        p.basename(destination.path) == '.gitignore') {
+      final renamed = rewriteTemplateContent(
+        source.readAsStringSync(),
+        projectName: name,
+      );
+      // Renaming moves imports in the sort order, so sort them here
+      // rather than leaving it to a `dart fix` that only the `create`
+      // path runs — see import_order.dart and #165.
+      destination.writeAsStringSync(
+        p.extension(source.path) == '.dart' ? sortImports(renamed) : renamed,
+      );
+    } else {
+      source.copySync(destination.path);
+    }
+  }
+}

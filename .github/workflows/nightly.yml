@@ -1,0 +1,81 @@
+name: Nightly
+
+# The Apple and desktop compiles of a generated app (#120).
+#
+# Why not per push: Android is on every push because its AGP / Kotlin /
+# Gradle pins are a three-way version knot that rots on its own. iOS,
+# macOS and Linux have no equivalent pinned matrix in the template — they
+# break when Flutter or the runner image moves, which is a daily event at
+# most, not a per-commit one. A nightly catches that within a day and
+# costs nothing on the critical path of a pull request, which is already
+# ~8 minutes wide because of the Windows e2e.
+#
+# Not attached to publish.yml either: a failure there would surface after
+# the release tag is already pushed, which is the worst moment to learn
+# the iOS toolchain moved.
+
+on:
+  schedule:
+    # 17:00 UTC = 02:00 KST, after the day's merges have settled.
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  generated-apple:
+    name: Generated app — iOS build (no codesign)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Generate an app from the publish bundle
+        working-directory: packages/fluframe
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms ios \
+            --output-directory "${{ runner.temp }}"
+      - name: Build the generated app
+        working-directory: ${{ runner.temp }}/demo_app
+        # --no-codesign: signing is out of scope (#120). Compiling is the
+        # gate; this still runs CocoaPods and the full Xcode build.
+        run: flutter build ios --debug --no-codesign
+
+  generated-linux:
+    name: Generated app — Linux desktop build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Install the GTK toolchain
+        # Clang, CMake and Ninja are already on the runner image; the GTK
+        # headers are not.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev
+      - name: Generate an app from the publish bundle
+        working-directory: packages/fluframe
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms linux \
+            --output-directory "${{ runner.temp }}"
+      - name: Build the generated app
+        working-directory: ${{ runner.temp }}/demo_app
+        run: flutter build linux --debug

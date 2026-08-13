@@ -1,0 +1,366 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default. Only `deploy-demo` needs more, and it declares
+# exactly what it needs. Without this every job inherits the repository
+# default, which may still be the legacy read-and-write — a token that could
+# push to the repo, alter releases and edit workflows, handed to whatever the
+# third-party actions below happen to be at run time.
+permissions:
+  contents: read
+
+jobs:
+  template:
+    name: Template app — analyze & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      - name: Verify generated code is up to date
+        # git add + diff --cached also catches NEW generated files that a
+        # contributor forgot to commit (plain git diff is blind to them).
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          git add -A lib
+          git diff --cached --exit-code -- lib
+      - run: dart format --set-exit-if-changed lib test
+      - name: Addon sources are format-clean too
+        # template_addons/ ships verbatim into generated apps, and the CI
+        # workflow those apps receive suggests a format gate — so
+        # unformatted addon code would become the user's red build.
+        working-directory: .
+        run: dart format --set-exit-if-changed template_addons
+      - run: flutter analyze
+      - run: flutter test --coverage
+      - name: Coverage floor
+        # `--coverage` used to write lcov.info and nothing ever read it.
+        # Publish the number to the job summary so it is visible on the PR
+        # without downloading anything, and fail below the floor.
+        env:
+          # A ratchet, not a target. The floor sits a few points under the
+          # last measurement so an ordinary PR does not go red on a
+          # one-point dip, while a deleted test file or a large untested
+          # module still trips it. Raise it as coverage rises; never lower
+          # it to make CI green.
+          #
+          # 78.49% on the 1.2.0 tree -> floor 72.
+          # 82.35% after #124 added the post-detail and not-found tests,
+          # so 72 no longer caught anything. -> floor 78.
+          FLOOR: '78'
+        run: |
+          pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
+                         END { printf "%.2f", f ? 100 * h / f : 0 }' \
+                coverage/lcov.info)
+          echo "Template line coverage: ${pct}% (floor ${FLOOR}%)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v pct="$pct" -v floor="$FLOOR" 'BEGIN {
+            if (pct < floor) {
+              print "::error::Template coverage " pct "% < floor " floor "%"
+              exit 1
+            }
+          }'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: template-coverage
+          # Job-level working-directory does not apply to `uses:` steps.
+          path: template/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  cli:
+    name: CLI — analyze & unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart format --set-exit-if-changed lib test tool
+      # --fatal-infos matches what pana scores and what the template already
+      # enforces. Plain `dart analyze` exits 0 on infos, so v1.4.0 shipped a
+      # prefer_initializing_formals info that cost 10 pub.dev points with CI
+      # fully green.
+      - run: dart analyze --fatal-infos
+      - run: dart test -x e2e --coverage=coverage
+      - name: Convert coverage to lcov
+        # `coverage` is activated rather than added as a dev_dependency:
+        # format_coverage is a CI-only tool and the CLI's dependency list is
+        # part of what users audit before installing it. Pinned to a major
+        # so an upstream release cannot change the flags under us.
+        run: |
+          dart pub global activate coverage '^1.15.0'
+          dart pub global run coverage:format_coverage \
+            --lcov --in=coverage --out=coverage/lcov.info --report-on=lib
+      - name: Coverage floor
+        # The floor is computed from the emitted lcov, NOT from
+        # format_coverage's own --fail-under: that flag scores the whole
+        # collected hitmap (SDK and pub dependencies included, 10.7% here)
+        # instead of the --report-on=lib subset, so it gates on a number
+        # nobody is looking at.
+        env:
+          # A ratchet, not a target. Measured 77-79% while hardening 1.1.0
+          # (552/715 lines at the low end), so this sits a few points under
+          # the trough — enough slack for the OS-conditional branches only
+          # one runner takes, tight enough to catch a deleted test file or
+          # a large untested module. Raise it as coverage rises; never
+          # lower it to make CI green.
+          FLOOR: '70'
+        run: |
+          pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
+                         END { printf "%.2f", f ? 100 * h / f : 0 }' \
+                coverage/lcov.info)
+          echo "CLI line coverage: ${pct}% (floor ${FLOOR}%)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v pct="$pct" -v floor="$FLOOR" 'BEGIN {
+            if (pct < floor) {
+              print "::error::CLI coverage " pct "% < floor " floor "%"
+              exit 1
+            }
+          }'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli-coverage
+          # Job-level working-directory does not apply to `uses:` steps.
+          path: packages/fluframe/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+  cli-cross-platform:
+    # The CLI shells out to flutter/dart/git and feeds their output back
+    # into user source files, so encoding and path behaviour must be
+    # verified off Linux too. Kept as a separate job (not a matrix on
+    # `cli`) because that job's name is a required status check.
+    name: CLI — unit tests on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart test -x e2e
+
+  e2e:
+    name: CLI — end-to-end (generate & verify app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart test -t e2e --reporter expanded
+
+  e2e-cross-platform:
+    # `fluframe create` is a Windows-first pain point (symlinks, cmd.exe
+    # exit codes, path separators) and the release gate never ran there.
+    # Separate job, not a matrix on `e2e`: that job's name is a required
+    # status check.
+    name: CLI — end-to-end on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart test -t e2e --reporter expanded
+
+  example-drift:
+    # The examples job proves the examples COMPILE. It never noticed that
+    # both had lost core/logging/error_handlers.dart — the file the
+    # template calls its crash-reporting seam — while docs claimed the
+    # matrix meant they "cannot rot". This is the check that meant it.
+    name: Examples — no drift from the template
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart run tool/check_example_drift.dart
+
+  examples:
+    name: Example apps — analyze & test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        example: [todo_app, weather_app]
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  generated-android:
+    # The e2e generates real apps and then runs `flutter analyze` and
+    # `flutter test` — neither of which invokes Gradle. So the template's
+    # AGP / Kotlin / Gradle pins were never compiled by anything, and the
+    # first person to find an incompatibility was a user running
+    # `flutter build apk` on a fresh `fluframe create` (#120).
+    #
+    # Android is the per-push target because it is the one with a
+    # three-way version pin that can rot on its own. The Apple and desktop
+    # targets build nightly instead — see .github/workflows/nightly.yml
+    # for why that split, and what it costs.
+    name: Generated app — Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      # The wrapper pins the `-all` distribution (222 MB). Without this the
+      # runner downloads it on every run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('template/android/**/*.gradle*', 'template/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - name: Generate an app from the publish bundle
+        working-directory: packages/fluframe
+        # Same bundle a published user gets: templates/ is gitignored, so
+        # it has to be synced before the CLI can resolve it.
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms android \
+            --output-directory "${{ runner.temp }}"
+      - name: Build the generated app
+        working-directory: ${{ runner.temp }}/demo_app
+        # --debug, not --release: this gate is about whether the toolchain
+        # accepts what generation produced, and a debug build exercises the
+        # same Gradle/AGP/Kotlin path without paying for R8.
+        run: flutter build apk --debug
+
+  web-build:
+    # The live demo (https://jogyoungjun.github.io/fluFrame/) is this build.
+    # It runs on pull requests as well so that a change breaking the web
+    # target fails review instead of the deploy — but only the main-branch
+    # run's artifact is ever published, by `deploy-demo` below.
+    name: Template app — web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Build for web
+        working-directory: template
+        # --base-href: Pages serves the site from /<repo>/, not the root.
+        # --pwa-strategy=none: the default offline-first service worker
+        # caches the app shell, so a returning visitor would keep seeing
+        # the previously deployed build after main moves on. A demo has no
+        # use for offline support and every use for being current.
+        run: |
+          flutter pub get
+          flutter gen-l10n
+          flutter build web --release \
+            --base-href /fluFrame/ \
+            --pwa-strategy=none
+      - name: Label the browser tab
+        working-directory: template
+        # The only post-processing, and it touches build output rather than
+        # source: template/web/index.html carries the package name
+        # `fluframe_app`, which is correct for the template (a real
+        # `fluframe create my_app` gets `my_app` from `flutter create`) but
+        # meaningless as a bookmark or a shared link. No app code changes.
+        run: |
+          sed -i \
+            -e 's|<title>fluframe_app</title>|<title>fluFrame — live demo</title>|' \
+            -e 's|content="A new Flutter project."|content="A Flutter app generated by fluframe create, unmodified."|' \
+            build/web/index.html
+          grep -q 'fluFrame — live demo' build/web/index.html
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        # Only main's build is ever deployed, and the bundle is ~40 MB
+        # (mostly CanvasKit variants) — no reason to store one per pull
+        # request push.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: template/build/web
+
+  deploy-demo:
+    # Publishes the artifact `web-build` produced, and only after every
+    # other gate on this commit is green — the demo is the first thing a
+    # visitor sees, so it must never be ahead of a passing main.
+    name: Live demo — deploy to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - template
+      - cli
+      - cli-cross-platform
+      - e2e
+      - e2e-cross-platform
+      - example-drift
+      - examples
+      - web-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      # Deliberately NOT the workflow-level group: a deploy that is half
+      # written should finish rather than be cancelled by the next push.
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
