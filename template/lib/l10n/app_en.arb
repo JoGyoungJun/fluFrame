@@ -1,0 +1,89 @@
+{
+  "@@locale": "en",
+  "appTitle": "FluFrame App",
+  "homeTab": "Home",
+  "settingsTab": "Settings",
+  "homeGreeting": "Welcome to FluFrame App!",
+  "homeDescription": "A production-ready Flutter starter with Riverpod, go_router, theming, and localization built in.",
+  "counterLabel": "{count, plural, =1{Button pushed 1 time} other{Button pushed {count} times}}",
+  "@counterLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "increment": "Increment",
+  "viewPosts": "View sample posts",
+  "postsTitle": "Posts",
+  "postsErrorMessage": "Failed to load posts.",
+  "postsLoadingMore": "Loading more…",
+  "@postsLoadingMore": {
+    "description": "Shown under the post list while the next page loads."
+  },
+  "postsLoadMoreError": "Couldn't load more posts.",
+  "@postsLoadMoreError": {
+    "description": "Shown under the post list when the next page fails to load."
+  },
+  "postsEndOfList": "You've reached the end.",
+  "@postsEndOfList": {
+    "description": "Shown under the post list once every post has been loaded."
+  },
+  "genericErrorMessage": "Something went wrong.",
+  "retry": "Retry",
+  "postDetailTitle": "Post #{id}",
+  "@postDetailTitle": {
+    "placeholders": {
+      "id": {
+        "type": "int"
+      }
+    }
+  },
+  "postNotFound": "Post not found.",
+  "routeNotFoundTitle": "Page not found",
+  "routeNotFoundMessage": "No screen matches {location}.",
+  "@routeNotFoundMessage": {
+    "placeholders": {
+      "location": {
+        "type": "String"
+      }
+    }
+  },
+  "routeNotFoundAction": "Go to home",
+  "profileTab": "Profile",
+  "profileTitle": "Profile",
+  "profileSignedInAs": "Signed in as {email}",
+  "@profileSignedInAs": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "loginTitle": "Welcome back",
+  "emailLabel": "Email",
+  "passwordLabel": "Password",
+  "signInButton": "Sign in",
+  "signOutButton": "Sign out",
+  "emailRequired": "Enter your email.",
+  "emailInvalid": "Enter a valid email address.",
+  "passwordRequired": "Enter your password.",
+  "loginFailedMessage": "Sign-in failed. Check your credentials.",
+  "settingsTitle": "Settings",
+  "appearanceSection": "Appearance",
+  "themeModeSystem": "System",
+  "themeModeLight": "Light",
+  "themeModeDark": "Dark",
+  "colorSection": "Theme color",
+  "presetIndigo": "Indigo",
+  "presetEmerald": "Emerald",
+  "presetCrimson": "Crimson",
+  "presetAmber": "Amber",
+  "presetViolet": "Violet",
+  "presetTeal": "Teal",
+  "languageSection": "Language",
+  "languageSystem": "System",
+  "languageEnglish": "English",
+  "languageKorean": "한국어",
+  "languageJapanese": "日本語"
+}

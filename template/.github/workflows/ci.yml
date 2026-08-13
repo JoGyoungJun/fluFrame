@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege, declared rather than inherited. Without this block the
+# job gets the repository default, which in any organization that never
+# changed the legacy setting is read-WRITE — a token that can push to the
+# repo, alter releases and edit workflows, handed to third-party actions
+# on every pull request. Nothing here needs more than reading the code.
+permissions:
+  contents: read
+
+jobs:
+  analyze-and-test:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      # lib/l10n/gen is committed, but regenerate before analysis: the
+      # generated localizations depend on the Flutter version that produced
+      # them, and CI must analyze what this SDK generates from the ARBs.
+      - run: flutter gen-l10n
+      # very_good_analysis is configured with infos fatal, so this is a real
+      # gate, not advisory output.
+      - run: flutter analyze
+      - run: flutter test
+
+# This is a starting point — edit it. Things you may want next:
+#   * Pin the two `uses:` above to full commit SHAs. `@v7` and `@v2` are
+#     mutable tags on repositories you do not control; whoever can move
+#     them runs code in your CI. fluFrame ships tags rather than SHAs
+#     because a SHA frozen into your repo at generation time only rots —
+#     pin them yourself and let Dependabot keep them current.
+#   * dart format --set-exit-if-changed lib test
+#   * dart run build_runner build --delete-conflicting-outputs, plus a diff
+#     check, once your team agrees on when to regenerate freezed/json code
+#   * flutter test --coverage with an upload step
+#   * flutter build apk/ipa/web --dart-define-from-file=env/prod.json
+#     (put real secrets in repository secrets, never in env/*.json)

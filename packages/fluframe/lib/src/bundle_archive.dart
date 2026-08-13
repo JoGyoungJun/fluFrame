@@ -1,0 +1,378 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
+import 'package:path/path.dart' as p;
+
+/// Provides the `templates/` root of a published fluframe [version];
+/// injectable so tests can serve local fixtures instead of the network.
+typedef BundleProvider = Future<Directory> Function(String version);
+
+/// How long each stage of a bundle download may take before it is a
+/// failure rather than a slow link.
+typedef BundleTimeouts = ({
+  Duration connect,
+  Duration metadata,
+  Duration download,
+});
+
+/// Where the published bundles are read from. The tests pass their own
+/// loopback `HttpServer` through `downloadPublishedBundle`'s `registry`
+/// parameter rather than replacing this.
+final Uri pubDevRegistry = Uri.parse('https://pub.dev');
+
+/// The shipped deadlines.
+///
+/// Every one of them exists to turn a hang into a sentence: without them a
+/// blackholed connection leaves `fluframe upgrade` printing "Fetching…"
+/// forever, and a user cannot tell that from a slow download.
+///
+/// * `connect` — a TCP+TLS handshake that has not completed in 10s is not
+///   going to. This is the captive-portal case, where SYN goes nowhere.
+/// * `metadata` — the version document is ~2 KB of JSON. 30s is far past
+///   any working link and well short of "did it crash?".
+/// * `download` — the 1.4.0 archive measured 104 KB, fetched in 0.4s. A
+///   60s ceiling is a floor of roughly 14 kbit/s, slower than anything the
+///   rest of the upgrade would survive anyway.
+///
+/// Deliberately not retries: a second attempt down the same blackhole
+/// doubles the wait. Fail fast with a message that names the limit.
+const BundleTimeouts defaultBundleTimeouts = (
+  connect: Duration(seconds: 10),
+  metadata: Duration(seconds: 30),
+  download: Duration(seconds: 60),
+);
+
+/// A published bundle could not be fetched, or could not be trusted.
+///
+/// The requested [version] travels with the failure. This surfaces in the
+/// CLI's top-level handler, many frames away from whoever asked for it,
+/// and "404" on its own is not something a user can act on.
+class BundleException implements Exception {
+  /// Describes [message] going wrong while fetching fluframe [version],
+  /// with an optional [hint] naming the way out.
+  BundleException(this.version, this.message, {this.hint});
+
+  /// The fluframe version whose bundle was requested.
+  final String version;
+
+  /// What went wrong, phrased for a terminal.
+  final String message;
+
+  /// What the user can do about it, when there is something.
+  final String? hint;
+
+  @override
+  String toString() => message;
+}
+
+/// Downloads the pub.dev archive of fluframe [version] and extracts its
+/// `templates/` directory (the app bundle + addons) into a temp folder.
+///
+/// Published bundles are a permanent part of the upgrade contract
+/// (ADR 0002): every released version's template stays reconstructable.
+///
+/// Throws [BundleException] for everything a user can actually hit — an
+/// unpublished version, an offline machine, a damaged archive — so the
+/// CLI can report it as a sentence instead of a stack trace.
+///
+/// [registry] and [timeouts] exist for the tests, which serve the whole
+/// exchange from a local `HttpServer` — the real network is never a test
+/// dependency.
+Future<Directory> downloadPublishedBundle(
+  String version, {
+  Uri? registry,
+  BundleTimeouts timeouts = defaultBundleTimeouts,
+}) async => extractBundleTemplates(
+  await _downloadArchive(version, registry ?? pubDevRegistry, timeouts),
+  version,
+);
+
+/// Fetches and decodes the published tarball of fluframe [version].
+///
+/// Split from the extraction so that a disk error while unpacking is not
+/// reported as a network failure.
+Future<Archive> _downloadArchive(
+  String version,
+  Uri registry,
+  BundleTimeouts timeouts,
+) async {
+  final client = HttpClient()..connectionTimeout = timeouts.connect;
+  try {
+    final info = await _getJson(
+      client,
+      registry.resolve('/api/packages/fluframe/versions/$version'),
+      version,
+      timeouts.metadata,
+    );
+    final archiveUrl = info['archive_url'] as String?;
+    if (archiveUrl == null) {
+      throw BundleException(
+        version,
+        'pub.dev knows fluframe $version but published no archive for it.',
+      );
+    }
+    final bytes = await _getBytes(
+      client,
+      Uri.parse(archiveUrl),
+      version,
+      timeouts.download,
+    );
+    try {
+      return TarDecoder().decodeBytes(_inflateComplete(bytes, version));
+    } on FormatException catch (error) {
+      // ArchiveException is a FormatException, and an undecodable download
+      // must not reach the CLI as one: the top-level handler reads a bare
+      // FormatException as malformed .fluframe.json.
+      throw BundleException(
+        version,
+        'The fluframe $version archive from pub.dev could not be read '
+        '(${error.message}).',
+        hint: 'The download may have been truncated — try again.',
+      );
+    }
+  } on IOException catch (error) {
+    // Offline, DNS, proxy, TLS: all IOException, none of them a fluframe
+    // bug, and none worth a stack trace.
+    throw BundleException(
+      version,
+      'Could not reach pub.dev to download the fluframe $version template '
+      'bundle: $error',
+      hint: 'Check your network connection and try again.',
+    );
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// Inflates [bytes], refusing a gzip stream that lost its tail.
+///
+/// `archive` 4.0.9's `GZipDecoder` does not raise on a truncated stream —
+/// it returns whatever it managed to inflate. So half a download comes
+/// back as a *partial* archive, and the upgrader's three-way merge then
+/// reads the files that never arrived as files the user deleted. An empty
+/// inflate is no better: it surfaces as "this version ships no templates/",
+/// which blames the version for a transfer problem.
+///
+/// gzip's last eight bytes are the CRC32 and the uncompressed length of
+/// the data (RFC 1952 §2.3.1). A stream that lost its tail fails both,
+/// because the bytes read as a trailer are mid-stream deflate output.
+/// Measured against cuts from one byte short to almost the whole stream.
+List<int> _inflateComplete(List<int> bytes, String version) {
+  // A gzip member is a 10-byte header plus an 8-byte trailer at minimum.
+  if (bytes.length < 18) {
+    throw _incompleteArchive(
+      version,
+      'only ${bytes.length} bytes arrived, too few to be a gzip archive',
+    );
+  }
+  final inflated = const GZipDecoder().decodeBytes(bytes);
+  // ISIZE is the uncompressed size modulo 2^32.
+  final declaredSize = _readLe32(bytes, bytes.length - 4);
+  if (inflated.length % 0x100000000 != declaredSize) {
+    throw _incompleteArchive(
+      version,
+      'it unpacks to ${inflated.length} bytes where its own trailer '
+      'declares $declaredSize',
+    );
+  }
+  if (getCrc32(inflated) != _readLe32(bytes, bytes.length - 8)) {
+    throw _incompleteArchive(
+      version,
+      'its contents do not match the checksum it carries',
+    );
+  }
+  return inflated;
+}
+
+BundleException _incompleteArchive(String version, String detail) =>
+    BundleException(
+      version,
+      'The fluframe $version archive from pub.dev arrived incomplete: '
+      '$detail.',
+      hint:
+          'Nothing was unpacked. This is a transfer problem rather than a '
+          'problem with the version — try again.',
+    );
+
+/// Reads four little-endian bytes at [at] as an unsigned 32-bit integer.
+int _readLe32(List<int> bytes, int at) =>
+    bytes[at] |
+    (bytes[at + 1] << 8) |
+    (bytes[at + 2] << 16) |
+    (bytes[at + 3] << 24);
+
+/// Extracts the `templates/` tree of the fluframe [version] [archive] into
+/// a fresh temp directory, and returns that `templates/` directory.
+///
+/// The result outlives this call: the upgrader reads the merge base out of
+/// it for the rest of the run, so it cannot be deleted here — that would
+/// be a use-after-delete. Only the failure paths clean up after
+/// themselves; on a successful extraction the OS temp sweeper owns the
+/// directory, one per upgrade run.
+Directory extractBundleTemplates(Archive archive, String version) {
+  final out = Directory.systemTemp.createTempSync('fluframe_bundle_');
+  final root = p.normalize(out.absolute.path);
+  try {
+    var extracted = 0;
+    for (final entry in archive) {
+      if (!entry.isFile) continue;
+      if (!entry.name.startsWith('templates/')) continue;
+      // A tar member names its own path, and these bytes came off the
+      // network: 'templates/../../../probe.txt' passes the prefix test and
+      // then lands wherever it likes. Resolve the path first, and insist
+      // it stayed inside the directory we made for it.
+      final target = p.normalize(p.join(root, entry.name));
+      if (!p.isWithin(root, target)) {
+        throw BundleException(
+          version,
+          'The fluframe $version archive contains an entry that would be '
+          'written outside the download directory: ${entry.name}',
+          hint:
+              'Nothing from it was kept. Please report this at '
+              'https://github.com/JoGyoungJun/fluFrame/issues',
+        );
+      }
+      File(target)
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(entry.content);
+      extracted++;
+    }
+    if (extracted == 0) {
+      throw BundleException(
+        version,
+        'fluframe $version ships no templates/ — versions before 0.1.0 '
+        'cannot be upgrade bases.',
+        hint: 'Pass --from with a version from 0.1.0 onwards.',
+      );
+    }
+  } on Object {
+    _deleteQuietly(out);
+    rethrow;
+  }
+  return Directory(p.join(out.path, 'templates'));
+}
+
+/// Removes a half-written extraction directory.
+///
+/// Best effort on purpose: a cleanup failure here would replace the error
+/// the caller is about to report with a far less useful one.
+void _deleteQuietly(Directory directory) {
+  try {
+    directory.deleteSync(recursive: true);
+  } on FileSystemException {
+    // Nothing to do — the OS temp sweeper gets it eventually.
+  }
+}
+
+/// Fails [operation] with a [BundleException] if it outlives [limit].
+///
+/// The deadline covers the whole exchange — connect, headers and body —
+/// because a server that accepts the connection and then stalls is
+/// indistinguishable, from here, from one that never answered. Nothing is
+/// cancelled: the caller closes its client with `force: true` in a
+/// `finally`, which is what actually drops the socket.
+Future<T> _withDeadline<T>(
+  Future<T> operation,
+  Duration limit,
+  Uri uri,
+  String version,
+) => operation.timeout(
+  limit,
+  onTimeout: () => throw BundleException(
+    version,
+    'Timed out after ${_describe(limit)} waiting for $uri.',
+    hint:
+        'fluframe upgrade rebuilds the merge base from the published '
+        'bundle, so it has no offline mode. A captive portal or an '
+        'unconfigured proxy is the usual cause — check the connection '
+        'and try again.',
+  ),
+);
+
+/// Renders [limit] the way the message needs to read: `250ms`, `30s`, `2m`.
+String _describe(Duration limit) {
+  // Sub-second is not a shipped value but is what the tests use, and
+  // "Timed out after 0s" would be a bug report waiting to happen.
+  if (limit.inSeconds < 1) return '${limit.inMilliseconds}ms';
+  if (limit.inMinutes >= 1 && limit.inSeconds % 60 == 0) {
+    return '${limit.inMinutes}m';
+  }
+  return '${limit.inSeconds}s';
+}
+
+Future<Map<String, dynamic>> _getJson(
+  HttpClient client,
+  Uri uri,
+  String version,
+  Duration limit,
+) => _withDeadline(_readJson(client, uri, version), limit, uri, version);
+
+Future<Map<String, dynamic>> _readJson(
+  HttpClient client,
+  Uri uri,
+  String version,
+) async {
+  final request = await client.getUrl(uri);
+  final response = await request.close();
+  if (response.statusCode == HttpStatus.notFound) {
+    throw BundleException(
+      version,
+      'pub.dev has no published fluframe $version, so there is no template '
+      'bundle to upgrade from.',
+      hint:
+          'Check the version in .fluframe.json (or the one passed to '
+          '--from) against https://pub.dev/packages/fluframe/versions',
+    );
+  }
+  if (response.statusCode != 200) {
+    throw BundleException(
+      version,
+      'pub.dev answered ${response.statusCode} when asked for fluframe '
+      '$version ($uri).',
+      // 400 means the version string itself was rejected — a permanent
+      // problem "try again in a minute" would have a user retrying
+      // forever (#189). The upgrader validates the shape before fetching,
+      // but this endpoint is reachable with other inputs too.
+      hint: response.statusCode == HttpStatus.badRequest
+          ? '"$version" does not look like a version pub.dev accepts — '
+                'check it against '
+                'https://pub.dev/packages/fluframe/versions'
+          : 'This is usually temporary — try again in a minute.',
+    );
+  }
+  final body = await utf8.decodeStream(response);
+  try {
+    return jsonDecode(body) as Map<String, dynamic>;
+  } on FormatException {
+    throw BundleException(
+      version,
+      'pub.dev returned something other than JSON for fluframe $version.',
+      hint: 'This is usually temporary — try again in a minute.',
+    );
+  }
+}
+
+Future<List<int>> _getBytes(
+  HttpClient client,
+  Uri uri,
+  String version,
+  Duration limit,
+) => _withDeadline(_readBytes(client, uri, version), limit, uri, version);
+
+Future<List<int>> _readBytes(HttpClient client, Uri uri, String version) async {
+  final request = await client.getUrl(uri);
+  final response = await request.close();
+  if (response.statusCode != 200) {
+    throw BundleException(
+      version,
+      'Downloading the fluframe $version archive failed: $uri answered '
+      '${response.statusCode}.',
+      hint: 'This is usually temporary — try again in a minute.',
+    );
+  }
+  final builder = BytesBuilder(copy: false);
+  await response.forEach(builder.add);
+  return builder.takeBytes();
+}

@@ -1,0 +1,122 @@
+# fluFrame
+
+[![CI](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml/badge.svg)](https://github.com/JoGyoungJun/fluFrame/actions/workflows/ci.yml)
+[![pub package](https://img.shields.io/pub/v/fluframe.svg)](https://pub.dev/packages/fluframe)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**한 번의 명령으로 프로덕션 수준의 Flutter 앱을.**
+
+fluFrame은 Flutter 보일러플레이트 + CLI입니다. `fluframe create my_app` 한 줄로
+상태관리, 라우팅, 테마, 다국어, 네트워킹, 플레이버, 엄격한 lint, 테스트까지
+모두 연결되어 있고 전부 통과하는 feature-first Flutter 앱을 생성합니다.
+
+**▶ [브라우저에서 생성된 앱 바로 써보기](https://jogyoungjun.github.io/fluFrame/)**
+— 설치 없이, 실물 그대로.
+
+[English README](README.md)
+
+| 홈 | 샘플 REST 기능 | 테마 & 3개 언어 |
+|:---:|:---:|:---:|
+| <img src="docs/assets/home-light.png" width="240" alt="생성된 앱의 홈 탭"> | <img src="docs/assets/posts-light.png" width="240" alt="REST로 불러온 게시글 목록"> | <img src="docs/assets/settings-dark.png" width="240" alt="다크 모드의 설정 탭"> |
+
+`fluframe create` 결과물 그대로이며, 손댄 곳이 없습니다.
+
+## 빠른 시작
+
+**Flutter 3.44 이상이 필요합니다**(Dart 3.12+). 생성되는 앱이
+`sdk: ^3.12.1`을 선언하며, `fluframe doctor`가 `create`에 시간을 쓰기 전에
+설치된 SDK를 이 제약과 대조합니다.
+
+```sh
+dart pub global activate fluframe
+fluframe doctor    # 먼저: 이 머신이 Flutter 앱을 빌드할 수 있는지 확인
+fluframe create my_app --org com.mycompany --backend supabase
+cd my_app
+flutter run --dart-define-from-file=env/dev.json
+
+fluframe upgrade   # 나중에: 템플릿 개선 사항을 내 앱으로 가져오기
+fluframe add feature billing --tab   # 그리고 다음 기능 스캐폴딩
+```
+
+1.0 이후의 안정성 약속은 [docs/versioning.md](docs/versioning.md)에
+문서화되어 있습니다.
+
+또는 이 저장소를 GitHub 템플릿으로 사용해 [`template/`](template/)에서 바로
+시작할 수도 있습니다.
+
+## 왜 fluFrame인가
+
+모든 스타터는 스냅숏입니다. 생성하는 순간부터 내 앱과 템플릿은 영영
+갈라집니다. fluFrame은 그 연결을 유지하는, 우리가 아는 유일한 Flutter
+스타터입니다 — `fluframe upgrade`는 *내가 생성한 버전 시점의* 템플릿을
+복원해 그 뒤로 바뀐 모든 것을 작업 트리에 3-way 병합하고, 진짜 충돌은
+추측하지 않고 충돌로 보고합니다. 내가 고친 코드는 살아남습니다.
+
+이것이 fluFrame을 고를 이유이며, 무엇보다 낫다는 뜻은 아닙니다. 팀이
+Bloc을 쓴다면, 또는 앱이 아니라 패키지가 필요하다면
+[Very Good CLI](https://cli.vgv.dev)가 더 나은 도구입니다.
+**[docs/comparison.md](docs/comparison.md)**에 fluFrame이 지는 지점까지
+정직하게 정리해 두었습니다.
+
+## 포함된 것들
+
+| 영역 | 솔루션 |
+|---|---|
+| 상태관리 | [flutter_riverpod](https://pub.dev/packages/flutter_riverpod) 3 — 수동 `Notifier`/`AsyncNotifier`, 프로바이더 코드젠 없음 |
+| 네비게이션 | [go_router](https://pub.dev/packages/go_router) 17 — `StatefulShellRoute` 하단 탭, 중첩 라우트 |
+| 인증 | 백엔드 중립 스캐폴드: 로그인/프로필 플로, 라우트 게이팅, 세션 영속화 — provider 하나 교체로 [Supabase](docs/guides/auth-supabase.md)·[Firebase](docs/guides/auth-firebase.md) 연결 |
+| 모델 | [freezed](https://pub.dev/packages/freezed) 3 + json_serializable, REST 샘플 기능 포함 |
+| 네트워킹 | [dio](https://pub.dev/packages/dio) — `DioException` → sealed `ApiException` 매핑 |
+| 영속화 | `SharedPreferencesAsync`를 감싼 `KeyValueStore` 인터페이스 — 테스트에서 쉽게 대체 가능 |
+| 다국어 | `flutter gen-l10n` (영어 · 일본어 · 한국어 기본 포함) |
+| 테마 | 시드 컬러 기반 Material 3 라이트/다크, `ThemeMode` 영속화 |
+| 플레이버 | `--dart-define-from-file` + `env/dev.json` / `env/prod.json` |
+| Lint | [very_good_analysis](https://pub.dev/packages/very_good_analysis) — 경고 0건 |
+| 테스트 | mocktail + Riverpod override 기반 단위/위젯 테스트 — 처음부터 전부 통과 |
+| 앱 키우기 | `fluframe add feature <name> [--tab]`으로 다음 기능 모듈을 스캐폴딩하고 라우트까지 등록 |
+
+## 저장소 구조
+
+```text
+├── template/            # 보일러플레이트 앱 (fluframe_app) — 항상 컴파일되고 항상 테스트됨
+└── packages/
+    └── fluframe/        # pub.dev에 배포되는 CLI (fluframe create)
+```
+
+CLI는 먼저 **사용자의** Flutter SDK로 `flutter create --empty`를 실행한 뒤 —
+플랫폼 폴더가 항상 설치된 Flutter 버전과 일치합니다 — 템플릿의 `lib/`,
+`test/`, 설정 파일을 덮어쓰고 패키지명 토큰을 치환합니다.
+
+## 예제
+
+`fluframe create`로 생성한 뒤 문서화된 컨벤션 그대로 확장한 실제 앱들:
+
+- [`examples/todo_app`](examples/todo_app) — 새 기능 모듈+탭으로 추가된
+  영속 투두리스트 (freezed, KeyValueStore, AsyncNotifier, l10n, 테스트)
+- [`examples/weather_app`](examples/weather_app) — 키 없는 공개 API
+  (Open-Meteo)로 현재 날씨 표시: 절대 URL dio 호출, FutureProvider.family,
+  도시 선택
+
+## 개발 (이 저장소)
+
+```sh
+# 템플릿 앱
+cd template
+flutter pub get && flutter gen-l10n
+flutter analyze && flutter test
+
+# CLI
+cd packages/fluframe
+dart pub get
+dart analyze && dart test -x e2e   # 단위 테스트
+dart test -t e2e                   # 전체 e2e (실제 앱을 생성해 검증)
+```
+
+## 기여
+
+기여를 환영합니다 — [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
+큰 변경은 먼저 이슈를 열어주세요.
+
+## 라이선스
+
+[MIT](LICENSE)
