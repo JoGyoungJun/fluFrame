@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:fluframe/src/command_runner.dart';
+import 'package:fluframe/src/commands/add_command.dart';
+import 'package:fluframe/src/feature_scaffold.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -24,6 +26,29 @@ class _FailingCommand extends Command<int> {
   // ever does.
   @override
   Future<int> run() => Future<int>.error(_failure, StackTrace.current);
+}
+
+/// A scaffold that plans cleanly and then fails the way `apply` does when
+/// a write dies partway and the rollback cannot put every file back — the
+/// one failure that leaves the app edited and not compiling.
+class _UnrestorableScaffold extends FeatureScaffold {
+  _UnrestorableScaffold({required super.projectDir});
+
+  @override
+  FeaturePlan plan({required String name, required bool tab}) =>
+      const FeaturePlan(
+        files: [],
+        routerContents: '',
+        arbContents: {},
+        untranslated: {},
+      );
+
+  @override
+  void apply(FeaturePlan plan, {required String name}) =>
+      throw const FeatureScaffoldException(
+        'Adding "billing" failed, and these files could not be put back: '
+        'lib/l10n/app_ko.arb. Restore them (git checkout) before building.',
+      );
 }
 
 void main() {
@@ -132,6 +157,34 @@ void main() {
       expect(err.toString(), contains('impossible'));
       expect(err.toString(), contains('github.com/JoGyoungJun/fluFrame'));
       expect(err.toString(), contains('#0'));
+    });
+
+    test('a feature that fails mid-apply keeps its rescue instruction '
+        'readable', () async {
+      // `apply` was called outside the try that catches
+      // FeatureScaffoldException, so the one line telling the user which
+      // files to restore arrived under "This is a bug. Please report it"
+      // with a stack trace after it — at the exact moment the app is
+      // edited and does not compile.
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err)
+        ..addCommand(
+          AddFeatureCommand(
+            err: err,
+            makeScaffold: (projectDir) =>
+                _UnrestorableScaffold(projectDir: projectDir),
+          ),
+        );
+
+      final code = await runner.run(['feature', 'billing']);
+
+      // 74 = EX_IOERR: the write failed. Not 64, which would blame the
+      // invocation, and not the crash handler's 70.
+      expect(code, 74, reason: err.toString());
+      expect(err.toString(), contains('could not be put back'));
+      expect(err.toString(), contains('git checkout'));
+      expect(err.toString(), isNot(contains('This is a bug')));
+      expect(err.toString(), isNot(contains('#0')));
     });
   });
 }

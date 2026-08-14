@@ -23,7 +23,13 @@ class AddCommand extends Command<int> {
 /// existing app (design spec 003).
 class AddFeatureCommand extends Command<int> {
   /// Creates the command and registers its options.
-  AddFeatureCommand() {
+  ///
+  /// [err] and [makeScaffold] are injectable for tests.
+  AddFeatureCommand({
+    StringSink? err,
+    FeatureScaffold Function(io.Directory projectDir)? makeScaffold,
+  }) : _err = err ?? io.stderr,
+       _makeScaffold = makeScaffold ?? _defaultScaffold {
     argParser
       ..addFlag(
         'tab',
@@ -44,6 +50,13 @@ class AddFeatureCommand extends Command<int> {
         help: 'Root of the generated app to add the feature to.',
       );
   }
+
+  final StringSink _err;
+  final FeatureScaffold Function(io.Directory projectDir) _makeScaffold;
+
+  /// The scaffold the command runs with when nothing was injected.
+  static FeatureScaffold _defaultScaffold(io.Directory projectDir) =>
+      FeatureScaffold(projectDir: projectDir);
 
   @override
   String get name => 'feature';
@@ -73,14 +86,12 @@ class AddFeatureCommand extends Command<int> {
     final dryRun = results['dry-run'] as bool;
     final projectDir = io.Directory(results['project-dir'] as String);
 
-    final scaffold = FeatureScaffold(projectDir: projectDir);
+    final scaffold = _makeScaffold(projectDir);
     final FeaturePlan plan;
     try {
       plan = scaffold.plan(name: name, tab: tab);
     } on FeatureScaffoldException catch (exception) {
-      io.stderr.writeln(exception.message);
-      final hint = exception.hint;
-      if (hint != null) io.stderr.writeln(hint);
+      _reportFailure(exception);
       return ExitCode.usage.code;
     }
 
@@ -89,9 +100,28 @@ class AddFeatureCommand extends Command<int> {
       return ExitCode.success.code;
     }
 
-    scaffold.apply(plan, name: name);
+    try {
+      scaffold.apply(plan, name: name);
+    } on FeatureScaffoldException catch (exception) {
+      // Not usage like the refusals above: the invocation was fine and the
+      // plan was accepted. apply() throws this only once it has edited the
+      // app and failed to put every file back, so it exits 74 (EX_IOERR)
+      // rather than 64 — and the sentence naming what to `git checkout` is
+      // the reason to catch it at all, instead of letting the runner bury
+      // it under "This is a bug" and a stack trace.
+      _reportFailure(exception);
+      return ExitCode.ioError.code;
+    }
     _reportApplied(plan, name: name, tab: tab);
     return ExitCode.success.code;
+  }
+
+  /// Writes [exception] to stderr: the sentence, then its hint when there
+  /// is one.
+  void _reportFailure(FeatureScaffoldException exception) {
+    _err.writeln(exception.message);
+    final hint = exception.hint;
+    if (hint != null) _err.writeln(hint);
   }
 
   void _reportPlan(
