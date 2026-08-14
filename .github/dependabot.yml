@@ -47,6 +47,8 @@ updates:
       # A freezed major regenerates every *.freezed.dart file — that is a
       # manual migration, not a bot bump (and dependabot has proposed
       # 4.0.0-dev prereleases here, which broke the codegen CI gate).
+      # Belt and braces: a stored ignore condition for freezed 4.x also
+      # exists (created via @dependabot ignore on PR #4).
       - dependency-name: freezed
         update-types: ['version-update:semver-major']
       - dependency-name: freezed
