@@ -1,0 +1,29 @@
+# TEMPORARY — deleted before this branch merges. Regenerates
+# template/pubspec.lock on CI (this machine has no Flutter SDK) and
+# uploads it as an artifact for the maintainer to commit.
+name: tmp-regen-lock
+
+on:
+  push:
+    branches: [chore/template-deps-2026-08]
+
+permissions:
+  contents: read
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: template
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pubspec-lock
+          path: template/pubspec.lock
