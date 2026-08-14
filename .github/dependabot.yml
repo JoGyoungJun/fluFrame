@@ -40,3 +40,14 @@ updates:
     # A template bump changes what every generated app gets, so these are
     # reviewed by a maintainer rather than merged on green CI alone.
     open-pull-requests-limit: 3
+    ignore:
+      # flutter_localizations pins intl to an exact version per Flutter SDK;
+      # the template's `intl: any` defers to that pin on purpose.
+      - dependency-name: intl
+      # A freezed major regenerates every *.freezed.dart file — that is a
+      # manual migration, not a bot bump (and dependabot has proposed
+      # 4.0.0-dev prereleases here, which broke the codegen CI gate).
+      - dependency-name: freezed
+        update-types: ['version-update:semver-major']
+      - dependency-name: freezed_annotation
+        update-types: ['version-update:semver-major']
