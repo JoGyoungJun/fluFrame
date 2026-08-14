@@ -261,13 +261,6 @@ jobs:
         with:
           channel: stable
           cache: true
-      # The wrapper pins the `-all` distribution (222 MB). Without this the
-      # runner downloads it on every run.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.gradle/caches
-          key: gradle-${{ runner.os }}-${{ hashFiles('template/android/**/*.gradle*', 'template/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
       - name: Generate an app from the publish bundle
         working-directory: packages/fluframe
         # Same bundle a published user gets: templates/ is gitignored, so
@@ -279,6 +272,54 @@ jobs:
             --org dev.example \
             --platforms android \
             --output-directory "${{ runner.temp }}"
+      - name: Key the Gradle cache on the generated app
+        id: gradle-key
+        working-directory: ${{ runner.temp }}/demo_app
+        # The key has to describe the app this job actually builds, so it is
+        # computed after generation. It used to be hashFiles() over
+        # template/android — but that directory is not in `overlayEntries`
+        # (packages/fluframe/lib/src/project_generator.dart), so a generated
+        # app never receives it: its android/ is whatever `flutter create`
+        # wrote using the runner's stable SDK. Hashing checked-in files the
+        # build never reads produced a key that could not change — written
+        # once, an exact hit forever after — and actions/cache does not
+        # re-upload on an exact hit. The entry therefore stayed frozen on
+        # the Gradle and AGP of the day it was first saved while Flutter
+        # stable moved its pins underneath it, quietly restoring the
+        # download the cache exists to avoid.
+        #
+        # hashFiles() cannot do this job: it only reads inside
+        # GITHUB_WORKSPACE, and the app is generated into runner.temp. The
+        # wrapper file is asserted rather than just globbed because `find`
+        # matching nothing hashes to a constant — the same silent failure
+        # in a new disguise.
+        run: |
+          wrapper=android/gradle/wrapper/gradle-wrapper.properties
+          if [ ! -f "$wrapper" ]; then
+            echo "::error::Generated app has no $wrapper"
+            exit 1
+          fi
+          hash=$(find android -type f \
+                   \( -name 'gradle-wrapper.properties' \
+                      -o -name 'settings.gradle*' \
+                      -o -name 'build.gradle*' \
+                      -o -name 'gradle.properties' \) -print0 \
+                 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          {
+            echo "Gradle cache key hash: $hash"
+            grep '^distributionUrl=' "$wrapper" || echo 'distributionUrl: none'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # The wrapper pins the `-all` distribution (222 MB). Without this the
+      # runner downloads it on every run. The restore-keys prefix earns its
+      # keep now that the key actually moves: the run that first sees a new
+      # Flutter stable misses on the exact key, warm-starts from the
+      # previous entry, and saves a fresh one under the new key.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ steps.gradle-key.outputs.hash }}
+          restore-keys: gradle-${{ runner.os }}-
       - name: Build the generated app
         working-directory: ${{ runner.temp }}/demo_app
         # --debug, not --release: this gate is about whether the toolchain
