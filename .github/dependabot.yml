@@ -49,5 +49,9 @@ updates:
       # 4.0.0-dev prereleases here, which broke the codegen CI gate).
       - dependency-name: freezed
         update-types: ['version-update:semver-major']
+      - dependency-name: freezed
+        versions: ['>=4.0.0-0']
       - dependency-name: freezed_annotation
         update-types: ['version-update:semver-major']
+      - dependency-name: freezed_annotation
+        versions: ['>=4.0.0-0']
