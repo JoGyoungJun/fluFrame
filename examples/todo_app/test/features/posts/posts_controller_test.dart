@@ -44,7 +44,7 @@ class _PagingRepository implements PostsRepository {
       // Reproduced rather than thrown: this is the line PostsRepository
       // runs on the decoded body, and on the wrong shape its cast raises a
       // TypeError — an Error, not an Exception.
-      final data = <Object?>['not a post'];
+      final data = <Object>['not a post'];
       return data
           .map((json) => Post.fromJson(json as Map<String, Object?>))
           .toList();
