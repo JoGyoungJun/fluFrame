@@ -22,6 +22,9 @@ executables:
 dependencies:
   archive: ^4.0.9
   args: ^2.7.0
+  # SHA-256 for the published-bundle integrity check in bundle_archive.dart;
+  # Dart's core libraries have no hashing.
+  crypto: ^3.0.7
   io: ^1.0.5
   path: ^1.9.1
 

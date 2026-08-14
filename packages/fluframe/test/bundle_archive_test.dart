@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -153,18 +154,34 @@ void main() {
       HttpRequest request, {
       int? status,
       String? text,
+      String? location,
       List<int>? bytes,
     }) {
       final response = request.response;
       if (status != null) response.statusCode = status;
+      if (location != null) {
+        response.headers.set(HttpHeaders.locationHeader, location);
+      }
       if (text != null) response.write(text);
       if (bytes != null) response.add(bytes);
       unawaited(response.close());
     }
 
     /// A pub.dev version document pointing back at this server.
-    String metadataFor(String path) =>
-        jsonEncode({'archive_url': registry.resolve(path).toString()});
+    ///
+    /// The digest travels with the body the server is about to serve, the
+    /// same way pub.dev publishes it — every download is checked against
+    /// it now, so a document without one only ever exercises the refusal.
+    /// [digest] overrides that, for the tests that want a document and a
+    /// body which disagree.
+    String metadataFor(
+      String path, {
+      List<int> archive = const [],
+      String? digest,
+    }) => jsonEncode({
+      'archive_url': registry.resolve(path).toString(),
+      'archive_sha256': digest ?? sha256.convert(archive).toString(),
+    });
 
     List<int> tarGz(Archive archive) =>
         const GZipEncoder().encodeBytes(TarEncoder().encodeBytes(archive));
@@ -178,11 +195,19 @@ void main() {
           ),
         )
         ..add(ArchiveFile.string('templates/addons.json', '{}\n'));
+      final bytes = tarGz(archive);
+      // The document carries the digest of exactly these bytes, the shape
+      // pub.dev publishes — so this is also the proof that a bundle
+      // matching its published checksum still gets through.
+      final metadata = metadataFor(
+        '/archives/fluframe-1.2.0.tar.gz',
+        archive: bytes,
+      );
       server.listen((request) {
         if (isMetadata(request)) {
-          reply(request, text: metadataFor('/archives/fluframe-1.2.0.tar.gz'));
+          reply(request, text: metadata);
         } else {
-          reply(request, bytes: tarGz(archive));
+          reply(request, bytes: bytes);
         }
       });
 
@@ -319,11 +344,20 @@ void main() {
         // Long enough to clear the "too few bytes to be a gzip archive"
         // guard, so it reaches the decoder and fails there. Truncation is a
         // different error with a different message; see the group below.
+        //
+        // The last four bytes are zeroed because they are now read as the
+        // declared uncompressed size before anything is inflated, and
+        // 0x7f7f7f7f would trip the size ceiling instead — a different
+        // failure than the one this test is about.
+        final body = List.filled(64, 0x7f)..fillRange(60, 64, 0);
         server.listen((request) {
           if (isMetadata(request)) {
-            reply(request, text: metadataFor('/archives/corrupt.tar.gz'));
+            reply(
+              request,
+              text: metadataFor('/archives/corrupt.tar.gz', archive: body),
+            );
           } else {
-            reply(request, bytes: List.filled(64, 0x7f));
+            reply(request, bytes: body);
           }
         });
 
@@ -429,10 +463,22 @@ void main() {
       );
       // The requested version selects the cut, so one server covers them
       // all: /archives/cut-<n>.tar.gz serves the first n bytes.
+      //
+      // Each document publishes the digest of the truncated bytes it is
+      // about to serve, so the download passes the integrity check and
+      // reaches this guard. That is the case worth pinning: a mirror
+      // that published a digest of a half-archive would sail through the
+      // checksum and still must not become a merge base.
       server.listen((request) {
         if (isMetadata(request)) {
-          final version = request.uri.pathSegments.last;
-          reply(request, text: metadataFor('/archives/cut-$version.tar.gz'));
+          final keep = int.parse(request.uri.pathSegments.last);
+          reply(
+            request,
+            text: metadataFor(
+              '/archives/cut-$keep.tar.gz',
+              archive: full.sublist(0, keep),
+            ),
+          );
         } else {
           final keep = int.parse(
             RegExp(r'cut-(\d+)').firstMatch(request.uri.path)!.group(1)!,
@@ -469,11 +515,15 @@ void main() {
     });
 
     test('a body far too short to be an archive says so', () async {
+      const stub = [0x1f, 0x8b, 0x08];
       server.listen((request) {
         if (isMetadata(request)) {
-          reply(request, text: metadataFor('/archives/stub.tar.gz'));
+          reply(
+            request,
+            text: metadataFor('/archives/stub.tar.gz', archive: stub),
+          );
         } else {
-          reply(request, bytes: const [0x1f, 0x8b, 0x08]);
+          reply(request, bytes: stub);
         }
       });
 
@@ -500,11 +550,15 @@ void main() {
       final archive = Archive()
         ..add(ArchiveFile.string('templates/app/main.dart', 'x' * 40000))
         ..add(ArchiveFile.string('templates/addons.json', '{}\n'));
+      final bytes = tarGz(archive);
       server.listen((request) {
         if (isMetadata(request)) {
-          reply(request, text: metadataFor('/archives/whole.tar.gz'));
+          reply(
+            request,
+            text: metadataFor('/archives/whole.tar.gz', archive: bytes),
+          );
         } else {
-          reply(request, bytes: tarGz(archive));
+          reply(request, bytes: bytes);
         }
       });
 
@@ -545,6 +599,231 @@ void main() {
                 (e) => e.message,
                 'names the URL',
                 contains('stalled.tar.gz'),
+              ),
+        ),
+      );
+    });
+
+    // The bundle that comes out of here is merged into the user's own
+    // source tree, so "it decompressed" is not a statement about who
+    // wrote it. Everything below is about proving it is pub.dev's.
+    test('a version document with no checksum is refused', () async {
+      // Without the published digest nothing ties the download to
+      // pub.dev: the CRC32 inside the archive only says the bytes agree
+      // with themselves, and a rewriter recomputes it for free.
+      final document = jsonEncode({
+        'archive_url': registry.resolve('/archives/x.tar.gz').toString(),
+      });
+      server.listen((request) => reply(request, text: document));
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>().having(
+            (e) => e.message,
+            'message',
+            contains('published no checksum'),
+          ),
+        ),
+      );
+    });
+
+    test('an archive that does not match its published checksum is '
+        'refused', () async {
+      final bytes = tarGz(
+        Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+      );
+      final metadata = metadataFor(
+        '/archives/swapped.tar.gz',
+        // 64 hex zeroes: a digest no archive has, so a mismatch is the
+        // only thing this can be failing on.
+        digest: '0' * 64,
+      );
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadata);
+        } else {
+          reply(request, bytes: bytes);
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('does not match the SHA-256'),
+              )
+              .having((e) => e.hint, 'hint', contains('Nothing was unpacked')),
+        ),
+      );
+    });
+
+    test('a checksum published in upper case still matches', () async {
+      // pub.dev publishes lower-case hex; a mirror need not. Comparing
+      // the two forms literally would refuse a bundle that is byte-for-
+      // byte correct — the worst possible false positive here, since it
+      // breaks every upgrade rather than a tampered one.
+      final bytes = tarGz(
+        Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+      );
+      final metadata = metadataFor(
+        '/archives/upper.tar.gz',
+        digest: sha256.convert(bytes).toString().toUpperCase(),
+      );
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadata);
+        } else {
+          reply(request, bytes: bytes);
+        }
+      });
+
+      final templates = await downloadPublishedBundle(
+        '1.2.0',
+        registry: registry,
+        timeouts: _patient,
+      );
+      addTearDown(() => templates.parent.deleteSync(recursive: true));
+
+      expect(File(p.join(templates.path, 'addons.json')).existsSync(), isTrue);
+    });
+
+    test('an archive URL that leaves the registry over plain http is '
+        'refused', () async {
+      // HttpClient does not care what scheme a URL carries, and whatever
+      // comes back is merged into the user's source tree. archives.invalid
+      // can never resolve (RFC 2606), so a regression fails on DNS rather
+      // than reaching a real host.
+      final document = jsonEncode({
+        'archive_url': 'http://archives.invalid/fluframe-1.2.0.tar.gz',
+        'archive_sha256': '0' * 64,
+      });
+      server.listen((request) => reply(request, text: document));
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('insecure connection'),
+              )
+              .having(
+                (e) => e.message,
+                'names the host',
+                contains('archives.invalid'),
+              ),
+        ),
+      );
+    });
+
+    test('a redirect off the registry into plain http is refused', () async {
+      // pub.dev's archive URLs redirect to a storage host and HttpClient
+      // follows redirects on its own, so the URL in the version document
+      // is not necessarily the one that answers. A hop off the origin the
+      // caller named is a hop into an archive someone else wrote.
+      final bytes = tarGz(
+        Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+      );
+      final elsewhere = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => elsewhere.close(force: true));
+      elsewhere.listen((request) {
+        final response = request.response..add(bytes);
+        // A perfectly good archive, so nothing but the hop itself can be
+        // what this test fails on. The client hangs up on the refusal
+        // without draining it, and a close that fails afterwards is the
+        // server's business rather than a test failure.
+        unawaited(response.close().catchError((Object _) {}));
+      });
+      final metadata = metadataFor('/archives/moved.tar.gz', archive: bytes);
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadata);
+        } else {
+          reply(
+            request,
+            status: HttpStatus.movedTemporarily,
+            location: 'http://127.0.0.1:${elsewhere.port}/moved.tar.gz',
+          );
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('insecure connection'),
+              )
+              .having(
+                (e) => e.message,
+                'names the hop',
+                contains('127.0.0.1:${elsewhere.port}'),
+              ),
+        ),
+      );
+    });
+
+    test('an archive that declares more content than the ceiling is '
+        'refused before it is inflated', () async {
+      // gzip states its uncompressed length in the trailer, so the size
+      // is knowable without decompressing — and decompressing first is
+      // how a small download becomes a heap the CLI cannot survive.
+      // The body below inflates perfectly well, so a ceiling checked
+      // after the decoder would report the trailer mismatch instead:
+      // which message comes out is the proof of the order.
+      final bytes = tarGz(
+        Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+      );
+      final bomb = List<int>.from(bytes);
+      const declared = maxInflatedBundleBytes + 1;
+      for (var i = 0; i < 4; i++) {
+        bomb[bomb.length - 4 + i] = (declared >> (8 * i)) & 0xff;
+      }
+      final metadata = metadataFor('/archives/bomb.tar.gz', archive: bomb);
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadata);
+        } else {
+          reply(request, bytes: bomb);
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having((e) => e.message, 'message', contains('ceiling'))
+              .having(
+                (e) => e.message,
+                'names the declared size',
+                contains('$declared'),
               ),
         ),
       );

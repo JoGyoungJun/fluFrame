@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:fluframe/src/upgrader.dart';
@@ -129,6 +130,10 @@ void main() {
             ),
         ),
       );
+      // The digest is of what is actually served, so the download passes
+      // verification and the truncation is still what stops the upgrade —
+      // this test is about a partial archive, not a tampered one.
+      final cut = full.sublist(0, 105);
       server.listen((request) {
         final response = request.response;
         if (request.uri.path.startsWith('/api/packages/')) {
@@ -137,10 +142,11 @@ void main() {
               'archive_url': registry
                   .resolve('/archives/cut.tar.gz')
                   .toString(),
+              'archive_sha256': sha256.convert(cut).toString(),
             }),
           );
         } else {
-          response.add(full.sublist(0, 105));
+          response.add(cut);
         }
         unawaited(response.close());
       });
@@ -372,6 +378,12 @@ void main() {
         '[]': 'not an object',
         '{"cliVersion": 1.4}': 'expected a string',
         '{"cliVersion":"0.1.0","name":["demo"]}': 'expected a string',
+        // The three addon keys are read the same way, one screenful
+        // further down, and were left out of the loop that guards the
+        // rest — so each was still #187, one key over.
+        '{"cliVersion":"0.1.0","backend":7}': 'expected a string',
+        '{"cliVersion":"0.1.0","errorReporting":7}': 'expected a string',
+        '{"cliVersion":"0.1.0","analytics":[]}': 'expected a string',
         '{"cliVersion":"0.1.0","pendingUpgrade":{}}': 'expected a string',
         '{"cliVersion":"0.1.0","pendingUpgrade":"1.9.9",'
                 '"pendingConflicts":"lib/a.dart"}':
@@ -516,6 +528,29 @@ void main() {
       );
     });
 
+    test('a run deletes the scratch tree it reconstructs BASE in', () async {
+      // Regression: the fluframe_upgrade_ directory holds two whole
+      // rebuilt app trees (four when the addon replay falls back) and was
+      // never deleted on any path, so every invocation — dry runs
+      // included — left a full template behind on the temp volume.
+      Set<String> workDirs() => Directory.systemTemp
+          .listSync()
+          .whereType<Directory>()
+          .map((directory) => p.basename(directory.path))
+          .where((name) => name.startsWith('fluframe_upgrade_'))
+          .toSet();
+
+      final before = workDirs();
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(workDirs().difference(before), isEmpty);
+    });
+
     test('local + upstream edits produce conflict markers on apply', () async {
       File(
         p.join(project.path, 'lib', 'a.dart'),
@@ -562,6 +597,48 @@ void main() {
       expect(
         File(p.join(project.path, '.fluframe.json')).readAsStringSync(),
         contains('"cliVersion": "$cliVersion"'),
+      );
+    });
+
+    test('a failed write is a sentence, and records no upgrade', () async {
+      // Regression: --apply wrote every merged file in a bare loop and
+      // recorded the version only afterwards, so a single failed write
+      // escaped as "This is a bug" plus a stack trace and left a tree
+      // that was part upgraded, still recorded at the old version, and
+      // already carrying conflict markers — which the next run would have
+      // merged markers into (#166).
+      //
+      // A directory standing where a file has to go is the one write
+      // failure that fails the same way on all three CI platforms.
+      Directory(p.join(project.path, 'lib', 'b.dart')).createSync();
+      // lib/a.dart conflicts, which puts the write ordering under test
+      // too: it must not have been marked when lib/b.dart failed.
+      File(
+        p.join(project.path, 'lib', 'a.dart'),
+      ).writeAsStringSync('alpha local edit\n');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains('Could not write lib/b.dart'));
+      expect(log.toString(), isNot(contains('Applied.')));
+      final meta =
+          jsonDecode(
+                File(p.join(project.path, '.fluframe.json')).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      // Nothing is claimed, so the re-run merges the same BASE again and
+      // picks up the files the loop never reached.
+      expect(meta['cliVersion'], '0.1.0');
+      expect(meta.containsKey('pendingUpgrade'), isFalse);
+      expect(
+        File(p.join(project.path, 'lib', 'a.dart')).readAsStringSync(),
+        isNot(contains('<<<<<<<')),
+        reason: 'a file left marked is what makes that re-merge destructive',
       );
     });
 
