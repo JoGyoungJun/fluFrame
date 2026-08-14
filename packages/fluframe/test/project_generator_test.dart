@@ -122,6 +122,68 @@ import 'package:fluframe_app/app/app.dart';
     });
   });
 
+  group('addon registry decoding', () {
+    test('refuses a patch path that leaves the generated project', () {
+      // `fluframe upgrade` replays the addons.json carried by a DOWNLOADED
+      // bundle, so these values are as untrusted as the archive members
+      // extractBundleTemplates already refuses — and the patcher rewrites
+      // join(targetPath, file) in place, over a file the user already has.
+      for (final escape in [
+        '../../../../.bashrc',
+        '..',
+        '/etc/passwd',
+        r'C:\Windows\system.ini',
+        r'..\..\..\.bashrc',
+      ]) {
+        expect(
+          () => AddonPatch.fromJson({
+            'file': escape,
+            'anchor': 'a',
+            'replacement': 'b',
+          }),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains(escape),
+            ),
+          ),
+          reason: 'accepted "$escape"',
+        );
+      }
+    });
+
+    test('refuses an addon name that is not a plain identifier', () {
+      // The name is joined onto the template's parent to locate the
+      // addon's bundled files, so a traversal here copies from wherever it
+      // points into the app being generated.
+      expect(
+        () => BackendAddon.fromJson({
+          'name': '../../../../.ssh',
+          'dependencies': <Object?>[],
+          'patches': <Object?>[],
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('../../../../.ssh'),
+          ),
+        ),
+      );
+    });
+
+    test('keeps an ordinary project-relative patch path', () {
+      final patch = AddonPatch.fromJson(const {
+        'file': 'lib/main.dart',
+        'anchor': 'a',
+        'replacement': 'b',
+      });
+
+      expect(patch.file, 'lib/main.dart');
+    });
+  });
+
   group('ProjectGenerator.generate', () {
     late Directory temp;
     late Directory templateDir;
@@ -647,6 +709,83 @@ version: 0.1.0+1
       expect(code, isNot(0));
       expect(log.toString(), contains('anchor not found'));
       expect(log.toString(), contains('lib/main.dart'));
+    });
+
+    test('refuses a patch path that escapes the target directory', () async {
+      // The parse-time guard covers a registry read out of a bundle; a
+      // compiled-in const AddonPatch never passes through it, so the call
+      // site checks the resolved path as well. The sink only rewrites a
+      // file that already exists, which is exactly the damage — a file the
+      // user already had, edited in place.
+      final victim = p.join(temp.path, 'victim.txt');
+      File(victim).writeAsStringSync('anchor here\n');
+      const fake = BackendAddon(
+        name: 'fake',
+        requiresFiles: false,
+        dependencies: [],
+        patches: [
+          AddonPatch(
+            file: '../victim.txt',
+            anchor: 'anchor here',
+            replacement: 'pwned',
+          ),
+        ],
+      );
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains('escapes the project directory'));
+      expect(File(victim).readAsStringSync(), 'anchor here\n');
+    });
+
+    test('applies an ordinary nested patch path from a bundle', () async {
+      // Over-blocking guard: the two containment checks must leave a
+      // normal project-relative patch working exactly as it did.
+      final fake = BackendAddon.fromJson({
+        'name': 'fake',
+        'requiresFiles': false,
+        'dependencies': <Object?>[],
+        'patches': [
+          {
+            'file': 'lib/main.dart',
+            'anchor': '// FluFrame App',
+            'replacement': '// patched by addon',
+          },
+        ],
+      });
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      expect(code, 0, reason: log.toString());
+      expect(
+        File(
+          p.join(temp.path, 'demo_app', 'lib', 'main.dart'),
+        ).readAsStringSync(),
+        contains('// patched by addon'),
+      );
     });
 
     test(

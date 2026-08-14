@@ -412,9 +412,26 @@ class ProjectGenerator {
       _copyDirectory(addonDir, Directory(targetPath), name: name);
     }
 
+    // Defence in depth for a patch path that came out of a DOWNLOADED
+    // registry (the upgrader replays the bundle's own addons.json):
+    // AddonPatch.fromJson refuses an escaping `file` at parse time, and
+    // the resolved path is checked again here — the way
+    // extractBundleTemplates checks an archive member before writing it —
+    // because a compiled-in const AddonPatch never passed through that
+    // door. The sink rewrites a file that already exists, so an escape
+    // overwrites the user's own ~/.bashrc rather than creating one.
+    final root = p.normalize(Directory(targetPath).absolute.path);
     final patchedDartFiles = <String>{};
     for (final patch in addon.patches) {
-      final file = File(p.join(targetPath, patch.file));
+      final resolved = p.normalize(p.join(root, patch.file));
+      if (!p.isWithin(root, resolved)) {
+        _log.writeln(
+          'Addon patch target escapes the project directory: '
+          '${patch.file} — refusing to apply the ${addon.name} addon.',
+        );
+        return ExitCode.software.code;
+      }
+      final file = File(resolved);
       if (!file.existsSync()) {
         _log.writeln(
           'Addon patch target missing: ${patch.file} — the template and '
