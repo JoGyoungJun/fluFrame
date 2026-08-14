@@ -448,9 +448,17 @@ class FeatureScaffold {
     }
     final Map<String, Object?> decoded;
     try {
-      decoded = Map<String, Object?>.from(
-        jsonDecode(file.readAsStringSync()) as Map,
-      );
+      final parsed = jsonDecode(file.readAsStringSync());
+      // ARBs are as hand-edited as .fluframe.json, and the bare `as Map`
+      // that used to be here raised a TypeError on an array or a scalar —
+      // an Error `on FormatException` cannot catch, so the CLI reported a
+      // hand-editing mistake as "This is a bug" with a trace (#187).
+      if (parsed is! Map<String, dynamic>) {
+        throw FeatureScaffoldException(
+          '$relative holds a ${parsed.runtimeType}, not a JSON object.',
+        );
+      }
+      decoded = Map<String, Object?>.from(parsed);
     } on FormatException catch (error) {
       throw FeatureScaffoldException(
         '$relative is not valid JSON: '

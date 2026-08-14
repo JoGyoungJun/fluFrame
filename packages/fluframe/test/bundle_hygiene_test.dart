@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/bundle_hygiene.dart';
@@ -198,6 +199,30 @@ void main() {
         ..writeAsStringSync('x');
     }
 
+    /// The globs in [bundleSecretPatterns] that are meant to match.
+    ///
+    /// The `!` lines are re-includes — the negative cases below own those.
+    List<String> positivePatterns() {
+      final patterns = <String>[];
+      for (final line in const LineSplitter().convert(bundleSecretPatterns)) {
+        if (line.isEmpty || line.startsWith('#') || line.startsWith('!')) {
+          continue;
+        }
+        patterns.add(line);
+      }
+      return patterns;
+    }
+
+    /// A file name [pattern] has to match.
+    ///
+    /// Derived from the glob instead of typed out, so a pattern added to
+    /// the list without anyone writing a fixture is still exercised — that
+    /// is the whole point of driving this off the list. The filler is a
+    /// word no `!` line re-includes, so `.env.*` cannot accidentally
+    /// produce `.env.example` and test the opposite of what it means to.
+    String fixtureFor(String pattern) =>
+        pattern.replaceAll('*', 'fixture').replaceAll('?', 'f');
+
     test('is empty for a bundle that carries only template sources', () {
       write('app/lib/main.dart');
       write('app/env/dev.json');
@@ -225,6 +250,44 @@ void main() {
         'app/ios/certs/dist.pem',
         'app/service-account-prod.json',
       ]);
+    });
+
+    test('every glob in bundleSecretPatterns is one the finder reports', () {
+      // The same matcher is the publish gate: tool/sync_template.dart
+      // exits non-zero on a hit and publish.yml runs it immediately
+      // before `dart pub publish`. A glob that quietly matches nothing
+      // would ship a maintainer's key to pub.dev with CI fully green,
+      // and hand-picked fixtures only ever covered six of these.
+      final patterns = positivePatterns();
+      // The whole vocabulary of the gate. Pinned so that losing a
+      // pattern is as loud as adding one that does not work.
+      expect(patterns, hasLength(20));
+
+      final byFixture = <String, String>{};
+      for (final pattern in patterns) {
+        final fixture = fixtureFor(pattern);
+        expect(
+          byFixture.containsKey(fixture),
+          isFalse,
+          reason:
+              '"$pattern" and "${byFixture[fixture]}" both generate the '
+              'fixture "$fixture", so one of them goes untested',
+        );
+        byFixture[fixture] = pattern;
+        write(fixture);
+      }
+
+      final found = findSecretLikeFiles(root);
+      for (final entry in byFixture.entries) {
+        expect(
+          found,
+          contains(entry.key),
+          reason:
+              '${entry.value} is declared in bundleSecretPatterns but does '
+              'not match ${entry.key} — the publish gate would let that '
+              'file through',
+        );
+      }
     });
 
     test('leaves the example env files alone', () {

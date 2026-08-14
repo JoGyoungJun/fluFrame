@@ -3,6 +3,8 @@
 /// anchored patches on template-owned files.
 library;
 
+import 'package:path/path.dart' as p;
+
 /// An exact-string edit on a template-owned file.
 ///
 /// [anchor] must exist verbatim in [file]; generation fails loudly when
@@ -16,8 +18,11 @@ class AddonPatch {
   });
 
   /// Reads a patch from its [toJson] form.
+  ///
+  /// Throws [FormatException] naming `file` when it is absolute or would
+  /// climb out of the project the patch is applied to.
   factory AddonPatch.fromJson(Map<String, Object?> json) => AddonPatch(
-    file: json['file']! as String,
+    file: _checkedPatchFile(json['file']! as String),
     anchor: json['anchor']! as String,
     replacement: json['replacement']! as String,
   );
@@ -53,8 +58,11 @@ class BackendAddon {
   });
 
   /// Reads an addon from its [toJson] form.
+  ///
+  /// Throws [FormatException] naming `name` when it is anything but a
+  /// plain identifier.
   factory BackendAddon.fromJson(Map<String, Object?> json) => BackendAddon(
-    name: json['name']! as String,
+    name: _checkedAddonName(json['name']! as String),
     dependencies: [
       for (final dependency in json['dependencies']! as List<dynamic>)
         dependency as String,
@@ -151,6 +159,50 @@ Map<String, BackendAddon> _decodeAddons(Object? json) {
     for (final entry in json.entries)
       entry.key: BackendAddon.fromJson(entry.value! as Map<String, Object?>),
   };
+}
+
+/// Returns [file] unchanged if a patch may target it, and throws a
+/// [FormatException] naming it if it may not.
+///
+/// A registry is not always written by this CLI: `fluframe upgrade`
+/// replays the addons recorded in a DOWNLOADED bundle (see
+/// [addonRegistryFileName]), which makes these strings exactly as
+/// untrusted as the archive members `extractBundleTemplates` refuses to
+/// write outside its own directory. The patcher rewrites
+/// `join(targetPath, file)` in place, so `../../../../.bashrc` here names
+/// a real file outside the generated app and rewrites that one instead.
+///
+/// Both separators are rejected whatever the host is: a bundle aimed at
+/// Windows must not decode cleanly on Linux and travel on from there.
+String _checkedPatchFile(String file) {
+  final normalized = p.posix.normalize(file.replaceAll(r'\', '/'));
+  if (p.posix.isAbsolute(normalized) ||
+      p.windows.isAbsolute(file) ||
+      normalized == '..' ||
+      normalized.startsWith('../')) {
+    throw FormatException(
+      'Addon patch file must stay inside the generated project, and '
+      '"$file" does not.',
+    );
+  }
+  return file;
+}
+
+// Deliberately narrower than "anything without a separator": the name is
+// joined onto the template's parent to locate the addon's bundled files
+// (`addons/<name>/`) and is echoed back in the CLI's messages, and every
+// addon that has ever shipped is a plain identifier.
+final RegExp _addonNamePattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9_-]*$');
+
+/// Returns [name] unchanged if an addon may carry it, and throws a
+/// [FormatException] naming it if it may not.
+String _checkedAddonName(String name) {
+  if (!_addonNamePattern.hasMatch(name)) {
+    throw FormatException(
+      'Addon name must be letters, digits, "_" or "-", and "$name" is not.',
+    );
+  }
+  return name;
 }
 
 /// The Supabase auth backend (stage 2 of the backend roadmap).

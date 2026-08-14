@@ -589,6 +589,24 @@ void main() {
         );
       });
 
+      test('an ARB holding a JSON array, not an object', () {
+        // The same crash class as #187 in .fluframe.json: `as Map` on a
+        // decoded array raises a TypeError, which `on FormatException`
+        // does not catch and the CLI prints as "This is a bug" + a trace.
+        write('lib/l10n/app_ko.arb', '["settingsTab", "Settings"]\n');
+
+        expect(
+          () => scaffold().plan(name: 'billing', tab: false),
+          throwsA(
+            isA<FeatureScaffoldException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('app_ko.arb'), contains('not a JSON object')),
+            ),
+          ),
+        );
+      });
+
       test('a key the app already defines', () {
         write(
           'lib/l10n/app_en.arb',

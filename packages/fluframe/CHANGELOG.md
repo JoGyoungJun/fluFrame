@@ -1,5 +1,82 @@
 # Changelog
 
+## 1.6.0
+
+**Everything a downloaded bundle could do to you, and four crashes that
+reported themselves as fluframe bugs.** A full improvement pass over the
+CLI and the template: 33 findings, the 13 highest-value fixed here. No CLI
+flag changed meaning — but `upgrade` now refuses two things it used to
+accept, which is why this is a minor and not a patch.
+
+### The bundle `upgrade` downloads is now verified
+
+- **The download is checked against pub.dev's own digest.** pub.dev
+  publishes `archive_sha256` beside the archive URL; fluframe read past it
+  and relied on the gzip CRC32, which anyone who rewrites the bytes
+  recomputes for free. That archive is merged into your source tree, so it
+  is now refused unless its SHA-256 is the one pub.dev published.
+- **A hop off https is refused, not followed.** The archive URL, and any
+  redirect away from it, must be https — or the plain-http registry you
+  named yourself, which is what a self-hosted mirror and the tests use.
+- **A bundle can no longer write outside your project.** Addon patch
+  targets come out of the downloaded bundle's own `addons.json` and were
+  joined onto your project root unvalidated, so a traversal path could
+  rewrite an existing file anywhere you can write. Refused when the
+  registry is parsed, and again before the file is touched.
+- **An oversized archive stops before it is inflated**, instead of being
+  decompressed into memory first and measured afterwards.
+
+Adds `crypto` as a runtime dependency: Dart has no SHA-256 in core.
+
+### `upgrade` no longer leaves an app it cannot finish
+
+- **A failed write is a sentence, and not a half-upgrade.** One unwritable
+  file — a lock, a read-only file, a full disk — used to escape mid-loop
+  as "This is a bug", leaving some files upgraded, the recorded version
+  untouched, and nothing anywhere to say so. The re-run then merged the
+  same base against already-upgraded content and conflicted on files you
+  never edited. Writes are now ordered so conflict markers land last, and
+  a failure records no upgrade at all, which keeps the re-run a plain
+  re-merge of exactly the files that never landed.
+- **The scratch tree is deleted.** Every run, dry runs included, left two
+  fully reconstructed app trees behind in your temp directory.
+- **A hand-broken `.fluframe.json` dies as a sentence.** `backend`,
+  `errorReporting` and `analytics` were still read with bare casts, so a
+  wrong type in any of them printed "This is a bug" with a stack trace —
+  the exact class the validation around them exists to prevent.
+
+### Crashes that reported themselves as fluframe bugs
+
+- **`add feature` prints its own recovery instructions.** When a rollback
+  cannot put every file back, the scaffold names those files and tells you
+  to restore them before building. That message was being buried under a
+  crash trace, at precisely the moment you needed to read it.
+- **An ARB that is not a JSON object** is now named as such, instead of
+  raising a `TypeError` the CLI reports as a bug in itself.
+
+### Generated apps
+
+- **The load-more spinner can no longer hang forever.** A wrong-shaped
+  page-two response raises a `TypeError`, which the controller's
+  `on Exception` never caught: the loading flag stayed set, and the guard
+  at the top of the method turned every later attempt into a no-op — a
+  spinner with no error and no retry. Both the paging and the refresh path
+  now surface it, so the retry the list footer already had appears.
+
+### Repo
+
+- Restored `docs/adr/` and `docs/design/`, which ten shipped source files,
+  `docs/comparison.md` and this changelog already pointed at.
+- The Gradle cache key for the generated-app Android build hashed files
+  that build never uses, so it could never change: written once, then an
+  exact hit forever, quietly reintroducing the download it was added to
+  avoid.
+- Every one of the 20 secret-scan patterns that gates `dart pub publish`
+  now has a fixture, so a pattern that stops matching fails the suite
+  instead of shipping a key.
+- The settings fallbacks are pinned: theme preset, theme mode and locale
+  are persisted by name, so renaming a value breaks stored settings.
+
 ## 1.5.0
 
 **Two features, and the audit of everything around them.** Two repo-wide

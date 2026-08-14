@@ -22,6 +22,9 @@ class _PagingRepository implements PostsRepository {
   /// When set, the next fetch of this page throws instead of returning.
   int? failPage;
 
+  /// When set, the next fetch of this page comes back wrong-shaped.
+  int? malformedPage;
+
   /// When set, fetches wait on this before returning.
   Completer<void>? gate;
 
@@ -35,6 +38,16 @@ class _PagingRepository implements PostsRepository {
     if (failPage == page) {
       failPage = null;
       throw const NetworkException('down');
+    }
+    if (malformedPage == page) {
+      malformedPage = null;
+      // Reproduced rather than thrown: this is the line PostsRepository
+      // runs on the decoded body, and on the wrong shape its cast raises a
+      // TypeError — an Error, not an Exception.
+      final data = <Object>['not a post'];
+      return data
+          .map((json) => Post.fromJson(json as Map<String, Object?>))
+          .toList();
     }
     final start = (page - 1) * limit;
     return [
@@ -181,6 +194,33 @@ void main() {
       expect(state.loadMoreError, isNull);
     });
 
+    test('a wrong-shaped page is retryable, not a stuck spinner', () async {
+      // Regression: a malformed payload raises a TypeError, which is an
+      // Error and not an Exception, so `on Exception` let it escape with
+      // isLoadingMore still true. The guard at the top of loadMore then
+      // dropped every later call — the footer spun forever, with no error
+      // and no retry.
+      final repository = _PagingRepository(total: postsPageSize * 3)
+        ..malformedPage = 2;
+      final container = _containerFor(repository);
+      await container.read(postsControllerProvider.future);
+      final notifier = container.read(postsControllerProvider.notifier);
+
+      await notifier.loadMore();
+
+      var state = container.read(postsControllerProvider).requireValue;
+      expect(state.posts, hasLength(postsPageSize), reason: 'page 1 survives');
+      expect(state.loadMoreError, isA<TypeError>());
+      expect(state.isLoadingMore, isFalse);
+      expect(state.hasMore, isTrue, reason: 'a failure is not the end');
+
+      await notifier.loadMore();
+
+      state = container.read(postsControllerProvider).requireValue;
+      expect(state.posts, hasLength(postsPageSize * 2));
+      expect(state.loadMoreError, isNull);
+    });
+
     test('a page resolving after a refresh is dropped', () async {
       // ref.invalidate reuses this notifier and leaves it mounted, so the
       // late write succeeds unless the generation guard rejects it — the
@@ -216,6 +256,21 @@ void main() {
       await container.read(postsControllerProvider.future);
 
       repository.failPage = 1;
+      await container.read(postsControllerProvider.notifier).refresh();
+
+      expect(container.read(postsControllerProvider).hasError, isTrue);
+    });
+
+    test('does not throw when the fetch fails with an Error', () async {
+      // The same hazard from the other half of the error hierarchy: a
+      // wrong-shaped payload fails build() with a TypeError, and an Error
+      // escaping the catch reaches RefreshIndicator.onRefresh, which
+      // discards it — an unhandled async exception again.
+      final repository = _PagingRepository();
+      final container = _containerFor(repository);
+      await container.read(postsControllerProvider.future);
+
+      repository.malformedPage = 1;
       await container.read(postsControllerProvider.notifier).refresh();
 
       expect(container.read(postsControllerProvider).hasError, isTrue);

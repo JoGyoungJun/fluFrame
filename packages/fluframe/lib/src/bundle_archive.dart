@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 /// Provides the `templates/` root of a published fluframe [version];
@@ -44,6 +45,17 @@ const BundleTimeouts defaultBundleTimeouts = (
   download: Duration(seconds: 60),
 );
 
+/// The most content an archive may claim to hold before it is refused
+/// unread.
+///
+/// gzip states its uncompressed length in the trailer (RFC 1952 §2.3.1),
+/// so the size is knowable *without* decompressing — and decompressing
+/// first is how a 104 KB download becomes a heap the CLI cannot survive.
+/// The 1.4.0 archive measured 104 KB and its `templates/` tree is source
+/// text, which does not inflate anywhere near tenfold, so 8 MB is roughly
+/// two orders of magnitude of headroom and still bounded.
+const int maxInflatedBundleBytes = 8 * 1024 * 1024;
+
 /// A published bundle could not be fetched, or could not be trusted.
 ///
 /// The requested [version] travels with the failure. This surfaces in the
@@ -76,6 +88,12 @@ class BundleException implements Exception {
 /// Throws [BundleException] for everything a user can actually hit — an
 /// unpublished version, an offline machine, a damaged archive — so the
 /// CLI can report it as a sentence instead of a stack trace.
+///
+/// The download is fetched over https and checked against the SHA-256
+/// pub.dev publishes beside it before anything is inflated: what comes
+/// out of the archive becomes the merge base `fluframe upgrade` writes
+/// into the user's own source tree, so "it decompressed" is nowhere near
+/// enough of a guarantee.
 ///
 /// [registry] and [timeouts] exist for the tests, which serve the whole
 /// exchange from a local `HttpServer` — the real network is never a test
@@ -113,12 +131,33 @@ Future<Archive> _downloadArchive(
         'pub.dev knows fluframe $version but published no archive for it.',
       );
     }
+    // pub.dev publishes the archive's digest in the same document as its
+    // URL. Without it nothing ties the download to what pub.dev holds —
+    // see _verifyDigest — so a document that omits it is not something to
+    // build a merge base out of.
+    final expectedDigest = info['archive_sha256'] as String?;
+    if (expectedDigest == null) {
+      throw BundleException(
+        version,
+        'pub.dev published no checksum for the fluframe $version archive, '
+        'so there is no way to prove the download is the one it published.',
+        hint:
+            'Nothing was downloaded. fluframe upgrade merges the bundle '
+            'into your own source tree, so an unverifiable archive is '
+            'refused rather than trusted. Please report this at '
+            'https://github.com/JoGyoungJun/fluFrame/issues',
+      );
+    }
+    final archiveUri = Uri.parse(archiveUrl);
+    _requireTrustedOrigin(archiveUri, registry, version);
     final bytes = await _getBytes(
       client,
-      Uri.parse(archiveUrl),
+      archiveUri,
+      registry,
       version,
       timeouts.download,
     );
+    _verifyDigest(bytes, expectedDigest, version);
     try {
       return TarDecoder().decodeBytes(_inflateComplete(bytes, version));
     } on FormatException catch (error) {
@@ -146,6 +185,58 @@ Future<Archive> _downloadArchive(
   }
 }
 
+/// Refuses [uri] unless a template bundle may be fetched from it.
+///
+/// https, or the plain-http [registry] the caller named itself — nothing
+/// else. `fluframe upgrade` merges the downloaded `templates/` into the
+/// user's own source tree, so an archive that arrives over plain http is
+/// an archive anyone on the path can author. The exception exists because
+/// [registry] is overridable: the tests serve the whole exchange from a
+/// loopback `HttpServer`, and a self-hosted mirror is the same shape. It
+/// deliberately does not extend to a *redirect* away from that registry —
+/// leaving the origin the caller named is exactly how an insecure hop
+/// gets in.
+void _requireTrustedOrigin(Uri uri, Uri registry, String version) {
+  if (uri.isScheme('https')) return;
+  if (uri.isScheme(registry.scheme) &&
+      uri.host == registry.host &&
+      uri.port == registry.port) {
+    return;
+  }
+  throw BundleException(
+    version,
+    'The fluframe $version archive would be fetched over an insecure '
+    'connection ($uri).',
+    hint:
+        'Nothing was downloaded. pub.dev serves its archives over https, '
+        'and this one is merged into your own source tree — so a hop off '
+        'https is refused rather than followed.',
+  );
+}
+
+/// Refuses [bytes] that are not the archive pub.dev published.
+///
+/// The gzip CRC32 checked in [_inflateComplete] proves the download is
+/// consistent with itself; it proves nothing about who wrote it, because
+/// anyone who rewrites the bytes recomputes it for free. The published
+/// SHA-256 is the only thing tying this download to what pub.dev holds,
+/// so it is checked before a byte is inflated — what comes out of the
+/// archive becomes the merge base for the user's own source tree.
+void _verifyDigest(List<int> bytes, String expected, String version) {
+  final actual = sha256.convert(bytes).toString();
+  if (actual == expected.toLowerCase()) return;
+  throw BundleException(
+    version,
+    'The fluframe $version archive does not match the SHA-256 pub.dev '
+    'published for it: expected $expected, got $actual.',
+    hint:
+        'Nothing was unpacked. A proxy or a mirror rewriting the download '
+        'is the usual cause — try again on a direct connection, and '
+        'report it at https://github.com/JoGyoungJun/fluFrame/issues if '
+        'it persists.',
+  );
+}
+
 /// Inflates [bytes], refusing a gzip stream that lost its tail.
 ///
 /// `archive` 4.0.9's `GZipDecoder` does not raise on a truncated stream —
@@ -159,6 +250,11 @@ Future<Archive> _downloadArchive(
 /// the data (RFC 1952 §2.3.1). A stream that lost its tail fails both,
 /// because the bytes read as a trailer are mid-stream deflate output.
 /// Measured against cuts from one byte short to almost the whole stream.
+///
+/// That declared length is also read *before* anything is decompressed,
+/// against [maxInflatedBundleBytes]. A truncated stream reads mid-deflate
+/// output as its trailer, so the size it claims is arbitrary — inflating
+/// first to find that out means holding whatever it claimed.
 List<int> _inflateComplete(List<int> bytes, String version) {
   // A gzip member is a 10-byte header plus an 8-byte trailer at minimum.
   if (bytes.length < 18) {
@@ -167,9 +263,17 @@ List<int> _inflateComplete(List<int> bytes, String version) {
       'only ${bytes.length} bytes arrived, too few to be a gzip archive',
     );
   }
-  final inflated = const GZipDecoder().decodeBytes(bytes);
   // ISIZE is the uncompressed size modulo 2^32.
   final declaredSize = _readLe32(bytes, bytes.length - 4);
+  if (declaredSize > maxInflatedBundleBytes) {
+    throw _incompleteArchive(
+      version,
+      'its trailer declares $declaredSize bytes of content, past the '
+      '${maxInflatedBundleBytes ~/ (1024 * 1024)} MB ceiling this will '
+      'inflate',
+    );
+  }
+  final inflated = const GZipDecoder().decodeBytes(bytes);
   if (inflated.length % 0x100000000 != declaredSize) {
     throw _incompleteArchive(
       version,
@@ -357,13 +461,36 @@ Future<Map<String, dynamic>> _readJson(
 Future<List<int>> _getBytes(
   HttpClient client,
   Uri uri,
+  Uri registry,
   String version,
   Duration limit,
-) => _withDeadline(_readBytes(client, uri, version), limit, uri, version);
+) => _withDeadline(
+  _readBytes(client, uri, registry, version),
+  limit,
+  uri,
+  version,
+);
 
-Future<List<int>> _readBytes(HttpClient client, Uri uri, String version) async {
+Future<List<int>> _readBytes(
+  HttpClient client,
+  Uri uri,
+  Uri registry,
+  String version,
+) async {
   final request = await client.getUrl(uri);
   final response = await request.close();
+  // HttpClient follows redirects on its own, and pub.dev's archive URLs
+  // do redirect — so the URL the version document named is not
+  // necessarily the one that answered. A hop off https hands the merge
+  // base to whoever answered instead, which is why the chain is walked
+  // before a byte of the body is read. RedirectInfo.location is the raw
+  // Location header and may be relative, so each hop resolves against the
+  // one before it, exactly as HttpClient resolved it.
+  var hop = uri;
+  for (final redirect in response.redirects) {
+    hop = hop.resolveUri(redirect.location);
+    _requireTrustedOrigin(hop, registry, version);
+  }
   if (response.statusCode != 200) {
     throw BundleException(
       version,

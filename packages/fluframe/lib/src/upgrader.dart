@@ -111,7 +111,19 @@ class Upgrader {
         return ExitCode.data.code;
       }
       meta = decoded;
-      for (final key in ['cliVersion', 'name', 'org', _pendingVersionKey]) {
+      // This list is exactly the set of keys read below with a bare
+      // `as String?`. One that is read but not listed here is #187 again,
+      // one key over: `backend`, `errorReporting` and `analytics` were,
+      // and a number in any of them reached the cast as a TypeError.
+      for (final key in [
+        'cliVersion',
+        'name',
+        'org',
+        'backend',
+        'errorReporting',
+        'analytics',
+        _pendingVersionKey,
+      ]) {
         final value = meta[key];
         if (value != null && value is! String) {
           _log.writeln(
@@ -259,148 +271,160 @@ class Upgrader {
     _log.writeln('Fetching the fluframe $from template bundle...');
     final oldTemplates = await _oldBundle(from);
 
-    final work = Directory.systemTemp.createTempSync('fluframe_upgrade_');
-    Future<Directory?> bare(
-      Directory template,
-      String label, {
-      bool withAddons = true,
-    }) async {
-      // Prefer the addon definitions the bundle ships with. Patch anchors
-      // are exact strings from the template of that era, so applying this
-      // CLI's anchors to an older bundle breaks the moment the template
-      // moves one of those lines.
-      final registry = _readAddonRegistry(template.parent);
-      final generator = ProjectGenerator(
-        templateDirectory: template,
-        runProcess: _runProcess,
-        log: _log,
-        addons: registry?.backends,
-        errorAddons: registry?.errorReporting,
-        analytics: registry?.analytics,
-      );
-      final code = await generator.generate(
-        name: name,
-        org: org,
-        outputDirectory: p.join(work.path, label),
-        backend: withAddons ? backend : null,
-        errorReporting: withAddons ? errorReporting : null,
-        analytics: withAddons ? analytics : null,
-        bareOverlay: true,
-      );
-      if (code != 0) return null;
-      return Directory(p.join(work.path, label, name));
-    }
-
-    final oldApp = Directory(p.join(oldTemplates.path, 'app'));
-    var baseDir = await bare(oldApp, 'base');
-    var theirsDir = baseDir == null
-        ? null
-        : await bare(currentTemplate, 'theirs');
-    if (baseDir == null || theirsDir == null) {
-      // Degrade rather than abort, and degrade BOTH sides so they stay
-      // comparable. The addons may be unreplayable because the old bundle
-      // predates the current anchors, or because the addon has since been
-      // dropped from the CLI. Either way the files those addons touch
-      // simply report as conflicts, which a user can resolve — whereas
-      // giving up here left every app generated with any addon
-      // permanently un-upgradable, at exit 70.
-      _log.writeln(
-        'Could not replay the recorded addons against both the fluframe '
-        '$from bundle and this one, so the merge base was rebuilt without '
-        'them. Files those addons touch will likely report as conflicts.',
-      );
-      baseDir = await bare(oldApp, 'base-plain', withAddons: false);
-      theirsDir = await bare(
-        currentTemplate,
-        'theirs-plain',
-        withAddons: false,
-      );
-    }
-    if (baseDir == null || theirsDir == null) {
-      _log.writeln('Could not reconstruct the templates to compare.');
-      return ExitCode.software.code;
-    }
-
     final results = <String, UpgradeStatus>{};
     final merged = <String, String>{};
     var upToDate = 0;
     var localEdits = 0;
 
-    final theirFiles = _walk(theirsDir);
-    for (final relative in theirFiles) {
-      final theirsFile = File(p.join(theirsDir.path, relative));
-      final baseFile = File(p.join(baseDir.path, relative));
-      final ourFile = File(p.join(projectDir.path, relative));
-      final theirs = _load(theirsFile);
-      final base = baseFile.existsSync() ? _load(baseFile) : null;
-      final ours = ourFile.existsSync() ? _load(ourFile) : null;
-
-      // A side that exists but cannot be decoded has to be skipped: it can
-      // be neither compared nor rewritten. Skipped per file, though — one
-      // binary asset used to take the whole run down with an uncaught
-      // FormatException out of readAsStringSync.
-      if (theirs == null ||
-          (baseFile.existsSync() && base == null) ||
-          (ourFile.existsSync() && ours == null)) {
-        results[relative] = UpgradeStatus.unreadable;
-        continue;
+    final work = Directory.systemTemp.createTempSync('fluframe_upgrade_');
+    try {
+      Future<Directory?> bare(
+        Directory template,
+        String label, {
+        bool withAddons = true,
+      }) async {
+        // Prefer the addon definitions the bundle ships with. Patch anchors
+        // are exact strings from the template of that era, so applying this
+        // CLI's anchors to an older bundle breaks the moment the template
+        // moves one of those lines.
+        final registry = _readAddonRegistry(template.parent);
+        final generator = ProjectGenerator(
+          templateDirectory: template,
+          runProcess: _runProcess,
+          log: _log,
+          addons: registry?.backends,
+          errorAddons: registry?.errorReporting,
+          analytics: registry?.analytics,
+        );
+        final code = await generator.generate(
+          name: name,
+          org: org,
+          outputDirectory: p.join(work.path, label),
+          backend: withAddons ? backend : null,
+          errorReporting: withAddons ? errorReporting : null,
+          analytics: withAddons ? analytics : null,
+          bareOverlay: true,
+        );
+        if (code != 0) return null;
+        return Directory(p.join(work.path, label, name));
       }
 
-      if (base?.text == theirs.text) {
-        // Nothing changed upstream, so there is nothing to merge in and
-        // the local copy stands either way. Which one it is still has to
-        // be looked at: counting these as "unchanged" without opening the
-        // user's file reported a fact about the two bundles as though it
-        // were one about their app.
-        if (ours?.text == theirs.text) {
-          upToDate++;
-        } else {
-          localEdits++;
-        }
-        continue;
+      final oldApp = Directory(p.join(oldTemplates.path, 'app'));
+      var baseDir = await bare(oldApp, 'base');
+      var theirsDir = baseDir == null
+          ? null
+          : await bare(currentTemplate, 'theirs');
+      if (baseDir == null || theirsDir == null) {
+        // Degrade rather than abort, and degrade BOTH sides so they stay
+        // comparable. The addons may be unreplayable because the old bundle
+        // predates the current anchors, or because the addon has since been
+        // dropped from the CLI. Either way the files those addons touch
+        // simply report as conflicts, which a user can resolve — whereas
+        // giving up here left every app generated with any addon
+        // permanently un-upgradable, at exit 70.
+        _log.writeln(
+          'Could not replay the recorded addons against both the fluframe '
+          '$from bundle and this one, so the merge base was rebuilt without '
+          'them. Files those addons touch will likely report as conflicts.',
+        );
+        baseDir = await bare(oldApp, 'base-plain', withAddons: false);
+        theirsDir = await bare(
+          currentTemplate,
+          'theirs-plain',
+          withAddons: false,
+        );
       }
-      if (ours == null) {
-        if (base != null && !restoreDeleted) {
-          // The file shipped in the version this app was generated with,
-          // so the user deleted or renamed it. ADR 0002 never deletes on
-          // their behalf; restoring is the same overreach in reverse —
-          // and a renamed file comes back as a second declaration of the
-          // same class, which does not compile.
-          results[relative] = UpgradeStatus.deletedLocally;
+      if (baseDir == null || theirsDir == null) {
+        _log.writeln('Could not reconstruct the templates to compare.');
+        return ExitCode.software.code;
+      }
+
+      final theirFiles = _walk(theirsDir);
+      for (final relative in theirFiles) {
+        final theirsFile = File(p.join(theirsDir.path, relative));
+        final baseFile = File(p.join(baseDir.path, relative));
+        final ourFile = File(p.join(projectDir.path, relative));
+        final theirs = _load(theirsFile);
+        final base = baseFile.existsSync() ? _load(baseFile) : null;
+        final ours = ourFile.existsSync() ? _load(ourFile) : null;
+
+        // A side that exists but cannot be decoded has to be skipped: it can
+        // be neither compared nor rewritten. Skipped per file, though — one
+        // binary asset used to take the whole run down with an uncaught
+        // FormatException out of readAsStringSync.
+        if (theirs == null ||
+            (baseFile.existsSync() && base == null) ||
+            (ourFile.existsSync() && ours == null)) {
+          results[relative] = UpgradeStatus.unreadable;
           continue;
         }
-        results[relative] = UpgradeStatus.added;
-        merged[relative] = _restoreLineEndings(theirs);
-        continue;
-      }
-      if (ours.text == theirs.text) {
-        upToDate++;
-        continue; // Local already matches the new template.
-      }
-      if (!gitAvailable) {
-        results[relative] = UpgradeStatus.conflict;
-        continue;
-      }
-      final (status, content) = await _mergeFile(
-        base: base?.text ?? '',
-        ours: ours.text,
-        theirs: theirs.text,
-      );
-      results[relative] = status;
-      // A hard merge failure yields no content; leave the file untouched
-      // rather than overwriting it with nothing.
-      if (content != null) {
-        merged[relative] = _restoreLineEndings((
-          text: content,
-          lineEnding: ours.lineEnding,
-        ));
-      }
-    }
 
-    for (final relative in _walk(baseDir)) {
-      if (File(p.join(theirsDir.path, relative)).existsSync()) continue;
-      if (!File(p.join(projectDir.path, relative)).existsSync()) continue;
-      results[relative] = UpgradeStatus.removedUpstream;
+        if (base?.text == theirs.text) {
+          // Nothing changed upstream, so there is nothing to merge in and
+          // the local copy stands either way. Which one it is still has to
+          // be looked at: counting these as "unchanged" without opening the
+          // user's file reported a fact about the two bundles as though it
+          // were one about their app.
+          if (ours?.text == theirs.text) {
+            upToDate++;
+          } else {
+            localEdits++;
+          }
+          continue;
+        }
+        if (ours == null) {
+          if (base != null && !restoreDeleted) {
+            // The file shipped in the version this app was generated with,
+            // so the user deleted or renamed it. ADR 0002 never deletes on
+            // their behalf; restoring is the same overreach in reverse —
+            // and a renamed file comes back as a second declaration of the
+            // same class, which does not compile.
+            results[relative] = UpgradeStatus.deletedLocally;
+            continue;
+          }
+          results[relative] = UpgradeStatus.added;
+          merged[relative] = _restoreLineEndings(theirs);
+          continue;
+        }
+        if (ours.text == theirs.text) {
+          upToDate++;
+          continue; // Local already matches the new template.
+        }
+        if (!gitAvailable) {
+          results[relative] = UpgradeStatus.conflict;
+          continue;
+        }
+        final (status, content) = await _mergeFile(
+          base: base?.text ?? '',
+          ours: ours.text,
+          theirs: theirs.text,
+        );
+        results[relative] = status;
+        // A hard merge failure yields no content; leave the file untouched
+        // rather than overwriting it with nothing.
+        if (content != null) {
+          merged[relative] = _restoreLineEndings((
+            text: content,
+            lineEnding: ours.lineEnding,
+          ));
+        }
+      }
+
+      for (final relative in _walk(baseDir)) {
+        if (File(p.join(theirsDir.path, relative)).existsSync()) continue;
+        if (!File(p.join(projectDir.path, relative)).existsSync()) continue;
+        results[relative] = UpgradeStatus.removedUpstream;
+      }
+    } finally {
+      // Two whole reconstructed app trees live in here — four when the
+      // addon replay falls back — and nothing past this point reads them.
+      // Every run, dry ones included, used to leave them behind, so the
+      // temp volume grew by a template per invocation.
+      try {
+        work.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Temp cleanup best-effort.
+      }
     }
 
     _report(
@@ -412,12 +436,49 @@ class Upgrader {
     );
 
     if (apply) {
-      for (final entry in results.entries) {
-        final content = merged[entry.key];
+      // Conflicted files are written last. A tree left half-way through
+      // this loop can still be re-merged — a file already carrying the
+      // new content matches THEIRS and reports as up to date — but a file
+      // carrying conflict markers cannot: re-merging one writes markers
+      // into markers (#166). Writing them last means the write failures
+      // that actually happen (a read-only file, an editor or antivirus
+      // holding one open, a full disk) leave none behind.
+      final writeOrder = [
+        ...results.keys.where((e) => results[e] != UpgradeStatus.conflict),
+        ...results.keys.where((e) => results[e] == UpgradeStatus.conflict),
+      ];
+      for (final relative in writeOrder) {
+        final content = merged[relative];
         if (content == null) continue; // removedUpstream: never delete.
-        File(p.join(projectDir.path, entry.key))
-          ..parent.createSync(recursive: true)
-          ..writeAsStringSync(content);
+        try {
+          File(p.join(projectDir.path, relative))
+            ..parent.createSync(recursive: true)
+            ..writeAsStringSync(content);
+        } on FileSystemException catch (error) {
+          // Deliberately records nothing. .fluframe.json still names
+          // $from, so the re-run merges the same BASE and picks up
+          // exactly the files this loop never reached; recording the
+          // version — or a pendingUpgrade, which resolves into recording
+          // the version — would claim an upgrade the tree does not have,
+          // and the `from == cliVersion` short-circuit would then seal
+          // the missing files out for good. Without this the failure
+          // escaped as "This is a bug" plus a stack trace, having left
+          // the tree half-upgraded and unrecorded either way.
+          _log
+            ..writeln()
+            ..writeln(
+              'Could not write $relative: '
+              '${error.osError?.message ?? error.message}',
+            )
+            ..writeln(
+              'The upgrade stopped there, so the app is part-way through '
+              'it. Nothing was recorded — .fluframe.json still says '
+              '$from — so once whatever blocked the write is cleared, '
+              're-running fluframe upgrade --apply finishes the rest. To '
+              'start over instead, restore the tree from git first.',
+            );
+          return ExitCode.software.code;
+        }
       }
       final conflicts = results.values
           .where((status) => status == UpgradeStatus.conflict)

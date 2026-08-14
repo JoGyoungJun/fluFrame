@@ -62,7 +62,12 @@ class PostsController extends AsyncNotifier<PostsState> {
           hasMore: next.length >= postsPageSize,
         ),
       );
-    } on Exception catch (error) {
+    } on Object catch (error) {
+      // Object rather than Exception: a wrong-shaped payload fails the
+      // cast in PostsRepository with a TypeError, which is an Error. When
+      // that escaped, isLoadingMore was left true and the guard at the top
+      // of loadMore then dropped every later call — the footer spinner
+      // never resolved and the retry underneath it never appeared.
       if (generation != _generation) return;
       state = AsyncData(
         PostsState(
@@ -84,8 +89,11 @@ class PostsController extends AsyncNotifier<PostsState> {
     ref.invalidateSelf();
     try {
       await future;
-    } on Exception {
-      // Surfaced via AsyncError state.
+    } on Object {
+      // Surfaced via AsyncError state. Object rather than Exception for
+      // the same reason as loadMore: a wrong-shaped payload fails build()
+      // with a TypeError, and an Error escaping here is precisely the
+      // unhandled async exception this catch exists to prevent.
     }
   }
 }
