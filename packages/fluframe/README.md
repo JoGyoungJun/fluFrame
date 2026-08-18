@@ -117,7 +117,7 @@ script can branch on what went wrong:
 | `65` | `EX_DATAERR` | `.fluframe.json` is malformed, holds a value of the wrong type, or names a package `upgrade` will not build a merge base for — including a name it fell back to from `pubspec.yaml` or the directory |
 | `69` | `EX_UNAVAILABLE` | Something fluframe depends on is not usable: no Flutter on `PATH`, no `git` on `PATH` for `upgrade --apply`, a fatal `doctor` finding, or an older template bundle `upgrade` could not download or verify |
 | `70` | `EX_SOFTWARE` | A step did not complete: a failed `flutter` invocation, an `upgrade` that ended with conflict markers still to resolve, an installed template bundle that is missing or incomplete (reinstall with `dart pub global activate fluframe`), or an error fluframe did not expect. The "This is a bug" trace is always this code |
-| `74` | `EX_IOERR` | `add feature` had already edited the app and could not put every file back. The message names what to restore |
+| `74` | `EX_IOERR` | `add feature` failed while writing — a full disk, a read-only checkout, a locked file. The message says whether every file was put back, and names what to restore if not |
 
 ## How it works
 
