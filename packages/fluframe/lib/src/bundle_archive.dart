@@ -178,7 +178,7 @@ Future<Archive> _downloadArchive(
       );
     }
     final archiveUri = Uri.parse(archiveUrl);
-    _requireTrustedOrigin(archiveUri, registry, version);
+    _requireTrustedOrigin(archiveUri, registry, version, 'archive');
     final bytes = await _getBytes(
       client,
       archiveUri,
@@ -254,7 +254,12 @@ String? _stringOrNull(
 /// The name oversells it: *any* https host passes, so this is an
 /// https-downgrade guard rather than a pin to pub.dev. What ties a
 /// download to a publisher is the digest checked in [_verifyDigest].
-void _requireTrustedOrigin(Uri uri, Uri registry, String version) {
+void _requireTrustedOrigin(
+  Uri uri,
+  Uri registry,
+  String version,
+  String what,
+) {
   if (uri.isScheme('https')) return;
   if (uri.isScheme(registry.scheme) &&
       uri.host == registry.host &&
@@ -263,7 +268,7 @@ void _requireTrustedOrigin(Uri uri, Uri registry, String version) {
   }
   throw BundleException(
     version,
-    'The fluframe $version archive would be fetched over an insecure '
+    'The fluframe $version $what would be fetched over an insecure '
     'connection ($uri).',
     hint:
         'Nothing was downloaded. pub.dev serves its archives over https, '
@@ -587,7 +592,7 @@ Future<Map<String, dynamic>> _readJson(
   var hop = uri;
   for (final redirect in response.redirects) {
     hop = hop.resolveUri(redirect.location);
-    _requireTrustedOrigin(hop, registry, version);
+    _requireTrustedOrigin(hop, registry, version, 'version document');
   }
   if (response.statusCode == HttpStatus.notFound) {
     throw BundleException(
@@ -681,7 +686,7 @@ Future<List<int>> _readBytes(
   var hop = uri;
   for (final redirect in response.redirects) {
     hop = hop.resolveUri(redirect.location);
-    _requireTrustedOrigin(hop, registry, version);
+    _requireTrustedOrigin(hop, registry, version, 'archive');
   }
   if (response.statusCode != 200) {
     throw BundleException(
