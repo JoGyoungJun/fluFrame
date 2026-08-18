@@ -117,3 +117,29 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    include no `*.local.json`, `.env`, key, keystore or credentials file;
    `sync_template.dart` excludes those and exits non-zero if any reach
    the bundle, but this is the check that does not trust the filter.
+
+### When the tag run fails at the upload step
+
+Step 3 covers a gate failing. There is one failure that is not a gate:
+every gate passes, and the run dies at `dart pub publish` with
+
+```text
+The calling GitHub Action is not allowed to publish, because: GitHub
+repository identifiers changed, disabling automated publishing.
+See https://dart.dev/go/publishing-from-github
+```
+
+and exit 65. pub.dev pins the GitHub repository's **numeric ID** when
+automated publishing is configured, and disables publishing the moment
+that ID changes — a repository with the same name and a new ID is
+indistinguishable from a takeover, so it is treated as one. This fired on
+the `fluframe-v1.6.0` tag: the public repo was created 2026-08-13 as a
+clean-tree extraction, while the package had been publishing from a
+private predecessor since 0.1.0.
+
+Re-enable automated publishing in the pub.dev admin UI
+([the package's Admin tab](https://pub.dev/packages/fluframe/admin)),
+then delete and re-push the tag as in step 3. **A failed run publishes
+nothing** — every gate runs before the upload, by design, so a failure at
+any point leaves the tag carrying no release rather than a half-published
+version.

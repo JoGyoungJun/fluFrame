@@ -104,6 +104,21 @@ lays both out honestly, including where fluframe loses.
 | `--analytics` | `none` | Wire product analytics (`amplitude`) into the analytics seam |
 | `--no-pub` | off | Skip `flutter pub get` / `gen-l10n` |
 
+## Exit codes
+
+Every failure is a sentence on stderr and a
+[sysexits](https://man.freebsd.org/cgi/man.cgi?sysexits) code — so a
+script can branch on what went wrong:
+
+| Code | Name | Meaning |
+|---|---|---|
+| `0` | `EX_OK` | Success. Dry runs that found work to do exit `0` too |
+| `64` | `EX_USAGE` | Bad arguments, or a refusal before anything was written (an invalid name, an app `upgrade` will not touch) |
+| `65` | `EX_DATAERR` | `.fluframe.json` is malformed, or holds a value of the wrong type |
+| `69` | `EX_UNAVAILABLE` | Something fluframe depends on is not usable: no Flutter on `PATH`, a fatal `doctor` finding, or a template bundle that could not be fetched or verified |
+| `70` | `EX_SOFTWARE` | A step did not complete: a failed `flutter` invocation, an `upgrade` that ended with conflict markers still to resolve, or an error fluframe did not expect. The "This is a bug" trace is always this code |
+| `74` | `EX_IOERR` | `add feature` had already edited the app and could not put every file back. The message names what to restore |
+
 ## How it works
 
 `fluframe create` runs `flutter create --empty` first — so platform folders
