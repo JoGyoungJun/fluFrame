@@ -9,7 +9,14 @@ import 'package:io/io.dart';
 /// three-way merge (design spec 002, ADR 0002). Dry-run by default.
 class UpgradeCommand extends Command<int> {
   /// Creates the command and registers its options.
-  UpgradeCommand() {
+  ///
+  /// [makeUpgrader] is injectable for tests: it receives the resolved
+  /// template directory and returns the upgrader [run] drives, so the
+  /// five options below can be checked where they are parsed rather than
+  /// only where they are already named Dart arguments.
+  UpgradeCommand({
+    Upgrader Function(io.Directory currentTemplate)? makeUpgrader,
+  }) : _makeUpgrader = makeUpgrader ?? _defaultUpgrader {
     argParser
       ..addFlag(
         'apply',
@@ -43,6 +50,12 @@ class UpgradeCommand extends Command<int> {
       );
   }
 
+  final Upgrader Function(io.Directory currentTemplate) _makeUpgrader;
+
+  /// The upgrader the command runs with when nothing was injected.
+  static Upgrader _defaultUpgrader(io.Directory currentTemplate) =>
+      Upgrader(currentTemplate: currentTemplate);
+
   @override
   String get name => 'upgrade';
 
@@ -62,7 +75,7 @@ class UpgradeCommand extends Command<int> {
       );
       return ExitCode.software.code;
     }
-    final upgrader = Upgrader(currentTemplate: templateDirectory);
+    final upgrader = _makeUpgrader(templateDirectory);
     return upgrader.run(
       projectDir: io.Directory(results['project-dir'] as String),
       fromOverride: results['from'] as String?,

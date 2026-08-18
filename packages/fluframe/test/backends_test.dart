@@ -9,8 +9,9 @@ void main() {
       // The registry travels inside a published bundle so a FUTURE CLI can
       // rebuild an OLD merge base with the anchors of its own era. If any
       // field is dropped here, that reconstruction silently diverges.
+      final payload = encodeAddonRegistry();
       final decoded = decodeAddonRegistry(
-        jsonDecode(jsonEncode(encodeAddonRegistry())) as Map<String, Object?>,
+        jsonDecode(jsonEncode(payload)) as Map<String, Object?>,
       );
 
       expect(decoded.backends.keys, unorderedEquals(backendAddons.keys));
@@ -20,9 +21,7 @@ void main() {
       );
       expect(decoded.analytics.keys, unorderedEquals(analyticsAddons.keys));
 
-      for (final entry in backendAddons.entries) {
-        final original = entry.value;
-        final restored = decoded.backends[entry.key]!;
+      void expectRoundTrips(BackendAddon original, BackendAddon restored) {
         expect(restored.name, original.name);
         expect(restored.dependencies, original.dependencies);
         expect(restored.requiresFiles, original.requiresFiles);
@@ -37,6 +36,31 @@ void main() {
           );
         }
       }
+
+      // Every map, not just `backendAddons`. Its two entries both take
+      // the default `requiresFiles: true`, and `sentryAddon` is the only
+      // addon in the registry that sets it false — so comparing backends
+      // alone asserted that field true twice and false never. A `toJson`
+      // that stopped writing it would decode back through
+      // `orElse: true`, flip sentry, and send every app generated with
+      // `--error-reporting sentry` looking for a `template_addons/sentry`
+      // directory that has never existed. Same reach for the sentry and
+      // amplitude patch bodies, which no field comparison covered.
+      final sections = [
+        (backendAddons, decoded.backends),
+        (errorReportingAddons, decoded.errorReporting),
+        (analyticsAddons, decoded.analytics),
+      ];
+      for (final (shipped, roundTripped) in sections) {
+        for (final entry in shipped.entries) {
+          expectRoundTrips(entry.value, roundTripped[entry.key]!);
+        }
+      }
+
+      // `schema` plus one key per addon family. A fourth family travels
+      // inside the bundle the moment it is encoded, so it has to be
+      // paired above rather than ship uncompared.
+      expect(payload.keys, hasLength(sections.length + 1));
     });
 
     test('rejects a schema it does not understand', () {
