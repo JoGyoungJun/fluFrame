@@ -16,6 +16,10 @@ abstract interface class AuthRepository {
   Future<User> signIn({required String email, required String password});
 
   /// Ends the current session, clearing anything persisted.
+  ///
+  /// Throws [AuthException] when the backend refuses the sign-out, so a
+  /// caller never has to catch a backend SDK's own type to tell one
+  /// failure from another — the same clause [signIn] carries.
   Future<void> signOut();
 
   /// Restores the persisted session, or `null` when nobody is signed in.

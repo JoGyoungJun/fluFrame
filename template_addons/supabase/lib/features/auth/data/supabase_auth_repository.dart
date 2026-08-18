@@ -47,7 +47,16 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() => _client.auth.signOut();
+  Future<void> signOut() async {
+    try {
+      await _client.auth.signOut();
+    } on supabase.AuthException catch (error) {
+      // Mapped exactly as signIn maps it: AuthRepository.signOut
+      // documents AuthException, and a bare `=> _client.auth.signOut()`
+      // let the SDK's own type straight past that seam.
+      throw AuthException(error.message);
+    }
+  }
 
   @override
   Future<User?> restoreSession() async {

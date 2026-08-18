@@ -41,9 +41,18 @@ class SettingsRepository {
       _store.setString(_themePresetKey, preset.name);
 
   /// Loads the persisted locale override, or `null` to follow the system.
+  ///
+  /// A blank stored tag follows the system too. Left to the parser it
+  /// becomes `Locale('')`, which `dart:ui` asserts against; `main.dart`
+  /// catches that and boots on the default anyway, so the cost is a
+  /// reported crash every launch rather than a dead app — but the
+  /// fallback is then decided by a catch-all two layers up instead of
+  /// here. Nothing in this class writes such a tag ([saveLocale] removes
+  /// the key instead); the store is simply shared with whatever else the
+  /// app keeps in it.
   Future<Locale?> loadLocale() async {
     final raw = await _store.getString(_localeKey);
-    return raw == null ? null : _parseLanguageTag(raw);
+    return raw == null || raw.trim().isEmpty ? null : _parseLanguageTag(raw);
   }
 
   /// Persists [locale] as the locale override; `null` follows the system.

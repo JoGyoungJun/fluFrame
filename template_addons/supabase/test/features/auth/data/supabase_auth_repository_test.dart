@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fluframe_app/features/auth/data/auth_repository.dart';
 import 'package:fluframe_app/features/auth/data/supabase_auth_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +35,36 @@ void main() {
       // Type alone is not the contract: the app has to keep working.
       await repository.signIn(email: 'dev@example.com', password: 'secret1');
       expect(await repository.restoreSession(), isNotNull);
+    });
+  });
+
+  group('SupabaseAuthRepository', () {
+    // Read from the source rather than exercised: `_client` reaches
+    // `Supabase.instance`, which throws until main.dart has initialized
+    // it, and this suite stays offline on purpose (see the note above).
+    //
+    // signOut shipped as a bare `=> _client.auth.signOut()` while signIn
+    // mapped its exception. profile_screen catches `on Object`, so the
+    // user still got a message — what leaked was the contract: a
+    // supabase.AuthException crossing the seam auth_exception.dart says
+    // it never crosses, leaving no caller able to tell one sign-out
+    // failure from another.
+    test('signOut maps the SDK exception the way signIn does', () {
+      const path = 'lib/features/auth/data/supabase_auth_repository.dart';
+      final members = File(path).readAsStringSync().split('@override');
+      final signOut = members.firstWhere(
+        (member) => member.contains('Future<void> signOut()'),
+        orElse: () => throw StateError('$path declares no signOut'),
+      );
+
+      expect(
+        signOut,
+        contains('on supabase.AuthException'),
+        reason:
+            'signOut must map the SDK exception onto AuthException, the '
+            'type AuthRepository.signOut documents',
+      );
+      expect(signOut, contains('throw AuthException('));
     });
   });
 }

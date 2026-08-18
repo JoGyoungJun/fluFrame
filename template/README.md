@@ -53,7 +53,7 @@ flutter run --dart-define-from-file=env/dev.json
 |---|---|
 | Run (dev flavor) | `flutter run --dart-define-from-file=env/dev.json` |
 | Build (prod flavor) | `flutter build apk --dart-define-from-file=env/prod.json` |
-| Run with real keys | `flutter run --dart-define-from-file=env/dev.local.json` — `env/*.json` is committed and holds safe defaults; `env/*.local.json` is gitignored and is where secrets belong |
+| Run with real keys | `flutter run --dart-define-from-file=env/dev.local.json` — `env/*.json` is committed and holds safe defaults; `env/*.local.json` is gitignored, for the keys you would rather not commit. Neither is a secret store: `--dart-define-from-file` values arrive as `String.fromEnvironment` constants compiled into the app binary, so `strings` on any shipped APK, IPA or web build reads them back out. Client-public keys only (an analytics key, a Sentry DSN, a Supabase publishable key) — never a credential a server authenticates with |
 | Regenerate models | `dart run build_runner build --delete-conflicting-outputs` |
 | Regenerate localizations | `flutter gen-l10n` |
 | Analyze | `flutter analyze` |
