@@ -45,16 +45,44 @@ const BundleTimeouts defaultBundleTimeouts = (
   download: Duration(seconds: 60),
 );
 
-/// The most content an archive may claim to hold before it is refused
-/// unread.
+/// The most content an archive may unpack to before it is refused.
 ///
-/// gzip states its uncompressed length in the trailer (RFC 1952 §2.3.1),
-/// so the size is knowable *without* decompressing — and decompressing
-/// first is how a 104 KB download becomes a heap the CLI cannot survive.
+/// gzip states an uncompressed length in its trailer (RFC 1952 §2.3.1),
+/// which makes for a cheap early reject — but it states it *modulo 2^32*,
+/// so 4 GiB + 100 bytes of content declares 100 and clears any ceiling
+/// compared against it. The declared value is advisory; what actually
+/// holds this line is the running output total in `_inflateBounded`.
+///
 /// The 1.4.0 archive measured 104 KB and its `templates/` tree is source
 /// text, which does not inflate anywhere near tenfold, so 8 MB is roughly
 /// two orders of magnitude of headroom and still bounded.
 const int maxInflatedBundleBytes = 8 * 1024 * 1024;
+
+/// The most of an archive body this will read off the socket.
+///
+/// [maxInflatedBundleBytes] bounds what an archive may unpack to, but it
+/// is checked in `_inflateComplete` — behind a read that used to
+/// accumulate the whole response body first. The only bound on *that*
+/// step was the 60s download deadline, which at 100 Mbit/s admits some
+/// 750 MB resident before the digest check or the inflate ceiling gets a
+/// say. A ceiling standing behind an unbounded step is not a ceiling.
+///
+/// So the transport half takes the same budget as the inflate half. gzip
+/// only exceeds its input on incompressible data, and then by a fraction
+/// of a percent, so an archive whose *compressed* form is already past
+/// the ceiling its contents may not cross is not one this would have
+/// accepted anyway. The 1.4.0 archive measured 104 KB.
+const int maxDownloadedBundleBytes = maxInflatedBundleBytes;
+
+/// The most of a pub.dev version document this will read off the socket.
+///
+/// The same reasoning, several orders of magnitude down: the document is
+/// ~2 KB of JSON (the measurement the `metadata` deadline is sized from)
+/// and it is decoded into a string before anything looks at it. 1 MB is
+/// 500-odd times the measured size — roomy enough that a proxy's error
+/// page is still reported as "not JSON" rather than refused for its
+/// length, and far short of a body worth holding.
+const int maxVersionDocumentBytes = 1024 * 1024;
 
 /// A published bundle could not be fetched, or could not be trusted.
 ///
@@ -124,7 +152,7 @@ Future<Archive> _downloadArchive(
       version,
       timeouts.metadata,
     );
-    final archiveUrl = info['archive_url'] as String?;
+    final archiveUrl = _stringOrNull(info, 'archive_url', version);
     if (archiveUrl == null) {
       throw BundleException(
         version,
@@ -135,7 +163,7 @@ Future<Archive> _downloadArchive(
     // URL. Without it nothing ties the download to what pub.dev holds —
     // see _verifyDigest — so a document that omits it is not something to
     // build a merge base out of.
-    final expectedDigest = info['archive_sha256'] as String?;
+    final expectedDigest = _stringOrNull(info, 'archive_sha256', version);
     if (expectedDigest == null) {
       throw BundleException(
         version,
@@ -183,6 +211,30 @@ Future<Archive> _downloadArchive(
   } finally {
     client.close(force: true);
   }
+}
+
+/// Reads [key] out of a pub.dev version [document] as a string.
+///
+/// Null when the key is absent — each caller has its own sentence for
+/// that. A present value of the wrong type is not absence, though, and
+/// the bare `as String?` that used to be here raised a TypeError on one:
+/// #187 one key over, on the same document the object check above it now
+/// guards. (upgrader.dart keeps a list of every key it reads for exactly
+/// this reason.) A body that decodes but does not carry what pub.dev
+/// publishes is still a data problem, not a bug in the CLI.
+String? _stringOrNull(
+  Map<String, dynamic> document,
+  String key,
+  String version,
+) {
+  final value = document[key];
+  if (value is String?) return value;
+  throw BundleException(
+    version,
+    'pub.dev returned $key as a ${value.runtimeType} for fluframe '
+    '$version, where the version document has to carry a string.',
+    hint: 'This is usually temporary — try again in a minute.',
+  );
 }
 
 /// Refuses [uri] unless a template bundle may be fetched from it.
@@ -237,14 +289,20 @@ void _verifyDigest(List<int> bytes, String expected, String version) {
   );
 }
 
-/// Inflates [bytes], refusing a gzip stream that lost its tail.
+/// Inflates [bytes], refusing a gzip stream that lost its tail or one
+/// that does not stop.
 ///
-/// `archive` 4.0.9's `GZipDecoder` does not raise on a truncated stream —
-/// it returns whatever it managed to inflate. So half a download comes
-/// back as a *partial* archive, and the upgrader's three-way merge then
-/// reads the files that never arrived as files the user deleted. An empty
-/// inflate is no better: it surfaces as "this version ships no templates/",
-/// which blames the version for a transfer problem.
+/// A gzip decoder need not raise on a truncated stream: `archive` 4.0.9's
+/// `GZipDecoder` returned whatever it managed to inflate, which is why
+/// these checks exist rather than a `try` around the decoder. The codec
+/// used now may raise instead, so the `catch` below classifies one —
+/// neither behaviour may reach a caller as a readable archive.
+///
+/// Half a download that inflates is a *partial* archive, and the
+/// upgrader's three-way merge then reads the files that never arrived as
+/// files the user deleted. An empty inflate is no better: it surfaces as
+/// "this version ships no templates/", which blames the version for a
+/// transfer problem.
 ///
 /// gzip's last eight bytes are the CRC32 and the uncompressed length of
 /// the data (RFC 1952 §2.3.1). A stream that lost its tail fails both,
@@ -252,9 +310,13 @@ void _verifyDigest(List<int> bytes, String expected, String version) {
 /// Measured against cuts from one byte short to almost the whole stream.
 ///
 /// That declared length is also read *before* anything is decompressed,
-/// against [maxInflatedBundleBytes]. A truncated stream reads mid-deflate
-/// output as its trailer, so the size it claims is arbitrary — inflating
-/// first to find that out means holding whatever it claimed.
+/// against [maxInflatedBundleBytes] — but only as a cheap early reject.
+/// RFC 1952 states it modulo 2^32, so 4 GiB + 100 bytes of content
+/// declares 100, clears the ceiling, and then clears the post-inflate
+/// `% 0x100000000` comparison below as well, with the 4 GiB already
+/// resident. Both gates pass and the machine is out of memory between
+/// them. [_inflateBounded] is what actually bounds this, by counting
+/// output as it arrives instead of believing the trailer.
 List<int> _inflateComplete(List<int> bytes, String version) {
   // A gzip member is a 10-byte header plus an 8-byte trailer at minimum.
   if (bytes.length < 18) {
@@ -263,17 +325,32 @@ List<int> _inflateComplete(List<int> bytes, String version) {
       'only ${bytes.length} bytes arrived, too few to be a gzip archive',
     );
   }
-  // ISIZE is the uncompressed size modulo 2^32.
+  // ISIZE is the uncompressed size modulo 2^32 — advisory, see above.
   final declaredSize = _readLe32(bytes, bytes.length - 4);
   if (declaredSize > maxInflatedBundleBytes) {
     throw _incompleteArchive(
       version,
       'its trailer declares $declaredSize bytes of content, past the '
-      '${maxInflatedBundleBytes ~/ (1024 * 1024)} MB ceiling this will '
-      'inflate',
+      '${_mb(maxInflatedBundleBytes)} ceiling this will inflate',
     );
   }
-  final inflated = const GZipDecoder().decodeBytes(bytes);
+  final List<int> inflated;
+  try {
+    inflated = _inflateBounded(bytes, version);
+  } on FormatException catch (error) {
+    // Only the two magic bytes can tell "not a gzip archive at all" — a
+    // proxy's error page, say — from "a gzip archive that stops early",
+    // and they are different failures with different advice. The old
+    // decoder classified truncation by returning partial output and
+    // letting the checks below catch it; a decoder that raises instead
+    // must not turn a cut download into "could not be read", which reads
+    // as a damaged version rather than a damaged transfer.
+    if (bytes[0] != 0x1f || bytes[1] != 0x8b) rethrow;
+    throw _incompleteArchive(
+      version,
+      'its gzip stream stops mid-member (${error.message})',
+    );
+  }
   if (inflated.length % 0x100000000 != declaredSize) {
     throw _incompleteArchive(
       version,
@@ -299,6 +376,71 @@ BundleException _incompleteArchive(String version, String detail) =>
           'Nothing was unpacked. This is a transfer problem rather than a '
           'problem with the version — try again.',
     );
+
+/// Inflates [bytes], stopping the moment the output passes
+/// [maxInflatedBundleBytes] rather than once it is all resident.
+///
+/// dart:io's gzip codec rather than `archive`'s `GZipDecoder`, because
+/// the decision has to be made *while* decompressing and `decodeBytes`
+/// hands back one finished `Uint8List` — by the time it returns there is
+/// nothing left to refuse. `archive` does publish a streaming
+/// `decodeStream(InputStream, OutputStream)`, but bounding that means
+/// implementing `OutputStream`, an abstract class this package's `^4.0.9`
+/// pin lets move under it (there is no lockfile here: it is a published
+/// CLI, resolved fresh on every install). `Converter.startChunkedConversion`
+/// is SDK surface, fixed for the whole `sdk: ^3.12.0` range.
+Uint8List _inflateBounded(List<int> bytes, String version) {
+  final sink = _BoundedInflateSink(version);
+  gzip.decoder.startChunkedConversion(sink)
+    ..add(bytes)
+    ..close();
+  return sink.takeBytes();
+}
+
+/// Collects inflate output, refusing to hold more than
+/// [maxInflatedBundleBytes] of it.
+///
+/// Throwing from inside the decoder's own output callback is the whole
+/// point: it is what turns "hold everything, then measure" into "measure
+/// as it arrives, and stop". What is held is then bounded by the ceiling
+/// plus one chunk of decoder output, whatever the trailer claimed.
+class _BoundedInflateSink implements Sink<List<int>> {
+  /// Collects output for fluframe [version], for the failure message.
+  _BoundedInflateSink(this._version);
+
+  final String _version;
+  final BytesBuilder _inflated = BytesBuilder(copy: false);
+
+  @override
+  void add(List<int> chunk) {
+    _inflated.add(chunk);
+    if (_inflated.length > maxInflatedBundleBytes) {
+      throw _oversized(_version, _inflated.length);
+    }
+  }
+
+  @override
+  void close() {}
+
+  /// The bytes inflated so far, clearing the builder.
+  Uint8List takeBytes() => _inflated.takeBytes();
+}
+
+BundleException _oversized(String version, int held) => BundleException(
+  version,
+  'The fluframe $version archive from pub.dev keeps inflating past the '
+  '${_mb(maxInflatedBundleBytes)} ceiling — stopped at $held bytes, '
+  'whatever its trailer declares.',
+  hint:
+      'Nothing was unpacked. A download that unpacks to more than the '
+      'ceiling is refused rather than held, however small the download '
+      'itself was. Please report it at '
+      'https://github.com/JoGyoungJun/fluFrame/issues if a published '
+      'version does this.',
+);
+
+/// Renders [bytes] as the whole megabytes a ceiling message names.
+String _mb(int bytes) => '${bytes ~/ (1024 * 1024)} MB';
 
 /// Reads four little-endian bytes at [at] as an unsigned 32-bit integer.
 int _readLe32(List<int> bytes, int at) =>
@@ -446,9 +588,31 @@ Future<Map<String, dynamic>> _readJson(
           : 'This is usually temporary — try again in a minute.',
     );
   }
-  final body = await utf8.decodeStream(response);
+  final body = await _readCapped(
+    response,
+    maxVersionDocumentBytes,
+    version,
+    'version document',
+  );
+  final Map<String, dynamic> decoded;
   try {
-    return jsonDecode(body) as Map<String, dynamic>;
+    final parsed = jsonDecode(utf8.decode(body));
+    // A 200 whose body is valid JSON but not an object is what a proxy
+    // or a captive portal answers with, and the bare `as Map` that used
+    // to be here raised a TypeError on one — an Error, which the
+    // `on FormatException` below cannot catch. So a data problem reached
+    // the user as "This is a bug. Please report it" plus a stack trace
+    // and exit 70. Third recurrence of #187: .fluframe.json, then the
+    // ARBs, now the one body here that is not read off disk.
+    if (parsed is! Map<String, dynamic>) {
+      throw BundleException(
+        version,
+        'pub.dev returned a ${parsed.runtimeType} for fluframe $version '
+        'where the version document has to be a JSON object.',
+        hint: 'This is usually temporary — try again in a minute.',
+      );
+    }
+    decoded = parsed;
   } on FormatException {
     throw BundleException(
       version,
@@ -456,6 +620,7 @@ Future<Map<String, dynamic>> _readJson(
       hint: 'This is usually temporary — try again in a minute.',
     );
   }
+  return decoded;
 }
 
 Future<List<int>> _getBytes(
@@ -499,7 +664,63 @@ Future<List<int>> _readBytes(
       hint: 'This is usually temporary — try again in a minute.',
     );
   }
+  return _readCapped(response, maxDownloadedBundleBytes, version, 'archive');
+}
+
+/// Reads [response]'s body, refusing more than [limit] bytes of it.
+///
+/// Both halves earn their place. The declared length is the cheap one: a
+/// server that announces more than the ceiling is refused before a byte
+/// of body is read. But `contentLength` is -1 on a chunked response, and
+/// a body that simply does not stop is the case that matters — so the
+/// running total is what actually bounds this, and the declared check
+/// only fails earlier when it can.
+///
+/// [what] names the body in the message, because "larger than this
+/// reads" means something different for the version document than for
+/// the archive, and the user cannot see which one was being fetched.
+Future<List<int>> _readCapped(
+  HttpClientResponse response,
+  int limit,
+  String version,
+  String what,
+) async {
+  final declared = response.contentLength;
+  if (declared > limit) {
+    throw _tooLarge(
+      version,
+      what,
+      limit,
+      'its headers declare $declared bytes',
+    );
+  }
   final builder = BytesBuilder(copy: false);
-  await response.forEach(builder.add);
+  await for (final chunk in response) {
+    builder.add(chunk);
+    if (builder.length > limit) {
+      throw _tooLarge(
+        version,
+        what,
+        limit,
+        'it was still arriving after ${builder.length} bytes',
+      );
+    }
+  }
   return builder.takeBytes();
 }
+
+BundleException _tooLarge(
+  String version,
+  String what,
+  int limit,
+  String detail,
+) => BundleException(
+  version,
+  'The fluframe $version $what from pub.dev is larger than this reads: '
+  '$detail, past the ${_mb(limit)} ceiling.',
+  hint:
+      'Nothing was kept. A proxy or a mirror serving something other '
+      'than the published bundle is the usual cause — try again on a '
+      'direct connection, and report it at '
+      'https://github.com/JoGyoungJun/fluFrame/issues if it persists.',
+);

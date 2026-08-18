@@ -449,8 +449,11 @@ void main() {
     });
 
     test('a gzip stream that lost its tail is refused, at every cut', () async {
-      // #145. archive 4.0.9's GZipDecoder does not raise on a truncated
-      // stream — it returns what it managed to inflate. Cut at 20 bytes it
+      // #145. A gzip decoder need not raise on a truncated stream:
+      // archive 4.0.9's GZipDecoder returned what it managed to inflate,
+      // and the dart:io codec that replaced it may raise instead — both
+      // have to come out as this one message, which is what the classify
+      // step in _inflateComplete is for. Cut at 20 bytes the stream
       // yields an EMPTY archive, which used to surface as "this version
       // ships no templates/", blaming the version for a transfer problem.
       // Cut around 100 it yields a PARTIAL one, which is worse: the
@@ -827,6 +830,280 @@ void main() {
               ),
         ),
       );
+    });
+
+    test('an archive that inflates past the ceiling is refused even when '
+        'its trailer understates it', () async {
+      // ISIZE is the uncompressed size modulo 2^32 (RFC 1952 §2.3.1), so
+      // a ceiling compared against the declared value alone passes for
+      // 4 GiB + 100 bytes of content — and the post-inflate
+      // `% 0x100000000` comparison then agrees with it, 4 GiB too late.
+      // Both gates green, machine out of memory between them.
+      //
+      // Two concatenated gzip members are that same lie in a fixture
+      // that fits in a test: the file's last four bytes are the SECOND
+      // member's ISIZE, small and honest, while the first member alone
+      // already unpacks past the ceiling. Nothing here is truncated or
+      // corrupt — every checksum in it is correct — so the counter that
+      // watches the output as it arrives is the only thing left that can
+      // refuse it.
+      //
+      // One kilobyte past the ceiling is enough: the counter has to stop
+      // inside this member, before the decoder ever reaches the second
+      // one, or the fixture proves nothing about the order.
+      final huge = 'x' * (maxInflatedBundleBytes + 1024);
+      final understated = [
+        ...tarGz(
+          Archive()..add(ArchiveFile.string('templates/app/main.dart', huge)),
+        ),
+        ...tarGz(
+          Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+        ),
+      ];
+      final metadata = metadataFor(
+        '/archives/understated.tar.gz',
+        archive: understated,
+      );
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadata);
+        } else {
+          reply(request, bytes: understated);
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having((e) => e.message, 'message', contains('keeps inflating'))
+              .having(
+                (e) => e.message,
+                'names the ceiling',
+                contains('8 MB ceiling'),
+              )
+              // Before the running total this failed the post-inflate
+              // trailer comparison instead, having held the whole thing
+              // to find out. Which message comes out is the proof of
+              // which guard did the refusing.
+              .having(
+                (e) => e.message,
+                'is not the post-inflate trailer mismatch',
+                isNot(contains('where its own trailer declares')),
+              ),
+        ),
+      );
+    });
+
+    test('an archive whose headers declare more than the cap is refused '
+        'before its body', () async {
+      // The cheap half of the transport bound: the size is in the
+      // headers, so nothing has to be read to know it. Two bytes of body
+      // are all that is ever sent — without the cap this sits here until
+      // the download deadline, which is also a BundleException, so the
+      // assertion is on the wording rather than on the type.
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadataFor('/archives/declared.tar.gz'));
+        } else {
+          request.response
+            ..contentLength = maxDownloadedBundleBytes + 1
+            ..add([0x1f, 0x8b]);
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('larger than this reads'),
+              )
+              .having(
+                (e) => e.message,
+                'names the declared length',
+                contains('headers declare ${maxDownloadedBundleBytes + 1}'),
+              ),
+        ),
+      );
+    });
+
+    test('an archive body that does not stop is cut off at the cap', () async {
+      // The load-bearing half. This response is chunked — no
+      // Content-Length — so contentLength is -1 and the declared check
+      // is blind to it, which is exactly the shape a body that never
+      // ends arrives in. Before the running total the only bound here
+      // was the 60s deadline: whatever the link can push in a minute,
+      // resident, before the digest or the inflate ceiling get a say.
+      //
+      // The document publishes the digest of no bytes at all, so this
+      // still fails without the cap — on the checksum, after holding
+      // everything. The message is what says which one stopped it.
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(request, text: metadataFor('/archives/flood.tar.gz'));
+        } else {
+          final response = request.response;
+          final chunk = List.filled(64 * 1024, 0);
+          var sent = 0;
+          while (sent <= maxDownloadedBundleBytes) {
+            response.add(chunk);
+            sent += chunk.length;
+          }
+          // The client hangs up mid-body on the refusal; a close that
+          // fails afterwards is the server's business, not a failure.
+          unawaited(response.close().catchError((Object _) {}));
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('larger than this reads'),
+              )
+              .having(
+                (e) => e.message,
+                'stopped by the running total, not by the headers',
+                contains('still arriving after'),
+              ),
+        ),
+      );
+    });
+
+    test('a version document that does not stop is cut off too', () async {
+      // The version document is ~2 KB of JSON, and it is read into a
+      // string before anything looks at it — the same unbounded read one
+      // endpoint earlier, where a captive portal that answers 200 and
+      // then streams forever costs whatever the deadline allows.
+      server.listen((request) {
+        final response = request.response;
+        final filler = 'x' * 4096;
+        var sent = 0;
+        while (sent <= maxVersionDocumentBytes) {
+          response.write(filler);
+          sent += filler.length;
+        }
+        unawaited(response.close().catchError((Object _) {}));
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'names which body it was',
+                contains('version document'),
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                contains('still arriving after'),
+              ),
+        ),
+      );
+    });
+
+    test('a version document that is valid JSON but not an object is '
+        'refused as data, not as a crash', () async {
+      // #187, third recurrence. `jsonDecode(body) as Map<String, dynamic>`
+      // raised a TypeError on a list or a scalar — an Error, which the
+      // `on FormatException` right below it cannot catch — so the runner
+      // printed "This is a bug. Please report it" with a stack trace and
+      // exit 70, for a body a proxy wrote. upgrader.dart and
+      // feature_scaffold.dart each fixed this shape for a file the user
+      // hand-edits; this is the one that arrives over the network, where
+      // a captive portal answering 200 with an array is routine.
+      const documents = {
+        '1.2.0': '[]',
+        '1.2.1': '42',
+        '1.2.2': '"fluframe"',
+        '1.2.3': 'null',
+      };
+      server.listen((request) {
+        final wanted = request.uri.pathSegments.last;
+        reply(request, text: documents[wanted]!);
+      });
+
+      for (final MapEntry(key: version, value: body) in documents.entries) {
+        await expectLater(
+          downloadPublishedBundle(
+            version,
+            registry: registry,
+            timeouts: _patient,
+          ),
+          throwsA(
+            isA<BundleException>()
+                .having((e) => e.version, 'version', version)
+                .having(
+                  (e) => e.message,
+                  'message for $body',
+                  contains('has to be a JSON object'),
+                ),
+          ),
+          reason: 'a version document of $body must not reach the runner',
+        );
+      }
+    });
+
+    test('a version document whose fields are not strings is refused as '
+        'data too', () async {
+      // #187 one key over. `info['archive_url'] as String?` was the same
+      // bare cast as the one the test above covers, on the same document
+      // two lines down, and a number in either field raised the same
+      // TypeError — which is why upgrader.dart keeps a list of every key
+      // it reads rather than guarding only the first one.
+      const documents = {
+        '1.3.0': '{"archive_url": 42}',
+        '1.3.1': '{"archive_url": "https://h/a.tar.gz", "archive_sha256": 7}',
+      };
+      server.listen((request) {
+        final wanted = request.uri.pathSegments.last;
+        reply(request, text: documents[wanted]!);
+      });
+
+      for (final MapEntry(key: version, value: body) in documents.entries) {
+        await expectLater(
+          downloadPublishedBundle(
+            version,
+            registry: registry,
+            timeouts: _patient,
+          ),
+          throwsA(
+            isA<BundleException>().having(
+              (e) => e.message,
+              'message for $body',
+              contains('has to carry a string'),
+            ),
+          ),
+          // The https URL in the second document is never fetched: the
+          // digest is read before the origin check, so a regression here
+          // fails on the type rather than reaching the network.
+          reason: 'a version document of $body must not reach the runner',
+        );
+      }
     });
   });
 }
