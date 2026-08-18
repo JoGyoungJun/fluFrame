@@ -4,7 +4,9 @@ contact_links:
     url: https://github.com/JoGyoungJun/fluFrame/security/advisories/new
     about: >-
       Private, between you and the maintainer until an advisory is
-      published. Never open a public issue for a security problem.
+      published. Details of a security problem never belong in a public
+      issue — the only exception is the detail-free nudge SECURITY.md
+      describes for a report that went unacknowledged.
   - name: Security policy
     url: https://github.com/JoGyoungJun/fluFrame/blob/main/SECURITY.md
     about: >-

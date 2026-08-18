@@ -42,9 +42,13 @@ can actually be met rather than aspirational ones:
 | Initial assessment (is it a vulnerability, and how bad) | within 14 days |
 | Fix or a stated plan with dates | within 30 days of the assessment |
 
-If a report goes unacknowledged past those windows, escalate by opening a
-**non-descriptive** public issue asking the maintainer to check their
-security advisories — do not include details.
+If a report goes unacknowledged past those windows, escalate: open a
+**Bug report** issue, area *CI / repository*, and put one sentence in
+each required field — that a security report has been waiting in the
+advisories since the date you sent it, and nothing else. No component,
+no impact, no reproduction. The New-issue page says details of a
+security problem never belong in a public issue; that is about the
+report, and this is not the report.
 
 Credit is given in the advisory and the changelog unless you ask otherwise.
 

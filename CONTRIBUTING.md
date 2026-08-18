@@ -29,7 +29,19 @@ New here? The fastest route in:
 | Path | What it is | Toolchain |
 |---|---|---|
 | `template/` | The boilerplate Flutter app (`fluframe_app`) | `flutter` |
+| `template_addons/` | Optional overlays (`supabase`, `firebase`, `amplitude`) copied into generated apps | `dart` |
 | `packages/fluframe/` | The CLI published to pub.dev | `dart` |
+| `examples/` | `todo_app` and `weather_app` — generated, then extended | `flutter` |
+| `docs/` | Guides, ADRs, versioning policy, comparison | — |
+| `.github/` | CI, the release workflow, issue and PR templates | — |
+
+The CI job names on a pull request map onto that table: the
+`Template app — …` jobs cover `template/`, the `CLI — …` jobs cover
+`packages/fluframe/`, and `Example apps — analyze & test` plus
+`Examples — no drift from the template` cover `examples/`.
+`template_addons/` has no job of its own — its format gate runs inside
+the template job, so an unformatted addon reddens a check named after
+something you did not touch.
 
 ## Developing the template app
 
@@ -38,9 +50,39 @@ cd template
 flutter pub get
 flutter gen-l10n
 dart run build_runner build --delete-conflicting-outputs
+dart format --set-exit-if-changed lib test
 flutter analyze   # must be zero issues
 flutter test      # must be all green
 ```
+
+A template change also has to clear gates that do not live under
+`template/`. From the repository root:
+
+```sh
+dart format --set-exit-if-changed template_addons
+
+cd packages/fluframe
+dart pub get
+dart run tool/check_example_drift.dart   # --fix re-syncs what it can
+```
+
+- The addon format gate runs in the template CI job because
+  `template_addons/` ships verbatim into generated apps — unformatted
+  addon code would become the user's red build.
+- `check_example_drift.dart` is the job a template change most often
+  reddens. `examples/todo_app` and `examples/weather_app` mirror
+  `template/`'s `lib/` and `test/` (with the package-name tokens
+  rewritten), so a file you touch in one place has to land in three.
+  After `--fix`, run the follow-up it prints in each example —
+  `dart fix --apply` and `flutter gen-l10n` are not optional there.
+- Commit whatever `build_runner` rewrote. CI stages before it diffs
+  (`git add -A lib`, then `git diff --cached --exit-code`), so a new
+  `.freezed.dart` you forgot to `git add` fails there while your own
+  `git diff` looks clean.
+- `flutter test --coverage` is gated on a line-coverage floor, as are
+  the CLI's unit tests. The numbers live in `.github/workflows/ci.yml`
+  and only move upward; deleting a test file is the usual way to trip
+  one.
 
 Rules of thumb:
 
@@ -62,6 +104,7 @@ Rules of thumb:
 ```sh
 cd packages/fluframe
 dart pub get
+dart format --set-exit-if-changed lib test tool   # note: tool/ too
 dart analyze --fatal-infos   # infos are fatal here too — pana scores them
 dart test -x e2e   # fast unit tests
 dart test -t e2e   # full pipeline: generates a real app, analyzes and tests it
@@ -117,6 +160,14 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    include no `*.local.json`, `.env`, key, keystore or credentials file;
    `sync_template.dart` excludes those and exits non-zero if any reach
    the bundle, but this is the check that does not trust the filter.
+   When it succeeds, **do not then push the release tag**: a
+   `fluframe-v*` tag fires `publish.yml`, which re-runs every gate and
+   ends in `dart pub publish --force` against a version pub.dev already
+   holds — a red run for a release that succeeded, in a workflow where
+   red is supposed to mean nothing was published. You normally reach
+   this path because a tag run already failed at its upload step, in
+   which case the tag is already on the release commit and there is
+   nothing left to push.
 
 ### When the tag run fails at the upload step
 
