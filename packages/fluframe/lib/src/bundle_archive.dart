@@ -149,6 +149,7 @@ Future<Archive> _downloadArchive(
     final info = await _getJson(
       client,
       registry.resolve('/api/packages/fluframe/versions/$version'),
+      registry,
       version,
       timeouts.metadata,
     );
@@ -247,7 +248,12 @@ String? _stringOrNull(
 /// loopback `HttpServer`, and a self-hosted mirror is the same shape. It
 /// deliberately does not extend to a *redirect* away from that registry —
 /// leaving the origin the caller named is exactly how an insecure hop
-/// gets in.
+/// gets in. Both reads walk their own chain for that: the archive's in
+/// [_readBytes], the version document's in [_readJson].
+///
+/// The name oversells it: *any* https host passes, so this is an
+/// https-downgrade guard rather than a pin to pub.dev. What ties a
+/// download to a publisher is the digest checked in [_verifyDigest].
 void _requireTrustedOrigin(Uri uri, Uri registry, String version) {
   if (uri.isScheme('https')) return;
   if (uri.isScheme(registry.scheme) &&
@@ -551,17 +557,38 @@ String _describe(Duration limit) {
 Future<Map<String, dynamic>> _getJson(
   HttpClient client,
   Uri uri,
+  Uri registry,
   String version,
   Duration limit,
-) => _withDeadline(_readJson(client, uri, version), limit, uri, version);
+) => _withDeadline(
+  _readJson(client, uri, registry, version),
+  limit,
+  uri,
+  version,
+);
 
 Future<Map<String, dynamic>> _readJson(
   HttpClient client,
   Uri uri,
+  Uri registry,
   String version,
 ) async {
   final request = await client.getUrl(uri);
   final response = await request.close();
+  // The same walk as _readBytes, for a sharper reason: this document is
+  // where both archive_url and archive_sha256 come from, so a hop that
+  // supplies its own pair passes every later check honestly — the digest
+  // gate included, because the digest it checks against arrived from the
+  // same hop. Not reachable today: `registry` has no CLI flag, so the
+  // first request is always https://pub.dev and a Location header cannot
+  // be injected into a TLS-protected response. It becomes reachable the
+  // day a --registry or self-hosted-mirror flag ships, which is the shape
+  // the exception in _requireTrustedOrigin is written for.
+  var hop = uri;
+  for (final redirect in response.redirects) {
+    hop = hop.resolveUri(redirect.location);
+    _requireTrustedOrigin(hop, registry, version);
+  }
   if (response.statusCode == HttpStatus.notFound) {
     throw BundleException(
       version,

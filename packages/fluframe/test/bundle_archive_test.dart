@@ -789,6 +789,63 @@ void main() {
       );
     });
 
+    test('a version-document redirect into plain http is refused', () async {
+      // The version document is where archive_url and archive_sha256
+      // both come from, so whoever answers it supplies the digest its
+      // own archive is then checked against. Every check downstream of
+      // the document passes on a self-consistent pair — the hop is the
+      // only place this can be caught, which is why the metadata chain
+      // is walked exactly like the archive's.
+      final bytes = tarGz(
+        Archive()..add(ArchiveFile.string('templates/addons.json', '{}\n')),
+      );
+      // Points back at the registry the caller named, with a digest that
+      // matches the bytes it serves: the download would otherwise run to
+      // completion, so nothing but the hop itself is left to fail on.
+      final metadata = metadataFor('/archives/moved.tar.gz', archive: bytes);
+      final elsewhere = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => elsewhere.close(force: true));
+      elsewhere.listen((request) {
+        final response = request.response..write(metadata);
+        // The client hangs up on the refusal without draining this, and
+        // a close that fails afterwards is the server's business rather
+        // than a test failure.
+        unawaited(response.close().catchError((Object _) {}));
+      });
+      server.listen((request) {
+        if (isMetadata(request)) {
+          reply(
+            request,
+            status: HttpStatus.movedTemporarily,
+            location: 'http://127.0.0.1:${elsewhere.port}/versions/1.2.0',
+          );
+        } else {
+          reply(request, bytes: bytes);
+        }
+      });
+
+      await expectLater(
+        downloadPublishedBundle(
+          '1.2.0',
+          registry: registry,
+          timeouts: _patient,
+        ),
+        throwsA(
+          isA<BundleException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('insecure connection'),
+              )
+              .having(
+                (e) => e.message,
+                'names the hop',
+                contains('127.0.0.1:${elsewhere.port}'),
+              ),
+        ),
+      );
+    });
+
     test('an archive that declares more content than the ceiling is '
         'refused before it is inflated', () async {
       // gzip states its uncompressed length in the trailer, so the size
