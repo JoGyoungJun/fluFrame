@@ -112,15 +112,34 @@ void main() {
     });
 
     test('never stores an empty language tag', () async {
-      // Clearing the override removes the key rather than blanking it, and
-      // that is load-bearing: an empty stored tag would reach the parser's
-      // fallback arm as Locale(''), which dart:ui asserts against — the
-      // next boot would fail instead of following the system.
+      // The write half: clearing the override removes the key rather than
+      // blanking it, so this repository never puts an unreadable tag on
+      // disk itself. What happens when one gets there anyway is the read
+      // half below — these two only make sense as a pair.
       await repository.saveLocale(const Locale('ko'));
       expect(await store.getString('settings.locale'), 'ko');
 
       await repository.saveLocale(null);
       expect(await store.getString('settings.locale'), isNull);
+    });
+
+    test('a blank stored language tag follows the system', () async {
+      // The read half, and the one that was missing: no code path here
+      // writes '', but the store is shared, and '' reaching the parser
+      // matches its FIRST arm as Locale('') — which dart:ui asserts
+      // against. main.dart's _orDefault catches that (`on Object`), so
+      // the app still boots: the cost is a reported crash every launch
+      // and a lost override, decided by a catch-all two layers up rather
+      // than here. Every assertion above is on the write side, which is
+      // what left the parser free to keep building that Locale.
+      await store.setString('settings.locale', '');
+
+      expect(await repository.loadLocale(), isNull);
+
+      // Whitespace is not a language either, and reaches the same arm.
+      await store.setString('settings.locale', '   ');
+
+      expect(await repository.loadLocale(), isNull);
     });
   });
 }

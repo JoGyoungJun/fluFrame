@@ -5,7 +5,8 @@ name: Publish to pub.dev
 # matching the pattern configured in the package's admin settings
 # (fluframe-v{{version}}). Every release gate runs BEFORE publishing —
 # a red gate means the tag exists but nothing was published (fix, delete
-# the tag, re-tag).
+# the tag, re-tag). The first gate is CI's own conclusion for the tagged
+# commit (`verify-ci`); the rest run in the publish job itself.
 
 on:
   push:
@@ -17,8 +18,98 @@ permissions:
   contents: read
 
 jobs:
+  verify-ci:
+    # The gates in the publish job below run on ubuntu-latest, and always
+    # have. ci.yml's `cli-cross-platform` and `e2e-cross-platform` jobs —
+    # the Windows and macOS halves of a CLI whose own CI comment calls
+    # `fluframe create` "a Windows-first pain point" — therefore ran
+    # NOWHERE before the upload. A tag pushed on a commit with a red
+    # Windows e2e published to pub.dev anyway, and pub.dev only offers a
+    # seven-day retraction window against a bundle that ADR 0002 makes the
+    # permanent merge base for every app generated from that version.
+    #
+    # Requiring CI's own conclusion, rather than copying the two matrix
+    # jobs into this workflow, is the deliberate choice: the run
+    # conclusion covers every CI job (template analyze/test, both coverage
+    # floors, examples, example-drift, generated-android, web-build), not
+    # just the two that motivated this; it cannot drift from ci.yml the
+    # way a copied job would; and it costs seconds instead of a second
+    # Windows + macOS Flutter install on every release. The trade is that
+    # this gate reads a result instead of producing one — which is why it
+    # insists on a `push`-event run. A push run checks out exactly the
+    # commit being tagged, while a `pull_request` run tests that commit
+    # merged into main and reports the PR head as its head_sha, so it
+    # cannot vouch for this tree. ci.yml pushes only on main, so this also
+    # refuses to publish a commit that never landed there.
+    #
+    # It is the whole run's conclusion, so `deploy-demo` counts too: a
+    # failed Pages deploy on the release commit blocks the publish. That
+    # is the deliberate reading rather than an oversight — an exception
+    # list here would be a second copy of the repository ruleset's
+    # required checks, free to drift from it, while the recovery is cheap
+    # (re-run the failed job, then re-tag).
+    #
+    # It runs as its own job rather than as a first step of `publish` so
+    # that `actions: read` is scoped away from the job holding the OIDC
+    # publish credential, and so a red CI stops the release before the
+    # toolchain is even installed.
+    name: Verify CI is green for this commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # read this repository's workflow runs; nothing more
+    steps:
+      # No checkout: this step only queries the API about github.sha.
+      - name: Require a successful CI run for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tagging straight after a merge is the normal release flow, so
+          # CI is usually still running when this starts. Wait for it
+          # instead of failing on a race the maintainer cannot see; the
+          # ceiling clears a cold-cache `generated-android` (CI's longest
+          # job) with room to spare. Past it, the tag carries no release
+          # and re-tagging retries — the documented recoverable state.
+          POLL_SECONDS: '20'
+          TIMEOUT_MINUTES: '30'
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+          while true; do
+            # Sorted here rather than trusting the server's order: a
+            # re-run keeps its run id, but a re-pushed branch can leave
+            # more than one run on the same head_sha, and only the newest
+            # describes what is about to be published.
+            run=$(gh api --method GET \
+                    "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+                    -f head_sha="$GITHUB_SHA" -f event=push -f per_page=20 \
+                    --jq '.workflow_runs | sort_by(.created_at) | .[-1] // empty
+                          | "\(.status) \(.conclusion) \(.html_url)"' || true)
+            if [ -n "$run" ]; then
+              read -r status conclusion url <<< "$run"
+              if [ "$status" = 'completed' ]; then
+                break
+              fi
+              echo "CI run $url is '$status' — waiting ${POLL_SECONDS}s."
+            else
+              echo "No push-event CI run for $GITHUB_SHA yet — waiting ${POLL_SECONDS}s."
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::No completed CI run for $GITHUB_SHA after ${TIMEOUT_MINUTES}m. Nothing was published: fix CI, delete the tag, re-tag."
+              exit 1
+            fi
+            sleep "$POLL_SECONDS"
+          done
+          echo "CI for $GITHUB_SHA concluded '$conclusion': $url" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$conclusion" != 'success' ]; then
+            echo "::error::CI concluded '$conclusion' for the tagged commit. Nothing was published: fix CI, delete the tag, re-tag."
+            exit 1
+          fi
+
   publish:
     name: Gate & publish fluframe
+    # Every gate precedes the upload, and this is now the first of them.
+    needs: verify-ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,12 +157,24 @@ jobs:
         # configured. It reports presence only, never the token, and
         # never fails the job: a diagnostic that can block a release is
         # a diagnostic with a bug.
+        #
+        # Three details earn their lines here because this workflow is
+        # tag-triggered only and cannot be rehearsed — the action order
+        # above changed after the last tag, so the next run is the first
+        # run. `type -a` lists BOTH installed SDKs in resolution order
+        # instead of only the winner, since the whole question is which
+        # of the two owns `dart`; the `Tools • Dart` line gives Flutter's
+        # bundled version, so the winner is identifiable by version and
+        # not just by an opaque hostedtoolcache path; and tee puts all of
+        # it in the run log as well as the job summary, because when a
+        # later step fails the log is what gets read.
         run: |
           {
             echo '```'
-            echo "dart on PATH: $(command -v dart)"
+            echo 'dart on PATH (first wins):'
+            type -a dart 2>&1 || true
             dart --version 2>&1
-            flutter --version 2>&1 | head -n1
+            flutter --version 2>&1 | grep -E '^(Flutter|Tools)' || true
             if [ -n "${PUB_TOKEN:-}" ]; then
               echo 'pub.dev credential: PUB_TOKEN is set'
             elif dart pub token list 2>/dev/null | grep -q 'pub.dev'; then
@@ -80,7 +183,7 @@ jobs:
               echo 'pub.dev credential: none visible at this point'
             fi
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY" || true
+          } | tee -a "$GITHUB_STEP_SUMMARY" || true
       - name: Verify tag matches pubspec version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#fluframe-v}"

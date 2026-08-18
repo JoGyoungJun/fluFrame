@@ -111,6 +111,10 @@ including where fluFrame loses.
 
 ```text
 ├── template/            # The boilerplate app (fluframe_app) — always compiles, always tested
+├── template_addons/     # Optional overlays (supabase, firebase, amplitude) copied into generated apps
+├── examples/            # todo_app, weather_app — generated from the template, then extended
+├── docs/                # Guides, ADRs, versioning policy, comparison
+├── .github/             # CI, the release workflow, issue and PR templates
 └── packages/
     └── fluframe/        # The CLI published to pub.dev (fluframe create)
 ```
@@ -162,9 +166,14 @@ flutter analyze && flutter test
 # CLI
 cd packages/fluframe
 dart pub get
-dart analyze && dart test -x e2e   # unit tests
-dart test -t e2e                   # full end-to-end (generates a real app)
+dart analyze --fatal-infos && dart test -x e2e   # unit tests
+dart test -t e2e                                 # full end-to-end (generates a real app)
 ```
+
+Those are the two loops you spend time in, not the full gate list —
+CI also enforces `dart format`, committed codegen, coverage floors, and
+that `examples/` has not drifted from `template/`. Every gate, with the
+command that reproduces it, is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing
 

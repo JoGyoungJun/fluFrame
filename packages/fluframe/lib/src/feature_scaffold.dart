@@ -167,6 +167,12 @@ class FeatureScaffold {
   /// router and the three ARBs already existed and hold content the user
   /// may have edited — putting the original bytes back is the only undo
   /// that means anything there.
+  ///
+  /// Both outcomes surface as a [FeatureScaffoldException] so the command
+  /// prints a sentence: a disk that refused a write is not a fluframe bug,
+  /// and the fully-restored case — the *better* one — used to be the only
+  /// one reported as if it were. Anything that is not an [Exception] still
+  /// escapes, because that one is ours.
   void apply(FeaturePlan plan, {required String name}) {
     final featureDir = io.Directory(
       p.join(projectDir.path, 'lib', 'features', name),
@@ -202,7 +208,7 @@ class FeatureScaffold {
         (relative, contents) =>
             _write(relative, matchingEol(relative, contents)),
       );
-    } on Object {
+    } on Object catch (error) {
       // A partially scaffolded feature is worse than none: it does not
       // compile, and the next run refuses because the directory exists.
       if (featureDir.existsSync()) featureDir.deleteSync(recursive: true);
@@ -218,7 +224,20 @@ class FeatureScaffold {
           'building.',
         );
       }
-      rethrow;
+      // Not an Exception means fluframe itself is broken, and the runner's
+      // "This is a bug" report with its trace is the right answer to that.
+      if (error is! Exception) rethrow;
+      // Everything else here is the disk refusing a write — full, read-only,
+      // locked by a scanner — and the app is now exactly as it was found.
+      // Rethrowing sent that through the same crash handler, so the better
+      // outcome of the two ("nothing was lost") was the one demanding a bug
+      // report, while the worse one above got a sentence. Same shape as
+      // that one instead: what failed, and that the app is untouched.
+      throw FeatureScaffoldException(
+        'Adding "$name" failed: $error. Nothing was changed — every file '
+        'was put back.',
+        hint: 'Free up disk space or fix the permission, then re-run.',
+      );
     }
   }
 

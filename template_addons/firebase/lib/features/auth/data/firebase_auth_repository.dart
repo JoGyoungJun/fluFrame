@@ -47,7 +47,16 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() => _auth.signOut();
+  Future<void> signOut() async {
+    try {
+      await _auth.signOut();
+    } on firebase.FirebaseAuthException catch (error) {
+      // Mapped exactly as signIn maps it: AuthRepository.signOut
+      // documents AuthException, and a bare `=> _auth.signOut()` let the
+      // SDK's own type straight past that seam.
+      throw AuthException(error.message ?? error.code);
+    }
+  }
 
   @override
   Future<User?> restoreSession() async {

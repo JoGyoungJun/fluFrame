@@ -27,6 +27,12 @@ library;
 /// template file on the `create` path — one long import name away from
 /// shipping in every generated app.
 ///
+/// A trailing `// ignore: ...` comment does not end the directive's line
+/// with `;`, so it is stripped before that test. Without it the directive
+/// read as wrapped and the run swallowed everything after it up to the
+/// next line ending in `;` — a statement in the following function, which
+/// then sorted along with the import.
+///
 /// Files carrying `// ignore_for_file: type=lint` are returned untouched:
 /// the analyzer skips them, so `dart fix` does not reorder them either,
 /// and the generated `lib/l10n/gen/` sources are exactly that case.
@@ -54,7 +60,32 @@ String sortImports(String source) {
     run.clear();
   }
 
-  bool closesDirective(String line) => line.trimRight().endsWith(';');
+  // The line with any trailing `//` comment cut off. The quote state is
+  // tracked rather than searching for the first `//`, so this is right by
+  // construction instead of by an import URI never happening to contain
+  // one: what decides is whether the `//` sits inside the string literal.
+  // The backslash step keeps an escaped quote from ending it early.
+  String withoutComment(String line) {
+    String? quote;
+    for (var i = 0; i < line.length; i++) {
+      final char = line[i];
+      if (quote != null) {
+        if (char == r'\') {
+          i++;
+        } else if (char == quote) {
+          quote = null;
+        }
+      } else if (char == "'" || char == '"') {
+        quote = char;
+      } else if (line.startsWith('//', i)) {
+        return line.substring(0, i);
+      }
+    }
+    return line;
+  }
+
+  bool closesDirective(String line) =>
+      withoutComment(line).trimRight().endsWith(';');
 
   for (final line in lines) {
     if (wrapped != null) {

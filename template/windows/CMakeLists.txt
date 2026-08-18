@@ -1,3 +1,21 @@
+# These platform runners are NOT what `fluframe create` produces.
+#
+# They exist for the two paths that build `template/` itself: running it
+# locally, and using this repository as a GitHub template to start from
+# `template/` directly (documented in the repository's root README.md).
+# A generated app never receives them — `overlayEntries`
+# (packages/fluframe/lib/src/project_generator.dart) lists no platform
+# directory, so `fluframe create` takes its windows/ from
+# `flutter create`, and `tool/sync_template.dart` copies only those same
+# entries into the published bundle.
+#
+# No CI job compiles this directory either: the nightly `Generated app —
+# Windows desktop build` (.github/workflows/nightly.yml), like every
+# other platform job, generates an app first and builds that output. The
+# CMake floor and the runner settings below therefore gate nothing and
+# can rot without turning a job red. Kept, not deleted: the
+# GitHub-template path needs them.
+
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
 project(fluframe_app LANGUAGES CXX)

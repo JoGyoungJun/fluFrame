@@ -31,8 +31,12 @@ day. `--backend supabase` pins this exact constraint.
 
 Supabase needs a URL and an anon key — exactly what the template's
 `--dart-define-from-file` flavors are for. Add to `env/dev.json` (and
-`env/prod.json`; real secrets belong in `env/*.local.json`, which is
-gitignored):
+`env/prod.json`). Both keys are client-public by design, which is what
+makes this the right place for them: `--dart-define` values reach the
+app as `String.fromEnvironment` constants and are compiled into the
+binary, so nothing a server authenticates with belongs here — see
+`template/README.md`. Keep per-developer values in `env/*.local.json`,
+which is gitignored:
 
 ```json
 {
@@ -92,7 +96,15 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() => _client.auth.signOut();
+  Future<void> signOut() async {
+    try {
+      await _client.auth.signOut();
+    } on supabase.AuthException catch (error) {
+      // Same reason as signIn: a caller that wants to tell one
+      // sign-out failure from another needs the app's own type.
+      throw AuthException(error.message);
+    }
+  }
 
   @override
   Future<User?> restoreSession() async {

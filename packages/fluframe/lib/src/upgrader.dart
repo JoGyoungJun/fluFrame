@@ -230,7 +230,26 @@ class Upgrader {
     // A version that is not a version cannot name a published bundle, and
     // letting it through produced pub.dev's 400 with a "usually temporary"
     // hint for a permanent typo (#189).
-    if (parseSemVer(from) == null) {
+    //
+    // Matched whole, not with parseSemVer. That one is unanchored on
+    // purpose — `fluframe doctor` feeds it entire tool banners, so it
+    // finds the first major.minor.patch ANYWHERE in its input — which as
+    // a gate accepts anything merely CONTAINING a version. `from` is
+    // interpolated straight into the bundle URL path in bundle_archive,
+    // so a recorded "1.0.0/../../../evil_pkg/versions/1.0.0" passed on
+    // its leading 1.0.0 and RFC 3986 dot-segment removal in Uri.resolve
+    // turned the request into another published package's archive (same
+    // host, so not an SSRF). None of its bytes reach the user's tree —
+    // writes are keyed on the local template, and git merge-file runs
+    // without -p and without --diff3 — but it becomes the merge BASE,
+    // and a BASE equal to THEIRS makes every file report as unchanged:
+    // --apply then records the app as upgraded having received nothing,
+    // and the `from == cliVersion` short circuit below seals it out of
+    // every later upgrade. Anchoring parseSemVer itself would break
+    // doctor, so the strictness lives here, one step from the URL. This
+    // is the single funnel for both --from and the recorded cliVersion,
+    // and it sits before every path to the fetch.
+    if (!_versionPattern.hasMatch(from)) {
       _log.writeln(
         '"$from" is not a version number. It came from '
         '${fromOverride != null ? '--from' : '.fluframe.json'}; expected '
@@ -318,6 +337,12 @@ class Upgrader {
       );
     }
 
+    // nightly.yml greps this literal: .github/workflows/nightly.yml, job
+    // upgrade-canary, `grep -qF "Fetching the fluframe $FROM template
+    // bundle..."`. It is that job's proof the run reached the network
+    // rather than taking a short circuit. Reword it and the nightly goes
+    // red with a log naming neither the string nor the workflow —
+    // upgrader_test.dart pins it so the break lands here instead.
     _log.writeln('Fetching the fluframe $from template bundle...');
     final oldTemplates = await _oldBundle(from);
 
@@ -630,6 +655,18 @@ class Upgrader {
     return match?.group(1);
   }
 
+  /// A whole `major.minor.patch`, with the optional pre-release and build
+  /// suffixes pub.dev accepts — and nothing else.
+  ///
+  /// Anchored at both ends, which is the entire point: [parseSemVer] is
+  /// unanchored by design, so it cannot decide whether a string IS a
+  /// version, only whether one appears inside it. The suffix charset is
+  /// semver's own, which holds no `/` and no `%`, so a value that matches
+  /// this cannot add a path segment to the bundle URL it is spliced into.
+  static final RegExp _versionPattern = RegExp(
+    r'^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$',
+  );
+
   /// Metadata key holding the version an interrupted upgrade was heading
   /// for. Present only between a conflicted `--apply` and its follow-up.
   static const String _pendingVersionKey = 'pendingUpgrade';
@@ -847,6 +884,14 @@ class Upgrader {
       if (counts[UpgradeStatus.unreadable] != null)
         'unreadable: ${counts[UpgradeStatus.unreadable]}',
     ];
+    // nightly.yml greps this literal: .github/workflows/nightly.yml, job
+    // upgrade-canary, `grep -qF "Upgrade $FROM -> $CURRENT (dry run)"`.
+    // Reaching this line is that job's proof the published archive was
+    // fetched, checked against pub.dev's archive_sha256 and unpacked into
+    // a merge base — the check itself prints nothing on the happy path.
+    // Reword it and the nightly goes red with a log naming neither the
+    // string nor the workflow — upgrader_test.dart pins it so the break
+    // lands here instead.
     _log
       ..writeln()
       ..writeln(

@@ -4,7 +4,9 @@ import 'package:args/command_runner.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:fluframe/src/command_runner.dart';
 import 'package:fluframe/src/commands/add_command.dart';
+import 'package:fluframe/src/commands/upgrade_command.dart';
 import 'package:fluframe/src/feature_scaffold.dart';
+import 'package:fluframe/src/upgrader.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -71,6 +73,45 @@ class _RecordingScaffold extends FeatureScaffold {
   @override
   void apply(FeaturePlan plan, {required String name}) {
     applied = true;
+  }
+}
+
+/// An [Upgrader] that records what it was called with and merges
+/// nothing.
+///
+/// The command reads five options out of the parser and hands them to
+/// `Upgrader.run`; every other upgrader test calls that method with
+/// named Dart arguments, so nothing crossed the parser. `apply` and
+/// `force` are both read `as bool` there, which makes swapping the two
+/// wires a change that compiles and type-checks.
+class _RecordingUpgrader extends Upgrader {
+  _RecordingUpgrader({required super.currentTemplate});
+
+  /// What [run] was handed, or null until it is called.
+  Directory? projectDir;
+
+  /// The `--from` value, which stays null when the option is absent.
+  String? fromOverride;
+
+  /// The three flags, each null until [run] is called.
+  bool? apply;
+  bool? force;
+  bool? restoreDeleted;
+
+  @override
+  Future<int> run({
+    required Directory projectDir,
+    String? fromOverride,
+    bool apply = false,
+    bool force = false,
+    bool restoreDeleted = false,
+  }) async {
+    this.projectDir = projectDir;
+    this.fromOverride = fromOverride;
+    this.apply = apply;
+    this.force = force;
+    this.restoreDeleted = restoreDeleted;
+    return 0;
   }
 }
 
@@ -275,6 +316,73 @@ void main() {
       expect(code, 0, reason: report.toString());
       expect(scaffold.applied, isTrue, reason: report.toString());
       expect(report.toString(), contains('Created:'));
+    });
+
+    test('upgrade parses each option onto its own parameter', () async {
+      // Of the five options the command registers, only --project-dir
+      // had ever reached the parser from a test: the upgrader's own
+      // tests call Upgrader.run with named Dart arguments, which cannot
+      // see the wiring in between. The wiring is correct — this pins it.
+      // `apply` and `force` are both read `as bool`, so swapping those
+      // two compiles and type-checks: --apply would run as apply: false,
+      // force: true, and --force alone as apply: true, force: false —
+      // writing the merge over the working tree with the git-clean gate
+      // skipped, and --apply keeps no backup to undo it with.
+      final project = Directory.systemTemp.createTempSync('fluframe_opts_');
+      addTearDown(() => project.deleteSync(recursive: true));
+      // The double ignores its template root; the command still resolves
+      // the real one and hands it to the seam.
+      final template = Directory.current;
+
+      Future<_RecordingUpgrader> upgradeWith(List<String> options) async {
+        final upgrader = _RecordingUpgrader(currentTemplate: template);
+        final runner = CommandRunner<int>('test', 'test')
+          ..addCommand(UpgradeCommand(makeUpgrader: (_) => upgrader));
+        final code = await runner.run([
+          'upgrade',
+          ...options,
+          '--project-dir',
+          project.path,
+        ]);
+        expect(code, 0, reason: 'upgrade $options did not run');
+        return upgrader;
+      }
+
+      final everything = await upgradeWith([
+        '--apply',
+        '--force',
+        '--restore-deleted',
+        '--from',
+        '1.2.3',
+      ]);
+
+      expect(everything.projectDir?.path, project.path);
+      expect(everything.fromOverride, '1.2.3');
+      expect(everything.apply, isTrue);
+      expect(everything.force, isTrue);
+      expect(everything.restoreDeleted, isTrue);
+
+      // One flag at a time, which is the half that can see a crossed
+      // wire: with all three set at once, two of them swapped record the
+      // same three `true`s and everything above still passes.
+      final applyOnly = await upgradeWith(['--apply']);
+      expect(applyOnly.apply, isTrue);
+      expect(applyOnly.force, isFalse);
+      expect(applyOnly.restoreDeleted, isFalse);
+      // Absent, not defaulted: --from is what pins an app too old to
+      // carry .fluframe.json to a version, and a value invented here
+      // would rebuild the merge base from the wrong template.
+      expect(applyOnly.fromOverride, isNull);
+
+      final forceOnly = await upgradeWith(['--force']);
+      expect(forceOnly.apply, isFalse);
+      expect(forceOnly.force, isTrue);
+      expect(forceOnly.restoreDeleted, isFalse);
+
+      final restoreOnly = await upgradeWith(['--restore-deleted']);
+      expect(restoreOnly.apply, isFalse);
+      expect(restoreOnly.force, isFalse);
+      expect(restoreOnly.restoreDeleted, isTrue);
     });
   });
 }
