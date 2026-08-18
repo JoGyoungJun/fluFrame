@@ -201,6 +201,23 @@ class ProjectGenerator {
     }
 
     final targetPath = p.join(outputDirectory, name);
+    // `name` is not always a CLI argument create_command validated:
+    // `fluframe upgrade` passes the one recorded in the app's own
+    // .fluframe.json, and package:path's join discards everything before
+    // an absolute part — so an absolute or climbing name puts the whole
+    // generated tree at a path the caller never chose. Checked the way
+    // _applyBackendAddon checks a patch target out of a downloaded
+    // bundle, and before the existsSync gate so an escape is reported as
+    // one instead of as "already exists".
+    final outputRoot = p.normalize(Directory(outputDirectory).absolute.path);
+    final targetRoot = p.normalize(Directory(targetPath).absolute.path);
+    if (!p.isWithin(outputRoot, targetRoot)) {
+      _log.writeln(
+        'Project name "$name" escapes the output directory: "$targetRoot" '
+        'is not inside "$outputRoot". Aborting.',
+      );
+      return ExitCode.usage.code;
+    }
     if (Directory(targetPath).existsSync()) {
       _log.writeln('Directory "$targetPath" already exists. Aborting.');
       return ExitCode.usage.code;

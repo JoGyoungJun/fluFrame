@@ -19,12 +19,13 @@ class AddonPatch {
 
   /// Reads a patch from its [toJson] form.
   ///
-  /// Throws [FormatException] naming `file` when it is absolute or would
-  /// climb out of the project the patch is applied to.
+  /// Throws [FormatException] naming the offending key when a field is
+  /// missing or holds the wrong type, and naming `file` when it is
+  /// absolute or would climb out of the project the patch is applied to.
   factory AddonPatch.fromJson(Map<String, Object?> json) => AddonPatch(
-    file: _checkedPatchFile(json['file']! as String),
-    anchor: json['anchor']! as String,
-    replacement: json['replacement']! as String,
+    file: _checkedPatchFile(_string(json, 'file')),
+    anchor: _string(json, 'anchor'),
+    replacement: _string(json, 'replacement'),
   );
 
   /// Project-relative path of the file to patch.
@@ -59,24 +60,15 @@ class BackendAddon {
 
   /// Reads an addon from its [toJson] form.
   ///
-  /// Throws [FormatException] naming `name` when it is anything but a
-  /// plain identifier.
+  /// Throws [FormatException] naming the offending key when a field is
+  /// missing or holds the wrong type, and naming `name` when it is
+  /// anything but a plain identifier.
   factory BackendAddon.fromJson(Map<String, Object?> json) => BackendAddon(
-    name: _checkedAddonName(json['name']! as String),
-    dependencies: [
-      for (final dependency in json['dependencies']! as List<dynamic>)
-        dependency as String,
-    ],
-    patches: [
-      for (final patch in json['patches']! as List<dynamic>)
-        AddonPatch.fromJson(patch as Map<String, Object?>),
-    ],
-    postCreateNotes: [
-      for (final note
-          in (json['postCreateNotes'] as List<dynamic>?) ?? const [])
-        note as String,
-    ],
-    requiresFiles: json['requiresFiles'] as bool? ?? true,
+    name: _checkedAddonName(_string(json, 'name')),
+    dependencies: _strings(json, 'dependencies'),
+    patches: _patches(json),
+    postCreateNotes: _strings(json, 'postCreateNotes', orElse: const []),
+    requiresFiles: _bool(json, 'requiresFiles', orElse: true),
   );
 
   /// Addon identifier (CLI option value, addon directory name).
@@ -155,10 +147,13 @@ Map<String, BackendAddon> _decodeAddons(Object? json) {
   if (json is! Map<String, Object?>) {
     throw const FormatException('Addon registry section is not an object');
   }
-  return {
-    for (final entry in json.entries)
-      entry.key: BackendAddon.fromJson(entry.value! as Map<String, Object?>),
-  };
+  final addons = <String, BackendAddon>{};
+  for (final entry in json.entries) {
+    addons[entry.key] = BackendAddon.fromJson(
+      _object(entry.value, 'Addon "${entry.key}"'),
+    );
+  }
+  return addons;
 }
 
 /// Returns [file] unchanged if a patch may target it, and throws a
@@ -203,6 +198,87 @@ String _checkedAddonName(String name) {
     );
   }
   return name;
+}
+
+// Typed readers for a registry that arrives from a DOWNLOADED bundle.
+//
+// The bare `as` casts these replace threw TypeError on a missing key, a
+// wrong type, or a non-object section. TypeError is an Error, not the
+// FormatException `fluframe upgrade` catches to fall back to this CLI's
+// own definitions — so for a whole class of inputs that documented
+// fallback was unreachable and a data problem inside a published bundle
+// reached the user as a crash with a stack trace (#187, the same class
+// already fixed in upgrader.dart and feature_scaffold.dart).
+
+/// Reads [key] from [json] as a string.
+String _string(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! String) {
+    throw FormatException(
+      'Addon registry field "$key" must be a string, and holds $value.',
+    );
+  }
+  return value;
+}
+
+/// Reads [key] from [json] as a bool, or [orElse] when it is absent.
+bool _bool(Map<String, Object?> json, String key, {required bool orElse}) {
+  final value = json[key];
+  if (value == null) return orElse;
+  if (value is! bool) {
+    throw FormatException(
+      'Addon registry field "$key" must be true or false, and holds $value.',
+    );
+  }
+  return value;
+}
+
+/// Reads [key] from [json] as a list.
+List<Object?> _list(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value is! List) {
+    throw FormatException(
+      'Addon registry field "$key" must be a list, and holds $value.',
+    );
+  }
+  return value;
+}
+
+/// Reads [key] from [json] as a list of strings, or [orElse] when it is
+/// absent (which the optional `postCreateNotes` needs).
+List<String> _strings(
+  Map<String, Object?> json,
+  String key, {
+  List<String>? orElse,
+}) {
+  if (orElse != null && json[key] == null) return orElse;
+  final items = <String>[];
+  for (final item in _list(json, key)) {
+    if (item is! String) {
+      throw FormatException(
+        'Addon registry field "$key" must hold strings, and holds $item.',
+      );
+    }
+    items.add(item);
+  }
+  return items;
+}
+
+/// Reads the `patches` list of an addon.
+List<AddonPatch> _patches(Map<String, Object?> json) {
+  final patches = <AddonPatch>[];
+  for (final patch in _list(json, 'patches')) {
+    patches.add(AddonPatch.fromJson(_object(patch, 'A "patches" entry')));
+  }
+  return patches;
+}
+
+/// Returns [value] as a JSON object, or throws naming it as [what].
+Map<String, Object?> _object(Object? value, String what) {
+  if (value is! Map<String, Object?>) {
+    throw FormatException('$what must be an object, and holds $value.');
+  }
+  return value;
 }
 
 /// The Supabase auth backend (stage 2 of the backend roadmap).

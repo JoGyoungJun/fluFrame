@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/bundle_archive.dart';
+import 'package:fluframe/src/package_name.dart';
 import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/sdk_constraint.dart';
@@ -133,6 +134,24 @@ class Upgrader {
           return ExitCode.data.code;
         }
       }
+      // The recorded name reaches the filesystem: it is joined onto a
+      // scratch directory to rebuild the merge base below, and
+      // package:path's join discards everything before an absolute part,
+      // so an absolute or climbing name aims that write outside the
+      // scratch tree. `fluframe create` puts every name through this same
+      // validator, so one it refuses cannot have come from a generated
+      // app — and .fluframe.json ships inside every app, ungitignored.
+      final metaName = meta['name'] as String?;
+      if (metaName != null) {
+        final rejection = packageNameRejection(metaName);
+        if (rejection != null) {
+          _log.writeln(
+            '.fluframe.json has "name": "$metaName" — $rejection. Fix '
+            'it, or delete the file and re-run with --from <version>.',
+          );
+          return ExitCode.data.code;
+        }
+      }
       final pendingFiles = meta[_pendingFilesKey];
       if (pendingFiles != null &&
           (pendingFiles is! List || pendingFiles.any((e) => e is! String))) {
@@ -142,6 +161,22 @@ class Upgrader {
           '--from <version>.',
         );
         return ExitCode.data.code;
+      }
+      // Those same strings are joined onto the project root to look for
+      // conflict markers, so `..` or an absolute path there points the
+      // check at a file outside the app. Same hygiene AddonPatch.fromJson
+      // applies to a bundle's patch targets, for a file the user edits.
+      if (pendingFiles is List) {
+        for (final entry in pendingFiles.cast<String>()) {
+          if (!_isProjectRelative(entry)) {
+            _log.writeln(
+              '.fluframe.json lists "$entry" under "$_pendingFilesKey", '
+              'which is not a path inside the app. Fix it, or delete the '
+              'file and re-run with --from <version>.',
+            );
+            return ExitCode.data.code;
+          }
+        }
       }
     }
     final from = fromOverride ?? meta['cliVersion'] as String?;
@@ -241,6 +276,21 @@ class Upgrader {
         meta['name'] as String? ??
         _packageNameFromPubspec(projectDir) ??
         p.basename(projectDir.absolute.path);
+    // Both fallbacks are guesses, and neither is guaranteed to be a
+    // package name: a monorepo folder, a quoted pubspec `name:`, or a
+    // renamed checkout all land here. The recorded name was validated
+    // where it was read; this covers the paths that bypass it, because
+    // `name` is joined onto the scratch directory the merge base is
+    // rebuilt in.
+    final nameRejection = packageNameRejection(name);
+    if (nameRejection != null) {
+      _log.writeln(
+        'Cannot upgrade as package "$name": $nameRejection. That name was '
+        'read from pubspec.yaml or from the directory name — record the '
+        'real one as "name" in .fluframe.json and re-run.',
+      );
+      return ExitCode.data.code;
+    }
     final org = meta['org'] as String? ?? 'com.example';
     final backend = meta['backend'] as String?;
     final errorReporting = meta['errorReporting'] as String?;
@@ -541,9 +591,18 @@ class Upgrader {
     final file = File(p.join(bundleRoot.path, addonRegistryFileName));
     if (!file.existsSync()) return null;
     try {
-      return decodeAddonRegistry(
-        jsonDecode(file.readAsStringSync()) as Map<String, Object?>,
-      );
+      final decoded = jsonDecode(file.readAsStringSync());
+      // A bundle holding a JSON array here met a bare `as` cast and threw
+      // a TypeError, which is an Error — not the FormatException this
+      // catch promises to fall back on, so the fallback below never ran
+      // and a data problem in a downloaded bundle surfaced as a crash
+      // (#187). The decoder's own fields are guarded the same way.
+      if (decoded is! Map<String, Object?>) {
+        throw FormatException(
+          'the addon registry is a ${decoded.runtimeType}, not an object',
+        );
+      }
+      return decodeAddonRegistry(decoded);
     } on FormatException catch (error) {
       _log.writeln(
         'Ignoring ${file.path}: ${error.message}. Falling back to this '
@@ -596,6 +655,19 @@ class Upgrader {
         if (_hasConflictMarkers(File(p.join(projectDir.path, relative))))
           relative,
     ];
+  }
+
+  /// Whether [relative] stays inside the project it is joined onto.
+  ///
+  /// Both separators are rejected whatever the host is, as in
+  /// [AddonPatch.fromJson]: a `.fluframe.json` written on Windows must
+  /// not decode cleanly on Linux and travel on from there.
+  static bool _isProjectRelative(String relative) {
+    final normalized = p.posix.normalize(relative.replaceAll(r'\', '/'));
+    return !p.posix.isAbsolute(normalized) &&
+        !p.windows.isAbsolute(relative) &&
+        normalized != '..' &&
+        !normalized.startsWith('../');
   }
 
   static bool _hasConflictMarkers(File file) {
