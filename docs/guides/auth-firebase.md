@@ -84,7 +84,15 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() => _auth.signOut();
+  Future<void> signOut() async {
+    try {
+      await _auth.signOut();
+    } on firebase.FirebaseAuthException catch (error) {
+      // Same reason as signIn: a caller that wants to tell one
+      // sign-out failure from another needs the app's own type.
+      throw AuthException(error.message ?? error.code);
+    }
+  }
 
   @override
   Future<User?> restoreSession() async {
