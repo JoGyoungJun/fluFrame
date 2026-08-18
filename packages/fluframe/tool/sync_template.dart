@@ -34,6 +34,34 @@ void main() {
     exitCode = 1;
     return;
   }
+
+  // Backend addon sources (ADR 0001) ship alongside the base template.
+  final repoAddons = Directory(
+    p.normalize(p.join(packageRoot.path, '..', '..', 'template_addons')),
+  );
+
+  // Completeness is a gate, not a log line. A missing overlay entry used to
+  // warn and exit 0, and a missing template_addons/ was skipped in silence
+  // while templates/addons.json — written unconditionally below — still
+  // described its addons. ADR 0002 makes every published bundle the
+  // permanent merge base for `fluframe upgrade`, and a pub.dev version can
+  // never be replaced, so an incomplete bundle stays broken for every app
+  // generated from it. Checked before anything is written: refusing beats
+  // leaving a half-built bundle on disk for the next step to publish.
+  final missingSources = findMissingBundleSources(
+    templateRoot: repoTemplate,
+    entries: overlayEntries,
+    addonRoot: repoAddons,
+  );
+  if (missingSources.isNotEmpty) {
+    stderr.writeln(
+      'MISSING BUNDLE SOURCES — refusing to build an incomplete bundle:\n'
+      '${missingSources.map((path) => '  $path').join('\n')}',
+    );
+    exitCode = 1;
+    return;
+  }
+
   final excluded = _BundleFilter(
     GitignoreMatcher.parse(templateGitignore.readAsStringSync()),
     GitignoreMatcher.parse(bundleSecretPatterns),
@@ -45,6 +73,7 @@ void main() {
   }
   bundleRoot.createSync(recursive: true);
 
+  var copied = 0;
   for (final entry in overlayEntries) {
     final source = p.join(repoTemplate.path, entry);
     // Dot-prefixed entries ship under the dot-less name the CLI overlay
@@ -60,28 +89,29 @@ void main() {
         excluded,
         relativeRoot: entry,
       );
+      copied++;
     } else if (FileSystemEntity.isFileSync(source)) {
       if (excluded.rejects(entry)) continue;
       File(source).copySync(destination);
+      copied++;
     } else {
-      stderr.writeln('Warning: template entry "$entry" not found, skipped.');
+      // Unreachable after the gate above unless the source vanished
+      // mid-run; still a failed publish rather than a warning nobody sees.
+      stderr.writeln('Template entry "$entry" vanished during the sync.');
+      exitCode = 1;
     }
   }
 
-  // Backend addon sources (ADR 0001) ship alongside the base template.
-  final repoAddons = Directory(
-    p.normalize(p.join(packageRoot.path, '..', '..', 'template_addons')),
+  // The gate above already refused a missing template_addons/, so this no
+  // longer has an "or do nothing" branch to fall through silently.
+  final addonBundle = Directory(
+    p.join(packageRoot.path, 'templates', 'addons'),
   );
-  if (repoAddons.existsSync()) {
-    final addonBundle = Directory(
-      p.join(packageRoot.path, 'templates', 'addons'),
-    );
-    if (addonBundle.existsSync()) {
-      addonBundle.deleteSync(recursive: true);
-    }
-    _copyDirectory(repoAddons, addonBundle, excluded, relativeRoot: '');
-    stdout.writeln('Synced template_addons into templates/addons.');
+  if (addonBundle.existsSync()) {
+    addonBundle.deleteSync(recursive: true);
   }
+  _copyDirectory(repoAddons, addonBundle, excluded, relativeRoot: '');
+  stdout.writeln('Synced template_addons into templates/addons.');
 
   // Ship the addon patch definitions WITH the bundle. `fluframe upgrade`
   // rebuilds the merge base from the bundle of the version an app was
@@ -93,25 +123,28 @@ void main() {
       '${const JsonEncoder.withIndent('  ').convert(encodeAddonRegistry())}\n',
     );
 
+  // The tally is what was actually copied, not overlayEntries.length:
+  // printing the intended number unconditionally made a skipped entry
+  // invisible in the log as well as in the exit code.
   stdout
     ..writeln('Wrote templates/$addonRegistryFileName.')
-    ..writeln('Synced ${overlayEntries.length} entries into templates/app.');
+    ..writeln(
+      'Synced $copied of ${overlayEntries.length} entries into '
+      'templates/app.',
+    );
   excluded.report(stdout);
 
   // Belt and braces: the filter above is what should have kept the bundle
   // clean, so this re-reads the result rather than trusting it. A hit here
   // means the filter has a hole, and the only safe outcome is a non-zero
   // exit — publish.bat runs this before uploading.
-  final leaked = findSecretLikeFiles(
+  final leaks = reportBundleLeaks(
     Directory(p.join(packageRoot.path, 'templates')),
+    stderr,
   );
-  if (leaked.isNotEmpty) {
-    stderr.writeln(
-      'SECRET-LIKE FILES IN THE BUNDLE — not safe to publish:\n'
-      '${leaked.map((path) => '  templates/$path').join('\n')}',
-    );
-    exitCode = 1;
-  }
+  // Assigned, never lowered: an entry that vanished mid-sync already set
+  // this, and a clean secret scan must not undo that.
+  if (leaks != 0) exitCode = 1;
 }
 
 /// The union of the two exclusion sources, remembering what it rejected so

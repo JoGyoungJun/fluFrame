@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/bundle_hygiene.dart';
+import 'package:fluframe/src/project_generator.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -303,6 +304,134 @@ void main() {
         findSecretLikeFiles(Directory(p.join(root.path, 'absent'))),
         isEmpty,
       );
+    });
+  });
+
+  group('reportBundleLeaks', () {
+    // findSecretLikeFiles is covered above; the lines that turn a hit into
+    // a failed publish were not. Every existing caller asserts the clean
+    // direction, and tool/sync_template.dart sets `exitCode` rather than
+    // throwing — so whether the gate still fires was only observable by
+    // running the script as a subprocess. A refactor that dropped the
+    // assignment, or scanned before the sync had written the bundle, would
+    // switch the publish gate off with every CI run still green.
+    late Directory templates;
+
+    setUp(() {
+      templates = Directory.systemTemp.createTempSync('fluframe_leaks_');
+      addTearDown(() {
+        try {
+          templates.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can hold a lock briefly; a leaked temp dir is harmless.
+        }
+      });
+    });
+
+    void write(String relative) {
+      File(p.join(templates.path, p.joinAll(relative.split('/'))))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('x');
+    }
+
+    test('returns 0 and says nothing about a clean bundle', () {
+      write('app/lib/main.dart');
+      write('app/env/dev.json');
+      write('addons/firebase/lib/firebase_options.dart');
+      final err = StringBuffer();
+
+      expect(reportBundleLeaks(templates, err), 0);
+      expect(err.toString(), isEmpty);
+    });
+
+    test('returns 1 and names every offending path', () {
+      write('app/lib/main.dart');
+      write('app/env/dev.local.json');
+      write('addons/firebase/.env');
+      final err = StringBuffer();
+
+      expect(reportBundleLeaks(templates, err), 1);
+      final message = err.toString();
+      expect(message, contains('not safe to publish'));
+      // A maintainer has to be able to find the file the publish was
+      // stopped for, so the report carries paths and not just a count.
+      expect(message, contains('templates/app/env/dev.local.json'));
+      expect(message, contains('templates/addons/firebase/.env'));
+    });
+  });
+
+  group('findMissingBundleSources', () {
+    // Completeness used to be advisory: a missing overlay entry printed a
+    // warning and exited 0, and a missing template_addons/ was skipped in
+    // silence while templates/addons.json still described its addons.
+    // Nothing failed, so nothing stopped the publish — and ADR 0002 makes
+    // a published bundle the permanent merge base for every app generated
+    // from that version, which pub.dev will never let anyone replace.
+    late Directory templateRoot;
+    late Directory addonRoot;
+
+    setUp(() {
+      final repo = Directory.systemTemp.createTempSync('fluframe_sources_');
+      addTearDown(() {
+        try {
+          repo.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Windows can hold a lock briefly; a leaked temp dir is harmless.
+        }
+      });
+      // Neither is created here: each test decides what the working tree
+      // actually provides, and writeEntry creates the template root on the
+      // way past.
+      templateRoot = Directory(p.join(repo.path, 'template'));
+      addonRoot = Directory(p.join(repo.path, 'template_addons'));
+    });
+
+    void writeEntry(String entry) {
+      File(p.join(templateRoot.path, entry))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('x');
+    }
+
+    List<String> missing() => findMissingBundleSources(
+      templateRoot: templateRoot,
+      entries: overlayEntries,
+      addonRoot: addonRoot,
+    );
+
+    test('is empty when every overlay entry and the addon tree exist', () {
+      // Driven off the real overlayEntries for the same reason the pattern
+      // sweep above is driven off bundleSecretPatterns: an entry added to
+      // that list with no source behind it is exactly what this catches.
+      Directory(p.join(templateRoot.path, 'lib')).createSync(recursive: true);
+      for (final entry in overlayEntries.where((name) => name != 'lib')) {
+        writeEntry(entry);
+      }
+      addonRoot.createSync(recursive: true);
+
+      // A directory and a file both count as provided — the gate uses the
+      // same two predicates the copier branches on.
+      expect(missing(), isEmpty);
+    });
+
+    test('names an overlay entry the template does not provide', () {
+      // analysis_options.yaml is one of the entries nothing downstream
+      // reads back out of a generated app, so dropping it left no trace
+      // anywhere: the log printed the intended count either way.
+      const absent = 'analysis_options.yaml';
+      for (final entry in overlayEntries.where((name) => name != absent)) {
+        writeEntry(entry);
+      }
+      addonRoot.createSync(recursive: true);
+
+      expect(missing(), [p.join(templateRoot.path, absent)]);
+    });
+
+    test('names an absent addon tree that addons.json still describes', () {
+      for (final entry in overlayEntries) {
+        writeEntry(entry);
+      }
+
+      expect(missing(), [addonRoot.path]);
     });
   });
 }

@@ -1,4 +1,5 @@
-/// Keeping the published bundle free of things that must never ship.
+/// Keeping the published bundle honest: free of things that must never
+/// ship, and carrying everything it claims to.
 ///
 /// `.pubignore` deliberately lets `templates/` into the published archive,
 /// and `packages/fluframe/.gitignore` hides that directory from
@@ -18,6 +19,15 @@
 ///   `.gitignore` here mentions at all (`.env`, private keys, signing
 ///   material). It is the backstop for the filter being wrong, and it runs
 ///   over the whole `templates/` tree including the addon bundle.
+///
+/// Completeness is the other direction, and [findMissingBundleSources] is
+/// the gate for it: `templates/addons.json` is written unconditionally and
+/// the overlay restores a fixed list of entries, so an input missing from
+/// the working tree ships a bundle whose manifest describes files the
+/// archive does not carry. ADR 0002 makes every published bundle the
+/// permanent merge base for `fluframe upgrade`, and a pub.dev version can
+/// never be replaced — so an incomplete bundle stays broken for that
+/// version and every app generated from it.
 library;
 
 import 'dart:convert';
@@ -210,4 +220,54 @@ List<String> findSecretLikeFiles(Directory root, {GitignoreMatcher? matcher}) {
     if (rules.ignores(relative)) found.add(relative.replaceAll(r'\', '/'));
   }
   return found..sort();
+}
+
+/// Writes every secret-like file under [templates] to [err] and returns the
+/// exit code the publish step must use: 1 when the bundle is unsafe to
+/// upload, 0 when it is clean.
+///
+/// Lifted out of `tool/sync_template.dart` so the *failing* direction can
+/// be tested. The tool sets `exitCode` instead of throwing, so whether the
+/// gate still fires was only observable by running the script as a
+/// subprocess, and every caller asserted the clean direction — a refactor
+/// that dropped the assignment, or scanned before the sync had written the
+/// bundle, would switch the publish gate off with CI fully green.
+///
+/// [templates] is the bundle root; hits are named under `templates/`
+/// because that is the path they would occupy in the published archive.
+int reportBundleLeaks(Directory templates, StringSink err) {
+  final leaked = findSecretLikeFiles(templates);
+  if (leaked.isEmpty) return 0;
+  err.writeln(
+    'SECRET-LIKE FILES IN THE BUNDLE — not safe to publish:\n'
+    '${leaked.map((path) => '  templates/$path').join('\n')}',
+  );
+  return 1;
+}
+
+/// Every bundle input missing from the working tree, as full paths: the
+/// [entries] [templateRoot] does not provide, then [addonRoot] when the
+/// addon sources are absent.
+///
+/// Presence is decided with the same two predicates the copier branches
+/// on, so the gate and the copy cannot disagree about what counts as
+/// there. Empty is the only acceptable result for a bundle about to be
+/// published: a missing entry used to print a warning and exit 0, and a
+/// missing addon tree was skipped in silence while `templates/addons.json`
+/// still described its addons.
+List<String> findMissingBundleSources({
+  required Directory templateRoot,
+  required Iterable<String> entries,
+  required Directory addonRoot,
+}) {
+  final missing = <String>[];
+  for (final entry in entries) {
+    final source = p.join(templateRoot.path, entry);
+    if (!FileSystemEntity.isDirectorySync(source) &&
+        !FileSystemEntity.isFileSync(source)) {
+      missing.add(source);
+    }
+  }
+  if (!addonRoot.existsSync()) missing.add(addonRoot.path);
+  return missing;
 }
