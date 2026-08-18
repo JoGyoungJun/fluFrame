@@ -10,6 +10,7 @@ import 'package:todo_app/l10n/gen/app_localizations.dart';
 
 import 'in_memory_key_value_store.dart';
 
+export 'failing_key_value_store.dart';
 export 'in_memory_key_value_store.dart';
 export 'recording_analytics_service.dart';
 

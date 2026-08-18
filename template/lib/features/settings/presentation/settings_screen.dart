@@ -12,8 +12,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Sentinel for "follow the device locale" in the language picker.
 const String _systemLanguage = 'system';
 
-/// Language codes offered in settings, in display order.
-const List<String> _languageCodes = [_systemLanguage, 'en', 'ko', 'ja'];
+/// Language codes offered in settings, in display order: the
+/// [_systemLanguage] sentinel, then every locale
+/// [AppLocalizations.supportedLocales] carries.
+///
+/// Public so a test can hold it against `supportedLocales`. It is a
+/// hand-written literal beside a generated one and nothing compared them,
+/// so adding an ARB grew one and not the other: either a device locale
+/// the app honours with no chip to pick it, or — worse — a chip that
+/// silently resolves to English.
+const List<String> languageCodes = [_systemLanguage, 'en', 'ko', 'ja'];
 
 /// Lets the user pick the theme mode and language; both persist.
 class SettingsScreen extends ConsumerWidget {
@@ -103,7 +111,7 @@ class SettingsScreen extends ConsumerWidget {
           Wrap(
             spacing: 8,
             children: [
-              for (final code in _languageCodes)
+              for (final code in languageCodes)
                 ChoiceChip(
                   label: Text(_languageLabel(l10n, code)),
                   selected: (locale?.languageCode ?? _systemLanguage) == code,

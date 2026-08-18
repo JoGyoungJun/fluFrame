@@ -50,10 +50,21 @@ class AuthController extends Notifier<User?> {
     );
   }
 
-  /// Signs out and clears the session.
+  /// Signs out and clears the session, whether or not the repository
+  /// manages to clear its own.
+  ///
+  /// The session used to be published only after the repository returned,
+  /// so a `signOut` that threw — [InMemoryAuthRepository] ends in a store
+  /// `remove`, which raises a `PlatformException` when the platform side
+  /// fails — left the app signed in with no way out of it. Clearing in a
+  /// `finally` keeps the two independent: the caller still sees the
+  /// failure and reports it, and the app it reports from is signed out.
   Future<void> signOut() async {
-    await ref.read(authRepositoryProvider).signOut();
-    _publish(null);
+    try {
+      await ref.read(authRepositoryProvider).signOut();
+    } finally {
+      _publish(null);
+    }
   }
 
   void _publish(User? user) {

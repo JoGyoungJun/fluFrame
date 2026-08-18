@@ -188,5 +188,62 @@ void main() {
       final raw = await store.getString('cache.posts');
       expect(jsonDecode(raw!), containsPair('version', 1));
     });
+
+    group('a store that refuses', () {
+      // The store is a plugin, not a pure function: shared_preferences
+      // raises a PlatformException when the platform side fails, and web
+      // localStorage a quota error once it is full. Neither is a
+      // NetworkException, and this decorator handles nothing else — so
+      // every one of them used to escape as the fetch's own failure.
+      late FailingKeyValueStore failing;
+
+      setUp(() {
+        failing = FailingKeyValueStore();
+        repository = CachedPostsRepository(inner, failing);
+      });
+
+      test('a failed write still returns the posts it fetched', () async {
+        // Regression: the write shared the fetch's try block, so a store
+        // that would not take it turned a fetch that had already
+        // succeeded into an AsyncError — a full-screen error rendered
+        // over posts sitting in memory one line above. Caching is
+        // additive; a write that did not happen is a later cache miss.
+        failing.failWrites = true;
+
+        expect(await repository.fetchPosts(), _SwitchableInner.posts);
+      });
+
+      test('a failed read leaves the network error intact', () async {
+        // Regression: the read sat outside _readCache's guard, so being
+        // offline with an unreadable store replaced the caller's
+        // NetworkException with a storage one — and the offline branch,
+        // which only NetworkException reaches, was never taken.
+        failing.failReads = true;
+        inner.fail = true;
+
+        await expectLater(
+          repository.fetchPosts(),
+          throwsA(isA<NetworkException>()),
+        );
+        await expectLater(
+          repository.fetchPost(1),
+          throwsA(isA<NetworkException>()),
+        );
+      });
+
+      test('a failed discard leaves the network error intact', () async {
+        // Same defect, other end: the discard of an unusable blob sat
+        // outside the guard too, so a store that refused the delete
+        // reported itself instead of the network.
+        await failing.setString('cache.posts', 'not json {{{');
+        failing.failRemovals = true;
+        inner.fail = true;
+
+        await expectLater(
+          repository.fetchPosts(),
+          throwsA(isA<NetworkException>()),
+        );
+      });
+    });
   });
 }

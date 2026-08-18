@@ -71,6 +71,31 @@ void main() {
       expect(await store.getString('auth.session.email'), isNull);
     });
 
+    test('signOut clears the session even when the store refuses', () async {
+      // Regression: the state was published only after the repository
+      // returned, so a store that would not delete the session — the
+      // PlatformException shared_preferences raises when the platform
+      // side fails — left the user signed in, on a button that had just
+      // reported nothing. The failure still reaches the caller.
+      final container = createContainer(
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(
+            FailingKeyValueStore(failRemovals: true),
+          ),
+          initialUserProvider.overrideWithValue(
+            const User(email: 'dev@example.com'),
+          ),
+        ],
+      );
+
+      await expectLater(
+        container.read(authControllerProvider.notifier).signOut(),
+        throwsA(isA<StoreFailure>()),
+      );
+
+      expect(container.read(authControllerProvider), isNull);
+    });
+
     test('an invalidation does not resurrect a signed-out session', () async {
       // Regression: build() read the boot-time snapshot, so rebuilding the
       // controller — ref.invalidate, a hot reload — signed the user back

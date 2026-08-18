@@ -1,13 +1,15 @@
 import 'dart:convert';
 
+import 'package:todo_app/core/logging/app_logger.dart';
 import 'package:todo_app/core/network/api_exception.dart';
 import 'package:todo_app/core/storage/key_value_store.dart';
 import 'package:todo_app/features/posts/data/posts_repository.dart';
 import 'package:todo_app/features/posts/domain/post.dart';
 
 /// Offline fallback decorator over [PostsRepository]: every successful
-/// fetch is cached in the [KeyValueStore]; when the device cannot reach
-/// the server ([NetworkException]), the last cached response is served
+/// fetch is cached in the [KeyValueStore] — best effort, never at the
+/// cost of the fetch it decorates; when the device cannot reach the
+/// server ([NetworkException]), the last cached response is served
 /// instead. Without a cache the failure propagates untouched.
 ///
 /// Only [NetworkException] falls back. A [ServerException] means the
@@ -32,6 +34,8 @@ class CachedPostsRepository implements PostsRepository {
 
   static const String _cacheKey = 'cache.posts';
 
+  static const AppLogger _logger = AppLogger('todo_app.posts');
+
   /// Schema version of the cached blob.
   ///
   /// The cache is only ever written by a *successful* fetch, so a blob can
@@ -49,15 +53,7 @@ class CachedPostsRepository implements PostsRepository {
   }) async {
     try {
       final posts = await _inner.fetchPosts(page: page, limit: limit);
-      if (page == 1) {
-        await _store.setString(
-          _cacheKey,
-          jsonEncode({
-            'version': _cacheSchema,
-            'posts': [for (final post in posts) post.toJson()],
-          }),
-        );
-      }
+      if (page == 1) await _writeCache(posts);
       return posts;
     } on NetworkException {
       // A later page has nothing sensible to fall back to, and the list
@@ -84,30 +80,64 @@ class CachedPostsRepository implements PostsRepository {
     }
   }
 
+  /// Caches [posts]; a store that refuses the write is not an error here.
+  ///
+  /// The write used to share the `try` that wraps the fetch, whose only
+  /// handler is for [NetworkException] — so a store failure escaped
+  /// [fetchPosts] *after* the fetch had succeeded, and `PostsController`
+  /// turned posts it was already holding into a full-screen error. None
+  /// of the ways this fails is a network failure: a `PlatformException`
+  /// from the preferences plugin, a full disk, a quota error from web
+  /// `localStorage`. Caching is additive — a write that did not happen
+  /// is a future cache miss, not a present failure.
+  Future<void> _writeCache(List<Post> posts) async {
+    try {
+      await _store.setString(
+        _cacheKey,
+        jsonEncode({
+          'version': _cacheSchema,
+          'posts': [for (final post in posts) post.toJson()],
+        }),
+      );
+    } on Object catch (error) {
+      // `on Object`, not `on Exception`: the web quota failure arrives as
+      // an Error, and failing the fetch is the one outcome ruled out.
+      _logger.warning('Caching posts failed: $error');
+    }
+  }
+
   /// The cached posts, or `null` when there is no cache this build can use.
   ///
-  /// Every failure is the same answer — unreadable JSON, a version this
-  /// build does not know, a payload of the wrong shape: there is no usable
-  /// cache. This runs inside `on NetworkException`, so anything thrown
-  /// here would replace the real reason the caller failed with a parse
-  /// error. Worse, `Post.fromJson` on the wrong shape raises a `TypeError`,
-  /// which is an `Error` rather than an `Exception` — `PostsController`
-  /// does not catch it at all, so it would reach the user as a crash.
+  /// Every failure is the same answer — a store that will not answer,
+  /// unreadable JSON, a version this build does not know, a payload of the
+  /// wrong shape: there is no usable cache. This runs inside
+  /// `on NetworkException`, so anything thrown here would replace the real
+  /// reason the caller failed with a storage or parse error. Worse,
+  /// `Post.fromJson` on the wrong shape raises a `TypeError`, which is an
+  /// `Error` rather than an `Exception` — `PostsController` does not catch
+  /// it at all, so it would reach the user as a crash.
   ///
   /// An unusable blob is deleted rather than left in place. It cannot
   /// become readable again, and the device may stay offline for a long
   /// time; dropping it means the next read is simply a cache miss.
   Future<List<Post>?> _readCache() async {
-    final raw = await _store.getString(_cacheKey);
-    if (raw == null) return null;
     try {
-      final posts = _decodeCache(raw);
-      if (posts != null) return posts;
+      final raw = await _store.getString(_cacheKey);
+      if (raw == null) return null;
+      try {
+        final posts = _decodeCache(raw);
+        if (posts != null) return posts;
+      } on Object {
+        // Falls through to the discard below: whatever it was, it is not
+        // a cache, and the caller's NetworkException is the useful error.
+      }
+      await _store.remove(_cacheKey);
     } on Object {
-      // Falls through to the discard below: whatever it was, it is not a
-      // cache, and the caller's NetworkException is the useful error.
+      // The read and the discard sat outside the guard above, so a store
+      // that threw here replaced the caller's NetworkException with a
+      // storage error and the offline path was never taken. Same answer
+      // as every other failure: no usable cache.
     }
-    await _store.remove(_cacheKey);
     return null;
   }
 

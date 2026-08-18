@@ -2,11 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_app/core/storage/key_value_store.dart';
 import 'package:todo_app/features/settings/presentation/settings_screen.dart';
+import 'package:todo_app/l10n/gen/app_localizations.dart';
 
 import '../../helpers/helpers.dart';
 
 void main() {
   group('SettingsScreen', () {
+    test('the picker offers exactly the locales the app supports', () {
+      // Regression: the chip list was a hand-written literal beside a
+      // generated supportedLocales and nothing compared them. Adding an
+      // ARB grew one and not the other — a device locale the app honours
+      // with no chip to pick it, or a chip that resolves to English while
+      // claiming otherwise. language_labels_test.dart already reads the
+      // generated list; this is the same move for the picker itself.
+      //
+      // Sets, not lists: the picker's order is a display choice and
+      // gen-l10n emits supportedLocales alphabetically.
+      final supported = {
+        for (final locale in AppLocalizations.supportedLocales)
+          locale.languageCode,
+      };
+
+      expect(languageCodes.toSet(), {'system', ...supported});
+    });
+
     testWidgets('selecting Dark persists the theme mode', (tester) async {
       final store = InMemoryKeyValueStore();
       await tester.pumpApp(

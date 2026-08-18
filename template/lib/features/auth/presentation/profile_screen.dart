@@ -1,5 +1,4 @@
-import 'dart:async';
-
+import 'package:fluframe_app/core/logging/app_logger.dart';
 import 'package:fluframe_app/features/auth/presentation/auth_controller.dart';
 import 'package:fluframe_app/l10n/gen/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -42,14 +41,49 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
             FilledButton.tonal(
-              onPressed: () => unawaited(
-                ref.read(authControllerProvider.notifier).signOut(),
-              ),
+              // Awaited inside the callback rather than handed over as a
+              // tear-off, so the failure below is part of the same
+              // sequence instead of a dropped Future.
+              onPressed: () async {
+                await _signOut(context, ref, l10n);
+              },
               child: Text(l10n.signOutButton),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Signs out, reporting a failure the user can actually see.
+  ///
+  /// This ran through `unawaited` before, so a repository that threw
+  /// resolved to nothing: the error reached the zone, where
+  /// `onPlatformError` logs it and a release build shows nothing, and the
+  /// button read as dead.
+  ///
+  /// The messenger is resolved before the `await` on purpose. Signing out
+  /// clears the session either way (see [AuthController.signOut]), so the
+  /// router redirect takes this screen with it — the message has to
+  /// belong to the app-level [ScaffoldMessenger] that outlives it, and
+  /// [BuildContext] must not be touched after the gap.
+  Future<void> _signOut(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final logger = ref.read(appLoggerProvider);
+    try {
+      await ref.read(authControllerProvider.notifier).signOut();
+    } on Object catch (error, stackTrace) {
+      // Nothing here models a sign-out failure, and a backend addon can
+      // raise anything its SDK defines — so the generic message, with the
+      // cause kept in the log where the underlying bug stays findable.
+      logger.error('Sign-out failed', error, stackTrace);
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.genericErrorMessage)),
+      );
+    }
   }
 }
