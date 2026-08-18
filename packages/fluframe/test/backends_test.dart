@@ -80,10 +80,24 @@ void main() {
         ('name', {'dependencies': [], 'patches': []}),
         ('name', {'name': 5, 'dependencies': [], 'patches': []}),
         ('dependencies', {'name': 'x', 'patches': []}),
-        ('dependencies', {'name': 'x', 'dependencies': [1], 'patches': []}),
+        (
+          'dependencies',
+          {
+            'name': 'x',
+            'dependencies': [1],
+            'patches': [],
+          },
+        ),
         ('patches', {'name': 'x', 'dependencies': []}),
         ('patches', {'name': 'x', 'dependencies': [], 'patches': 'nope'}),
-        ('patches', {'name': 'x', 'dependencies': [], 'patches': [5]}),
+        (
+          'patches',
+          {
+            'name': 'x',
+            'dependencies': [],
+            'patches': [5],
+          },
+        ),
       ];
 
       for (final (key, json) in broken) {
@@ -126,7 +140,10 @@ void main() {
 
     test('an addon section holding a non-object names the addon', () {
       expect(
-        () => decodeAddonRegistry({'schema': 1, 'backends': {'legacy': 5}}),
+        () => decodeAddonRegistry({
+          'schema': 1,
+          'backends': {'legacy': 5},
+        }),
         throwsA(
           isA<FormatException>().having(
             (error) => error.message,

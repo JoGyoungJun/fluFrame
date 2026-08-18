@@ -40,9 +40,8 @@ void main() {
           // pass because of the repo checkout's layout rather than
           // because of anything it asserts — and left the fatal branch
           // for a missing bundle unreachable.
-          resolveTemplate: () async => templateFound
-              ? Directory(stubTemplate)
-              : null,
+          resolveTemplate: () async =>
+              templateFound ? Directory(stubTemplate) : null,
         ),
       );
     }
