@@ -1100,20 +1100,29 @@ void main() {
       // the decoder and threw a TypeError — an Error, so the promise
       // could not be kept and a data problem in a DOWNLOADED bundle
       // reached the user as a fluframe crash with a stack trace.
+      // The concatenation is deliberate, but inside a list literal it
+      // reads as a missing comma — which is what this lint exists to
+      // catch. Named above the list instead.
+      const noFileKey =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":[{"anchor":"a","replacement":"b"}]}}}';
+      const anchorNotString =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":[{"file":"lib/a.dart","anchor":5}]}}}';
+      const patchesNotList =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":"nope"}}}';
       const broken = [
         // the registry itself is not an object
         '[]',
         // an addon entry is not an object
         '{"schema":1,"backends":{"l":5}}',
         // a patch with no "file" key
-        '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
-            '"patches":[{"anchor":"a","replacement":"b"}]}}}',
+        noFileKey,
         // a patch whose anchor is not a string
-        '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
-            '"patches":[{"file":"lib/a.dart","anchor":5}]}}}',
+        anchorNotString,
         // "patches" is not a list
-        '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
-            '"patches":"nope"}}}',
+        patchesNotList,
       ];
 
       for (final registry in broken) {

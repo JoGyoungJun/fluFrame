@@ -1049,7 +1049,7 @@ void main() {
       };
       server.listen((request) {
         final wanted = request.uri.pathSegments.last;
-        reply(request, text: documents[wanted]!);
+        reply(request, text: documents[wanted]);
       });
 
       for (final MapEntry(key: version, value: body) in documents.entries) {
@@ -1086,7 +1086,7 @@ void main() {
       };
       server.listen((request) {
         final wanted = request.uri.pathSegments.last;
-        reply(request, text: documents[wanted]!);
+        reply(request, text: documents[wanted]);
       });
 
       for (final MapEntry(key: version, value: body) in documents.entries) {

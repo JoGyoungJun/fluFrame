@@ -405,7 +405,7 @@ Uint8List _inflateBounded(List<int> bytes, String version) {
 /// as it arrives, and stop". What is held is then bounded by the ceiling
 /// plus one chunk of decoder output, whatever the trailer claimed.
 class _BoundedInflateSink implements Sink<List<int>> {
-  /// Collects output for fluframe [version], for the failure message.
+  /// Collects output for fluframe [_version], for the failure message.
   _BoundedInflateSink(this._version);
 
   final String _version;

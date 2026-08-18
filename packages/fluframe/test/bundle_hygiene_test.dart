@@ -403,9 +403,7 @@ void main() {
       // sweep above is driven off bundleSecretPatterns: an entry added to
       // that list with no source behind it is exactly what this catches.
       Directory(p.join(templateRoot.path, 'lib')).createSync(recursive: true);
-      for (final entry in overlayEntries.where((name) => name != 'lib')) {
-        writeEntry(entry);
-      }
+      overlayEntries.where((name) => name != 'lib').forEach(writeEntry);
       addonRoot.createSync(recursive: true);
 
       // A directory and a file both count as provided — the gate uses the
@@ -418,18 +416,14 @@ void main() {
       // reads back out of a generated app, so dropping it left no trace
       // anywhere: the log printed the intended count either way.
       const absent = 'analysis_options.yaml';
-      for (final entry in overlayEntries.where((name) => name != absent)) {
-        writeEntry(entry);
-      }
+      overlayEntries.where((name) => name != absent).forEach(writeEntry);
       addonRoot.createSync(recursive: true);
 
       expect(missing(), [p.join(templateRoot.path, absent)]);
     });
 
     test('names an absent addon tree that addons.json still describes', () {
-      for (final entry in overlayEntries) {
-        writeEntry(entry);
-      }
+      overlayEntries.forEach(writeEntry);
 
       expect(missing(), [addonRoot.path]);
     });
