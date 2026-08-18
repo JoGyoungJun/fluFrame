@@ -81,9 +81,7 @@ class ProfileScreen extends ConsumerWidget {
       // raise anything its SDK defines — so the generic message, with the
       // cause kept in the log where the underlying bug stays findable.
       logger.error('Sign-out failed', error, stackTrace);
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.genericErrorMessage)),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l10n.genericErrorMessage)));
     }
   }
 }

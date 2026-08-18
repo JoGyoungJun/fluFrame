@@ -83,10 +83,14 @@ it is provably the archive pub.dev published:
   named yourself (a self-hosted mirror; the tests use a loopback server).
   pub.dev's archive URLs redirect, so the whole chain is walked hop by hop
   and each hop re-checked — a hop off https is refused, not followed.
-- The gzip trailer's declared uncompressed length (RFC 1952 §2.3.1) is
-  read against an 8 MB ceiling before decompression starts, so an archive
-  that claims more than that is refused unread rather than inflated into
-  memory and measured afterwards.
+- Both the download and what it unpacks to are bounded. The transfer is
+  cut off at 8 MB, on the declared length where the response states one
+  and on a running total where it does not; decompression streams
+  through the same ceiling and stops the moment it is crossed. The gzip
+  trailer's declared length (RFC 1952 §2.3.1) is used only as a cheap
+  early reject, never as the bound — it states the size *modulo 2^32*,
+  so a payload of 4 GiB and 100 bytes declares 100 and clears any
+  ceiling compared against it.
 - Nothing out of a bundle is written outside the directory it belongs in.
   Tar member paths are resolved and required to stay inside the extraction
   directory; addon patch targets, which come out of the downloaded

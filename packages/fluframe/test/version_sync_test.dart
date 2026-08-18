@@ -40,10 +40,7 @@ void main() {
     // Headings are `## <version>` and carry nothing else today. Only the
     // first token is compared, so appending a date later stays a passing
     // heading rather than becoming a false failure.
-    final heading = RegExp(
-      r'^## (\S+)',
-      multiLine: true,
-    ).firstMatch(changelog);
+    final heading = RegExp(r'^## (\S+)', multiLine: true).firstMatch(changelog);
 
     expect(heading, isNotNull, reason: 'CHANGELOG.md needs a ## heading');
     expect(

@@ -910,9 +910,14 @@ void main() {
         if (isMetadata(request)) {
           reply(request, text: metadataFor('/archives/declared.tar.gz'));
         } else {
-          request.response
+          final response = request.response
             ..contentLength = maxDownloadedBundleBytes + 1
             ..add([0x1f, 0x8b]);
+          // The client refuses on the headers and hangs up without
+          // draining, so this close never meets its contentLength. That
+          // is the server's business, not a test failure — same guard
+          // the other short-body fixtures here use.
+          unawaited(response.close().catchError((Object _) {}));
         }
       });
 
