@@ -95,6 +95,11 @@ jobs:
         with:
           sdk: stable
       - run: dart pub get
+      # TEMPORARY DIAGNOSTIC — reverted in the next commit. No Dart SDK on
+      # the authoring machine, so this asks CI what the formatter wants.
+      - run: dart format lib test tool
+      - run: git --no-pager diff -- lib test tool
+      - run: git checkout -- lib test tool
       - run: dart format --set-exit-if-changed lib test tool
       # --fatal-infos matches what pana scores and what the template already
       # enforces. Plain `dart analyze` exits 0 on infos, so v1.4.0 shipped a
