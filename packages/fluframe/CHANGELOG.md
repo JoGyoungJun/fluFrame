@@ -1,5 +1,153 @@
 # Changelog
 
+## 1.7.0
+
+**Two improvement passes over the CLI and the template, and 46 findings
+worked between them.** Nothing in the public contract moved: no command
+or flag changed meaning, `.fluframe.json` is still `"schema": 1`, and a
+generated app is still generated the same way — so this is not a major.
+But `upgrade` now refuses three things it used to accept, and one
+`add feature` failure exits on a different code, which is why it is not
+a patch either. Every one of those refusals names a value fluframe
+itself never writes: they are for a hand-edited or hand-carried
+`.fluframe.json`, not for the one `create` left in your app.
+
+### `upgrade` refuses three more `.fluframe.json` values
+
+- **A `cliVersion` now has to *be* a version, not merely contain one.**
+  The parser behind that check is shared with `doctor`, which reads
+  whole tool banners and so deliberately finds a version *anywhere* in
+  its input — as a gate, that accepted anything with one inside. The
+  recorded value is spliced into the pub.dev URL the old bundle is
+  fetched from, so a `cliVersion` of
+  `1.0.0/../../../other_pkg/versions/1.0.0` passed on its leading
+  `1.0.0`, and dot-segment removal turned the request into a different
+  published package's archive. None of those bytes could reach your tree
+  — writes are keyed on the local template — but the archive becomes the
+  merge *base*, and a base equal to your own files makes every file
+  report as unchanged: `--apply` would then record the app as upgraded
+  having received nothing. Exit **64**, the same code an unparseable
+  version already gave.
+- **A `name` that is not a package name is refused — including one
+  `upgrade` guessed.** The recorded name is joined onto a scratch
+  directory to rebuild the merge base, and `package:path`'s join
+  discards everything before an absolute part, so an absolute or
+  climbing name aimed that write outside the scratch tree — on the
+  default dry run. It now goes through the same validator your name goes
+  through on `create`, and so do the two fallbacks, the `pubspec.yaml`
+  `name:` and the directory basename, which are guesses that were never
+  checked at all. Exit **65**, and the message says which of the three
+  it read.
+- **`pendingConflicts` entries have to be paths inside the app.** They
+  are joined onto your project root to look for conflict markers, so a
+  climbing or absolute entry pointed that check at a file outside it.
+  Both separators are rejected whatever the host is, so an entry written
+  on Windows cannot decode cleanly on Linux and travel on from there.
+  Exit **65**.
+
+### The bundle `upgrade` downloads is bounded, and fails clearly
+
+- **The download is capped as it arrives, not once it is held.** 1.6.0
+  put an 8 MB ceiling on what an archive may inflate to — but that
+  ceiling sat behind a read that accumulated the whole response body
+  first, and the only bound on *that* was the 60s deadline, which on a
+  fast link admits several hundred MB resident before the digest check
+  or the ceiling gets a say. Both bodies now carry a transport cap — 8
+  MB for the archive, 1 MB for the version document — refused on the
+  declared length when there is one, and on a running total when there
+  is not, which is the case that matters: a chunked response declares
+  nothing.
+- **The inflate ceiling is counted now, not believed.** gzip states its
+  uncompressed length modulo 2^32 (RFC 1952), so 4 GiB and 100 bytes of
+  content declares 100 — which cleared the pre-inflate check, and then
+  cleared the post-inflate comparison too, with the 4 GiB already
+  resident. The declared size is now only a cheap early reject; what
+  holds the line is a counter over the decoder's output that stops the
+  moment it passes the ceiling, whatever the trailer claimed.
+- **A version document that is not a version document is named as
+  such.** A 200 whose body is valid JSON but not an object — what a
+  proxy or a captive portal answers with — met a bare cast and raised a
+  `TypeError`, which is an `Error` and so slid straight past the
+  `FormatException` handler written for it: you got "This is a bug.
+  Please report it", a stack trace and exit 70 for someone else's
+  network. Same for an `archive_url` or `archive_sha256` that arrives as
+  something other than a string. Both are reported as data problems now.
+  The document's redirect chain is origin-checked as well, the way the
+  archive's already was — symmetry rather than a hole closed, since that
+  first request is always https://pub.dev.
+- **A malformed `addons.json` inside a downloaded bundle falls back
+  instead of crashing.** `upgrade` documents dropping back to this CLI's
+  own addon definitions when a bundle's registry cannot be read, and it
+  caught `FormatException` to do exactly that — but a missing key, a
+  wrong-typed field or a non-object section raised `TypeError` instead,
+  so for that whole class of inputs the documented fallback was
+  unreachable. Every field is read typed now, and the fallback happens.
+
+### `fluframe add feature`
+
+- **A failure that put every file back reads as one.** The scaffold has
+  two failure arms, and they were inverted: the *incomplete* rollback —
+  the worse outcome — printed its sentence and exited 74, while the one
+  that restored every file rethrew into the runner's "This is a bug"
+  report, stack trace and exit **70**. The better outcome was the one
+  demanding a bug report for a full disk or a read-only file. It now
+  exits **74** too, with a sentence saying nothing was changed. Anything
+  that is genuinely not an exception still reaches the crash handler,
+  because that one really is ours.
+
+### Generation
+
+- **`sortImports` no longer splits a directive it should move whole.**
+  Every `.dart` file `create` copies out of the template, `add feature`
+  scaffolds, and `upgrade` rebuilds its merge base from goes through an
+  import sort. It worked a line at a time, so a directive `dart format`
+  had wrapped onto a second line — which it does once a combinator
+  pushes one past 80 columns — was sorted away from its own tail, and a
+  directive carrying a trailing `// ignore: ...` comment read as
+  unterminated and swallowed everything up to the next line ending in
+  `;`, a statement out of the function below it, sorted in among the
+  imports. Either one writes Dart that does not parse. Neither ever
+  fired. No template file carries an import of either shape, and all 20
+  published bundles were downloaded and checked — 1,182 `.dart` files,
+  4,888 import lines — before this was sized: it is a trigger being made
+  impossible, not a break being repaired.
+
+### Generated apps
+
+All four reach an existing app through `fluframe upgrade`.
+
+- **A cache write that fails no longer fails the fetch.** The offline
+  cache write shared the `try` around the fetch it decorates, whose only
+  handler is for a network failure — so a store that refused the write
+  (a full disk, a `localStorage` quota, a platform-channel error) threw
+  *after* the posts had already arrived, and the controller turned posts
+  it was holding into a full-screen error. Caching is additive: a write
+  that did not happen is a future cache miss, not a present failure, and
+  it is logged rather than raised. The offline read is guarded the same
+  way, so a store that throws there leaves the real network error
+  standing instead of replacing it.
+- **Signing out clears the session even when the repository throws —
+  and says so.** The session was published only after the repository
+  returned, so a `signOut` that failed left the app signed in with no
+  way out of it. The clear now happens in a `finally`. The failure is no
+  longer dropped either: the profile screen awaited nothing, so the
+  error went to the zone handler, a release build showed nothing at all,
+  and the button read as dead. It now shows the error message and logs
+  the cause.
+- **A blank stored locale tag follows the system locale.** An empty
+  string became `Locale('')`, which `dart:ui` asserts against — caught
+  two layers up, so the app booted on the default anyway, at the cost of
+  a reported crash on every launch. Nothing in the app writes such a tag;
+  the store is simply shared with whatever else you keep in it.
+- **`--backend firebase` and `--backend supabase` map their SDK's
+  exception in `signOut`.** `AuthRepository.signOut` documents throwing
+  the app's own `AuthException`, and `signIn` mapped onto it in both
+  addons — but `signOut` forwarded the SDK call bare, so Firebase's and
+  Supabase's own exception types crossed the seam that exists to keep
+  them out. The UI catches broadly enough that you still saw a message;
+  what leaked was the contract, and with it any caller's ability to tell
+  one sign-out failure from another.
+
 ## 1.6.0
 
 **Everything a downloaded bundle could do to you, and four crashes that
