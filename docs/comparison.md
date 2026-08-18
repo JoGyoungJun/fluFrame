@@ -63,7 +63,7 @@ What a generated app contains on day one:
 | Theming | default | default | Material 3 from a seed color, 6 presets, light/dark/system, persisted |
 | Flavors | none | 3 (development, staging, production) | 2 (`env/dev.json`, `env/prod.json`) via `--dart-define-from-file` |
 | Lints | `flutter_lints` | `very_good_analysis` | `very_good_analysis` |
-| Tests out of the box | 1 widget test | Unit + widget, **100% line coverage** | Unit + widget (template measures ~82%) |
+| Tests out of the box | 1 widget test | Unit + widget, **100% line coverage** | Unit + widget (template measures ~81%) |
 | CI for your app | none | GitHub Actions | GitHub Actions |
 | Crash-reporting seam | none | `bootstrap.dart` captures exceptions | Error seam + optional `--error-reporting sentry` |
 | Analytics seam | none | none | Backend-neutral seam with automatic screen tracking, optional `--analytics amplitude` |
@@ -75,7 +75,7 @@ Two rows deserve a footnote rather than a checkmark:
 - **Very Good CLI's 100% coverage is real and fluFrame's is not.** Their
   generated app is a counter, so covering all of it is achievable and they
   hold that line. fluFrame's template covers networking, persistence, auth,
-  routing and theming, and sits around 82% with a CI floor at 78%. More
+  routing and theming, and sits in the low 80s with a CI floor at 78%. More
   surface, less proportional coverage — pick whichever of those you value.
 - **Very Good CLI generates nine kinds of project**, not one:
   app, app UI, Dart CLI, Dart package, docs site, Flame game, Flutter
