@@ -51,6 +51,54 @@ class _UnrestorableScaffold extends FeatureScaffold {
       );
 }
 
+/// A scaffold that plans cleanly and records whether `apply` was reached,
+/// which is the one thing `--dry-run` must never do.
+class _RecordingScaffold extends FeatureScaffold {
+  _RecordingScaffold({required super.projectDir});
+
+  /// Whether [apply] ran. A dry run leaves this false.
+  bool applied = false;
+
+  @override
+  FeaturePlan plan({required String name, required bool tab}) =>
+      const FeaturePlan(
+        files: [PlannedFile('lib/features/user_reports/x.dart', '')],
+        routerContents: '',
+        arbContents: {'lib/l10n/app_en.arb': '{}'},
+        untranslated: {},
+      );
+
+  @override
+  void apply(FeaturePlan plan, {required String name}) {
+    applied = true;
+  }
+}
+
+/// A [Stdout] that keeps what was written to it.
+///
+/// `add feature` prints its report straight to `io.stdout`, and
+/// [IOOverrides.runZoned] is what makes that readable from a test —
+/// without handing the command an output sink only a test would ever
+/// pass.
+class _CapturingStdout implements Stdout {
+  _CapturingStdout(this._buffer);
+
+  final StringBuffer _buffer;
+
+  @override
+  void writeln([Object? object = '']) => _buffer.writeln(object);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    // The report only ever calls writeln. Anything else arriving here is
+    // a change in how the command prints, and should say so instead of
+    // being swallowed into an assertion that then reads empty.
+    throw UnsupportedError(
+      'This fake captures writeln only, not ${invocation.memberName}.',
+    );
+  }
+}
+
 void main() {
   group('FluframeCommandRunner', () {
     test('--version exits successfully', () async {
@@ -185,6 +233,48 @@ void main() {
       expect(err.toString(), contains('git checkout'));
       expect(err.toString(), isNot(contains('This is a bug')));
       expect(err.toString(), isNot(contains('#0')));
+    });
+
+    test('--dry-run reports the plan and writes nothing', () async {
+      // Nothing asserted that the flag ever reaches apply(): inverted, it
+      // would scaffold the whole feature and edit the router while the
+      // unit suite stayed green. The printed keys are checked here too —
+      // the report once promised `user_reportsTitle` while
+      // `userReportsTitle` was what landed in the ARBs (#183).
+      final scaffold = _RecordingScaffold(projectDir: Directory.current);
+      final runner = CommandRunner<int>('test', 'test')
+        ..addCommand(AddFeatureCommand(makeScaffold: (_) => scaffold));
+      final report = StringBuffer();
+
+      final code = await IOOverrides.runZoned(
+        () => runner.run(['feature', 'user_reports', '--dry-run']),
+        stdout: () => _CapturingStdout(report),
+      );
+
+      expect(code, 0, reason: report.toString());
+      expect(scaffold.applied, isFalse, reason: report.toString());
+      expect(report.toString(), contains('Dry run'));
+      expect(report.toString(), contains('userReportsTitle'));
+      expect(report.toString(), isNot(contains('user_reportsTitle')));
+    });
+
+    test('without --dry-run the feature is applied', () async {
+      // The other half of the flag. On its own, the test above stays
+      // green for a command that ignores --dry-run and never writes at
+      // all, which would be a different bug with the same symptom.
+      final scaffold = _RecordingScaffold(projectDir: Directory.current);
+      final runner = CommandRunner<int>('test', 'test')
+        ..addCommand(AddFeatureCommand(makeScaffold: (_) => scaffold));
+      final report = StringBuffer();
+
+      final code = await IOOverrides.runZoned(
+        () => runner.run(['feature', 'user_reports']),
+        stdout: () => _CapturingStdout(report),
+      );
+
+      expect(code, 0, reason: report.toString());
+      expect(scaffold.applied, isTrue, reason: report.toString());
+      expect(report.toString(), contains('Created:'));
     });
   });
 }
