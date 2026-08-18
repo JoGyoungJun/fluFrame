@@ -417,6 +417,83 @@ void main() {
       expect(log.toString(), isNot(contains('usually temporary')));
     });
 
+    test('a cliVersion that merely contains a version is refused', () async {
+      // PI-perfsec-F11. The gate was parseSemVer, which is unanchored so
+      // that `fluframe doctor` can read whole tool banners — so it matched
+      // the leading 1.0.0 here and passed the WHOLE string on to
+      // bundle_archive, which splices it into
+      // /api/packages/fluframe/versions/$version. RFC 3986 dot-segment
+      // removal in Uri.resolve then normalised that to
+      // /api/packages/evil_pkg/versions/1.0.0 — same host, so not an
+      // SSRF, but whoever wrote .fluframe.json got to choose which
+      // published package supplies the merge BASE. A BASE equal to THEIRS
+      // reports every file as unchanged, so --apply records the app as
+      // upgraded having merged nothing, and the `from == cliVersion`
+      // short circuit then excludes it from every later upgrade.
+      const poisoned = '1.0.0/../../../evil_pkg/versions/1.0.0';
+
+      // Both routes a version takes to the fetch: the recorded one, and
+      // an explicit --from. One gate has to cover them both.
+      for (final override in <String?>[null, poisoned]) {
+        final recorded = override == null ? poisoned : '0.1.0';
+        final source = override == null ? '.fluframe.json' : '--from';
+        writeFile(
+          project.path,
+          '.fluframe.json',
+          '{"cliVersion":"$recorded","name":"demo_app"}\n',
+        );
+        log.clear();
+        var fetched = false;
+        final subject = Upgrader(
+          currentTemplate: newTemplate,
+          oldBundleProvider: (version) async {
+            fetched = true;
+            return oldTemplates;
+          },
+          log: log,
+        );
+
+        final code = await subject.run(
+          projectDir: project,
+          fromOverride: override,
+        );
+
+        expect(code, ExitCode.usage.code, reason: '$source → $log');
+        expect(
+          log.toString(),
+          contains('"$poisoned" is not a version number'),
+          reason: source,
+        );
+        expect(log.toString(), contains(source), reason: source);
+        expect(
+          fetched,
+          isFalse,
+          reason: 'no archive may be requested for $source',
+        );
+      }
+    });
+
+    test('nightly canary greps these two log lines verbatim', () async {
+      // PI-tests-F18. .github/workflows/nightly.yml, job upgrade-canary,
+      // asserts on exactly these two literals with `grep -qF`, and
+      // nothing else pinned them: rewording either turned the nightly red
+      // with a log naming neither the string nor the workflow. Changing
+      // either string means changing that grep in the same commit.
+      const from = '0.1.0'; // What the fixture's .fluframe.json records.
+
+      final code = await upgrader().run(projectDir: project);
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        log.toString(),
+        contains('Fetching the fluframe $from template bundle...'),
+      );
+      expect(
+        log.toString(),
+        contains('Upgrade $from -> $cliVersion (dry run)'),
+      );
+    });
+
     test(
       'a --from app finishes its pending upgrade without --from again',
       () async {
