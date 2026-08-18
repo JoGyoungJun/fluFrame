@@ -8,6 +8,10 @@ void main() {
   group('DoctorCommand', () {
     late StringBuffer out;
 
+    // Stands in for the resolved bundle. Never read from, only printed:
+    // what matters is that the tests stop asking the machine.
+    const stubTemplate = '/stub/templates/app';
+
     CommandRunner<int> runnerWith(
       Future<ProcessResult> Function(
         String executable,
@@ -17,6 +21,7 @@ void main() {
       runProcess, {
       bool canCreateSymlink = true,
       String? dartConstraint = '^3.0.0',
+      bool templateFound = true,
     }) {
       out = StringBuffer();
       return CommandRunner<int>('test', 'test')..addCommand(
@@ -30,6 +35,13 @@ void main() {
           // resolved template's pubspec, and the suite must not go red the
           // day that constraint is bumped.
           dartConstraint: dartConstraint,
+          // And pinned here too: production resolves this from the
+          // activated package, so leaving it live made every test below
+          // pass because of the repo checkout's layout rather than
+          // because of anything it asserts — and left the fatal branch
+          // for a missing bundle unreachable.
+          resolveTemplate: () async =>
+              templateFound ? Directory(stubTemplate) : null,
         ),
       );
     }
@@ -45,9 +57,9 @@ void main() {
 
       final code = await runner.run(['doctor']);
 
-      // The template resolves from the repo checkout in tests.
       expect(code, 0, reason: out.toString());
       expect(out.toString(), contains('[ok] flutter 3.12.1'));
+      expect(out.toString(), contains('[ok] template bundle: $stubTemplate'));
       expect(out.toString(), contains('All set'));
     });
 
@@ -143,6 +155,23 @@ void main() {
       if (Platform.isWindows) {
         expect(report, contains('ms-settings:developers'));
       }
+    });
+
+    test('a missing template bundle is fatal, not "All set"', () async {
+      // Nothing could reach this branch before resolveTemplate became a
+      // seam. It fires on a broken `dart pub global activate` — the exact
+      // install `fluframe doctor` exists to diagnose — so had it ever
+      // regressed to non-fatal, a user whose CLI cannot generate anything
+      // would have been told "All set. Try: fluframe create my_app".
+      final runner = runnerWith(allToolsPresent, templateFound: false);
+
+      final code = await runner.run(['doctor']);
+
+      final report = out.toString();
+      expect(code, 69, reason: report);
+      expect(report, contains('[!!] fluFrame template bundle not found'));
+      expect(report, contains('dart pub global activate fluframe'));
+      expect(report, isNot(contains('All set')));
     });
 
     test('symlink support is reported as a passing check', () async {

@@ -64,13 +64,40 @@ Credit is given in the advisory and the changelog unless you ask otherwise.
 
 - Vulnerabilities in dependencies with no fluFrame-specific exposure —
   report those upstream (we will bump the pin once a fix exists)
-- `_backup-ccgs/`, which is an unrelated backup and is not published
 - The sample API the template's posts feature calls
   (`jsonplaceholder.typicode.com`), a third-party demo service
 - Findings that require the attacker to already control the developer's
   machine or the generated project's git history
 
 ## Hardening in place
+
+In the CLI, since 1.6.0 — everything `fluframe upgrade` pulls off the
+network ends up merged into your own source tree, so it is refused until
+it is provably the archive pub.dev published:
+
+- The download is checked against the `archive_sha256` pub.dev publishes
+  beside the archive URL, **before** a byte of it is inflated. The gzip
+  CRC32 is checked too, but it proves only that the bytes are consistent
+  with themselves — anyone who rewrites them recomputes it for free.
+- The archive must arrive over https, or over the plain-http registry you
+  named yourself (a self-hosted mirror; the tests use a loopback server).
+  pub.dev's archive URLs redirect, so the whole chain is walked hop by hop
+  and each hop re-checked — a hop off https is refused, not followed.
+- Both the download and what it unpacks to are bounded. The transfer is
+  cut off at 8 MB, on the declared length where the response states one
+  and on a running total where it does not; decompression streams
+  through the same ceiling and stops the moment it is crossed. The gzip
+  trailer's declared length (RFC 1952 §2.3.1) is used only as a cheap
+  early reject, never as the bound — it states the size *modulo 2^32*,
+  so a payload of 4 GiB and 100 bytes declares 100 and clears any
+  ceiling compared against it.
+- Nothing out of a bundle is written outside the directory it belongs in.
+  Tar member paths are resolved and required to stay inside the extraction
+  directory; addon patch targets, which come out of the downloaded
+  bundle's own `addons.json`, are refused when that registry is parsed and
+  checked again against the project root before the file is touched.
+
+In the repository and the release pipeline:
 
 - Every GitHub Action in both workflows is pinned to a full commit SHA, not
   a mutable tag, with the version in a trailing comment.

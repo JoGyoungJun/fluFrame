@@ -6,7 +6,8 @@
 reported themselves as fluframe bugs.** A full improvement pass over the
 CLI and the template: 33 findings, the 13 highest-value fixed here. No CLI
 flag changed meaning — but `upgrade` now refuses two things it used to
-accept, which is why this is a minor and not a patch.
+accept and one `add feature` failure exits on a different code, which is
+why this is a minor and not a patch.
 
 ### The bundle `upgrade` downloads is now verified
 
@@ -50,7 +51,10 @@ Adds `crypto` as a runtime dependency: Dart has no SHA-256 in core.
 - **`add feature` prints its own recovery instructions.** When a rollback
   cannot put every file back, the scaffold names those files and tells you
   to restore them before building. That message was being buried under a
-  crash trace, at precisely the moment you needed to read it.
+  crash trace, at precisely the moment you needed to read it. The exit
+  code moved with it: that path now exits **74** (`EX_IOERR`) instead of
+  the runner's catch-all **70**, so a script can tell a half-applied
+  scaffold apart from a bug in fluframe.
 - **An ARB that is not a JSON object** is now named as such, instead of
   raising a `TypeError` the CLI reports as a bug in itself.
 

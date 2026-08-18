@@ -250,9 +250,18 @@ jobs:
     # `flutter build apk` on a fresh `fluframe create` (#120).
     #
     # Android is the per-push target because it is the one with a
-    # three-way version pin that can rot on its own. The Apple and desktop
-    # targets build nightly instead — see .github/workflows/nightly.yml
-    # for why that split, and what it costs.
+    # three-way version pin that can rot on its own. Web is the other
+    # per-push compile, built by `web-build` below because the live demo
+    # needs it anyway. The remaining four platforms of `defaultPlatforms`
+    # (packages/fluframe/lib/src/project_generator.dart) — iOS, macOS,
+    # Windows and Linux — build nightly, one job each; see
+    # .github/workflows/nightly.yml for why that split, and what it costs.
+    #
+    # Naming all four is deliberate. This comment used to say "the Apple
+    # and desktop targets build nightly", which reads as full coverage
+    # while only iOS and Linux had jobs — macOS and Windows were compiled
+    # by nothing at all, on either workflow. A collective noun cannot be
+    # checked against a job list; four names can.
     name: Generated app — Android build
     runs-on: ubuntu-latest
     steps:
@@ -378,6 +387,18 @@ jobs:
     # Publishes the artifact `web-build` produced, and only after every
     # other gate on this commit is green — the demo is the first thing a
     # visitor sees, so it must never be ahead of a passing main.
+    #
+    # `needs` therefore names every other job in this workflow, in
+    # declaration order, so that a job missing from it reads as an
+    # obvious gap rather than as a deliberate exception. It once omitted
+    # `generated-android`, and the omission was invisible precisely
+    # because it was plausible: the demo is a web build, so an Android
+    # failure feels unrelated. It is not. The demo advertises the
+    # template, `generated-android` is the only job that compiles that
+    # template for a real device target, and a boilerplate that no
+    # longer builds is the one thing a visitor must not be shown
+    # succeeding. The cost is latency on main only: this job never runs
+    # on a pull request, so nothing waits on it during review.
     name: Live demo — deploy to GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
@@ -388,6 +409,7 @@ jobs:
       - e2e-cross-platform
       - example-drift
       - examples
+      - generated-android
       - web-build
     runs-on: ubuntu-latest
     permissions:

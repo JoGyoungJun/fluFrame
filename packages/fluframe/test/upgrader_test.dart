@@ -1007,5 +1007,132 @@ void main() {
         'alpha v2\n',
       );
     });
+
+    test('a recorded name that is not a package name is refused', () async {
+      // .fluframe.json is written into every generated app and is not
+      // gitignored, so this value is committed and travels with a cloned
+      // repo. It is handed to ProjectGenerator as the directory the merge
+      // base is rebuilt in, and package:path's join discards everything
+      // before an absolute part — so an absolute name put a whole
+      // template tree wherever it pointed. The rebuild runs before any
+      // --apply check, which makes a plain `fluframe upgrade` enough.
+      final escape = p.join(temp.path, 'pwned');
+      for (final name in ['../../pwned', escape]) {
+        final meta = {'cliVersion': '0.1.0', 'name': name};
+        writeFile(project.path, '.fluframe.json', '${jsonEncode(meta)}\n');
+
+        final code = await upgrader().run(projectDir: project);
+
+        expect(code, ExitCode.data.code, reason: '$name → $log');
+        expect(log.toString(), contains('.fluframe.json'), reason: name);
+        expect(Directory(escape).existsSync(), isFalse, reason: name);
+      }
+    });
+
+    test('a pendingConflicts entry that leaves the app is refused', () async {
+      // The recorded paths are joined onto the project root to look for
+      // conflict markers, so `..` or an absolute path aims that read at a
+      // file the command has no business touching. Input hygiene, not a
+      // leak: the helper returns a bool to the user's own terminal.
+      for (final entry in ['../../.bashrc', r'..\..\.bashrc']) {
+        final meta = {
+          'cliVersion': '0.1.0',
+          'name': 'demo_app',
+          'pendingUpgrade': '1.9.9',
+          'pendingConflicts': [entry],
+        };
+        writeFile(project.path, '.fluframe.json', '${jsonEncode(meta)}\n');
+
+        final code = await upgrader().run(projectDir: project);
+
+        expect(code, ExitCode.data.code, reason: '$entry → $log');
+        expect(
+          log.toString(),
+          contains('not a path inside the app'),
+          reason: entry,
+        );
+      }
+    });
+
+    test('--from reads the package name from the pubspec, not the '
+        'folder', () async {
+      // The guards above must not close #168's fallback chain: a monorepo
+      // path or a renamed checkout is not a package name, and the
+      // pubspec's own `name:` is what carries the run.
+      final renamed = Directory(p.join(temp.path, 'my-app'))..createSync();
+      writeFile(renamed.path, 'pubspec.yaml', 'name: demo_app\n');
+      writeFile(renamed.path, 'lib/a.dart', 'alpha\n');
+
+      final code = await upgrader().run(
+        projectDir: renamed,
+        fromOverride: '0.1.0',
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(renamed.path, 'lib', 'a.dart')).readAsStringSync(),
+        'alpha v2\n',
+      );
+    });
+
+    test('a folder name that is not a package name is refused', () async {
+      // Last resort in the same chain, and the one no validator has seen:
+      // with no recorded name and no pubspec `name:`, the directory
+      // basename is what reaches p.join.
+      final renamed = Directory(p.join(temp.path, 'my-app'))..createSync();
+      writeFile(renamed.path, 'pubspec.yaml', 'description: nameless\n');
+
+      final code = await upgrader().run(
+        projectDir: renamed,
+        fromOverride: '0.1.0',
+      );
+
+      expect(code, ExitCode.data.code, reason: log.toString());
+      expect(log.toString(), contains('my-app'));
+    });
+
+    test('a broken addons.json falls back instead of crashing', () async {
+      // #187, third recurrence. _readAddonRegistry catches only
+      // FormatException and promises to fall back to this version's
+      // definitions, but each shape below met a bare `as` or `!` inside
+      // the decoder and threw a TypeError — an Error, so the promise
+      // could not be kept and a data problem in a DOWNLOADED bundle
+      // reached the user as a fluframe crash with a stack trace.
+      // The concatenation is deliberate, but inside a list literal it
+      // reads as a missing comma — which is what this lint exists to
+      // catch. Named above the list instead.
+      const noFileKey =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":[{"anchor":"a","replacement":"b"}]}}}';
+      const anchorNotString =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":[{"file":"lib/a.dart","anchor":5}]}}}';
+      const patchesNotList =
+          '{"schema":1,"backends":{"l":{"name":"l","dependencies":[],'
+          '"patches":"nope"}}}';
+      const broken = [
+        // the registry itself is not an object
+        '[]',
+        // an addon entry is not an object
+        '{"schema":1,"backends":{"l":5}}',
+        // a patch with no "file" key
+        noFileKey,
+        // a patch whose anchor is not a string
+        anchorNotString,
+        // "patches" is not a list
+        patchesNotList,
+      ];
+
+      for (final registry in broken) {
+        writeFile(oldTemplates.path, addonRegistryFileName, registry);
+
+        final code = await upgrader().run(projectDir: project);
+
+        expect(code, ExitCode.success.code, reason: '$registry → $log');
+        expect(log.toString(), contains('Falling back'), reason: registry);
+      }
+    });
   });
 }

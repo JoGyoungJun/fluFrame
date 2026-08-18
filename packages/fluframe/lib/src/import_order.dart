@@ -18,6 +18,15 @@ library;
 /// blank line the template keeps between its `dart:` imports and its
 /// `package:` imports — `dart fix` preserves it too.
 ///
+/// A directive runs until the line that closes it with `;`, so a wrapped
+/// one moves as a unit. `dart format` puts a combinator on its own line
+/// once a directive passes 80 columns, and sorting line by line then cut
+/// the head off its tail: the run flushed at the continuation, so the
+/// head was sorted into place and the orphaned `    show X;` re-emitted
+/// after it. That is a file that does not parse, and this runs over every
+/// template file on the `create` path — one long import name away from
+/// shipping in every generated app.
+///
 /// Files carrying `// ignore_for_file: type=lint` are returned untouched:
 /// the analyzer skips them, so `dart fix` does not reorder them either,
 /// and the generated `lib/l10n/gen/` sources are exactly that case.
@@ -31,22 +40,46 @@ String sortImports(String source) {
 
   final lines = source.split('\n');
   final out = <String>[];
-  final run = <String>[];
+  // One entry per directive: its `import ...` head line, followed by any
+  // continuation lines the directive wrapped onto.
+  final run = <List<String>>[];
+  List<String>? wrapped;
 
   void flush() {
     if (run.isEmpty) return;
-    out.addAll(run.toList()..sort());
+    // The head line carries the URI, which is what the ordering is about;
+    // the continuation lines follow it wherever it lands.
+    run.sort((a, b) => a.first.compareTo(b.first));
+    out.addAll(run.expand((directive) => directive));
     run.clear();
   }
 
+  bool closesDirective(String line) => line.trimRight().endsWith(';');
+
   for (final line in lines) {
+    if (wrapped != null) {
+      wrapped.add(line);
+      if (closesDirective(line)) {
+        run.add(wrapped);
+        wrapped = null;
+      }
+      continue;
+    }
     if (line.startsWith('import ')) {
-      run.add(line);
+      if (closesDirective(line)) {
+        run.add([line]);
+      } else {
+        wrapped = [line];
+      }
       continue;
     }
     flush();
     out.add(line);
   }
+  // A directive left open at end of file is not something `dart format`
+  // can produce, but dropping its head would be a worse answer than
+  // emitting it where it was found.
+  if (wrapped != null) run.add(wrapped);
   flush();
 
   return out.join('\n');

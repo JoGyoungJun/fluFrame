@@ -6,9 +6,9 @@ minor or patch release, that is a bug — please file it.
 
 ## The public contract
 
-1. **CLI surface** — commands (`create`, `doctor`, `upgrade`) and their
-   documented options. Flags may gain values (new backends/addons) in
-   minors; renaming or removing one is a major.
+1. **CLI surface** — commands (`create`, `add feature`, `doctor`,
+   `upgrade`) and their documented options. Flags may gain values (new
+   backends/addons) in minors; renaming or removing one is a major.
 2. **Generation guarantees** — a freshly generated app (any addon combo)
    passes `flutter analyze` with zero issues and its full test suite,
    on the stable Flutter release current at publish time.

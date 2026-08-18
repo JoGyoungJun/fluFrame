@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/JoGyoungJun/fluFrame/security/advisories/new
+    about: >-
+      Private, between you and the maintainer until an advisory is
+      published. Never open a public issue for a security problem.
+  - name: Security policy
+    url: https://github.com/JoGyoungJun/fluFrame/blob/main/SECURITY.md
+    about: >-
+      What is in scope, what a useful report contains, and the response
+      windows you can hold the maintainer to.

@@ -1,14 +1,22 @@
 name: Nightly
 
-# The Apple and desktop compiles of a generated app (#120).
+# The Apple and desktop compiles of a generated app (#120), plus the
+# checks whose verdict depends on a third party being up.
+#
+# Platform coverage, stated so it can be audited: `fluframe create`
+# with no --platforms produces six runners (`defaultPlatforms` in
+# packages/fluframe/lib/src/project_generator.dart). ci.yml compiles
+# two of them on every push — android and web — and the other four
+# have a job each here: ios, macos, windows, linux. Six of six. Add a
+# platform to that list and it needs a job on one side or the other.
 #
 # Why not per push: Android is on every push because its AGP / Kotlin /
 # Gradle pins are a three-way version knot that rots on its own. iOS,
-# macOS and Linux have no equivalent pinned matrix in the template — they
-# break when Flutter or the runner image moves, which is a daily event at
-# most, not a per-commit one. A nightly catches that within a day and
-# costs nothing on the critical path of a pull request, which is already
-# ~8 minutes wide because of the Windows e2e.
+# macOS, Windows and Linux have no equivalent pinned matrix in the
+# template — they break when Flutter or the runner image moves, which
+# is a daily event at most, not a per-commit one. A nightly catches
+# that within a day and costs nothing on the critical path of a pull
+# request, which is already ~8 minutes wide because of the Windows e2e.
 #
 # Not attached to publish.yml either: a failure there would surface after
 # the release tag is already pushed, which is the worst moment to learn
@@ -52,6 +60,101 @@ jobs:
         # gate; this still runs CocoaPods and the full Xcode build.
         run: flutter build ios --debug --no-codesign
 
+  generated-macos:
+    # macOS is in `defaultPlatforms`, so this is part of what an
+    # argument-less `fluframe create` hands the user — and nothing had
+    # ever compiled it. Kept as its own job rather than a second build
+    # step on `generated-apple`: the two share a runner image but not a
+    # failure mode (CocoaPods and the iOS toolchain against the macOS
+    # one), and folding them together would report both as one red X.
+    name: Generated app — macOS desktop build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Generate an app from the publish bundle
+        working-directory: packages/fluframe
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms macos \
+            --output-directory "${{ runner.temp }}"
+      - name: Build the generated app
+        working-directory: ${{ runner.temp }}/demo_app
+        # --debug for the same reason the Android gate uses it: the
+        # question is whether the toolchain accepts what generation
+        # produced, not how small the binary is. Signing stays out of
+        # scope (#120) — a generated app carries no team id, so this
+        # builds with whatever local identity Xcode falls back to. If
+        # that ever stops being enough, this is the step that says so.
+        run: flutter build macos --debug
+
+  generated-windows:
+    # The sixth platform, and the one with a host prerequisite this job
+    # cannot provision: Flutter wires plugins up with symlinks, so
+    # `flutter pub get` for a project that includes `windows` fails
+    # outright on a Windows host without Developer Mode. That is what
+    # `canCreateSymlink` probes in
+    # packages/fluframe/lib/src/host_capabilities.dart, why
+    # packages/fluframe/test/create_e2e_test.dart skips its
+    # default-platforms case rather than pinning it, and why the e2e
+    # fixtures stay on android+web. GitHub's windows runner images ship
+    # with Developer Mode on, so this job leans on an image property no
+    # one here controls — hence the probe below, which labels the run
+    # instead of gating it.
+    name: Generated app — Windows desktop build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Record whether symlink creation is permitted
+        shell: bash
+        # Deliberately not a gate. When a future run dies inside
+        # `flutter pub get` with OS error 1314 ("a required privilege is
+        # not held by the client"), this line in the job summary is the
+        # difference between a five-minute diagnosis and an afternoon of
+        # blaming the template.
+        run: |
+          key='HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'
+          if reg query "$key" //v AllowDevelopmentWithoutDevLicense \
+               2>/dev/null | grep -q '0x1'; then
+            state='on'
+          else
+            state='OFF or unreadable — expect flutter pub get to fail'
+          fi
+          echo "Windows Developer Mode (symlinks): $state" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Generate an app from the publish bundle
+        working-directory: packages/fluframe
+        # Every multi-line step in this job declares `shell: bash`. The
+        # default shell on a windows runner is pwsh, where a trailing
+        # backslash is not a line continuation — the bash-style blocks
+        # the rest of this file uses would run as separate broken
+        # commands and fail in a way that looks like a CLI bug.
+        shell: bash
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms windows \
+            --output-directory "${{ runner.temp }}"
+      - name: Build the generated app
+        working-directory: ${{ runner.temp }}/demo_app
+        shell: bash
+        # Needs the Visual Studio C++ desktop workload and CMake, both
+        # present on the windows runner image — a second image property
+        # this job consumes rather than installs.
+        run: flutter build windows --debug
+
   generated-linux:
     name: Generated app — Linux desktop build
     runs-on: ubuntu-latest
@@ -79,3 +182,117 @@ jobs:
       - name: Build the generated app
         working-directory: ${{ runner.temp }}/demo_app
         run: flutter build linux --debug
+
+  upgrade-canary:
+    # `fluframe upgrade` rebuilds its merge BASE by downloading the
+    # published archive of the version the app was generated with, and
+    # 1.6.0 made that path strict: a version document without
+    # `archive_sha256` is fatal, the digest must match before a byte is
+    # inflated, and every redirect hop has to stay on https
+    # (packages/fluframe/lib/src/bundle_archive.dart). Each of those
+    # rules is a claim about how pub.dev serves archives *today*.
+    #
+    # Nothing tested that claim. The unit and e2e suites serve the whole
+    # exchange from a loopback HttpServer — deliberately, so the real
+    # network is never a test dependency — which left no job anywhere
+    # pointing the command at the real registry. If pub.dev changes the
+    # shape of that document or of its redirect chain, `fluframe
+    # upgrade` breaks for every user at once and the project finds out
+    # from a bug report.
+    #
+    # Nightly, never on push: this job's verdict depends on a third
+    # party being up, and a pull request must not go red because
+    # pub.dev had a bad minute.
+    name: Upgrade — canary against live pub.dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      - name: Generate a fixture app from the publish bundle
+        working-directory: packages/fluframe
+        # --platforms android alone: the merge only ever touches the
+        # overlay (lib/, test/, pubspec.yaml and friends), never the
+        # platform runners, so generating all six would only buy
+        # runtime.
+        run: |
+          dart pub get
+          dart run tool/sync_template.dart
+          dart run bin/fluframe.dart create demo_app \
+            --org dev.example \
+            --platforms android \
+            --output-directory "${{ runner.temp }}"
+      - name: Pick the newest published version below this one
+        id: base
+        shell: bash
+        working-directory: packages/fluframe
+        # The base has to be a version pub.dev actually holds, and the
+        # nearest one below is the upgrade real users perform on release
+        # day — so it is the one worth proving. Both tempting
+        # alternatives fail: a hardcoded floor tests an
+        # ever-more-exotic merge as releases accumulate, and letting the
+        # fixture's own .fluframe.json supply the version takes the
+        # `from == cliVersion` short circuit in upgrader.dart, which
+        # exits 0 without opening a socket — a canary that can only
+        # pass.
+        run: |
+          current=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          published=$(curl -fsSL --max-time 30 \
+            https://pub.dev/api/packages/fluframe \
+            | jq -r '.versions[] | select(.retracted != true) | .version')
+          from=$( { echo "$published"; echo "$current"; } \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V -u \
+            | grep -B1 -x -- "$current" \
+            | head -n1 )
+          if [ -z "$from" ] || [ "$from" = "$current" ]; then
+            echo "::error::No published fluframe version below $current"
+            exit 1
+          fi
+          {
+            echo "from=$from"
+            echo "current=$current"
+          } >> "$GITHUB_OUTPUT"
+          echo "Upgrade canary base: $from -> $current" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upgrade dry-run against live pub.dev
+        # `shell: bash` for the -o pipefail it brings: the default shell
+        # is plain `bash -e`, where the `| tee` below would swallow a
+        # non-zero exit from the CLI and hand the greps a log from a run
+        # that had already failed.
+        shell: bash
+        working-directory: packages/fluframe
+        env:
+          FROM: ${{ steps.base.outputs.from }}
+          CURRENT: ${{ steps.base.outputs.current }}
+          APP: ${{ runner.temp }}/demo_app
+        # There is no --dry-run flag: a dry run IS the default and
+        # --apply is what opts out (upgrade_command.dart). Nothing is
+        # written, so the fixture app is only ever read.
+        #
+        # The two greps are the assertion, chosen for what they prove
+        # rather than for being easy to match:
+        #   * "Fetching ..." is printed immediately before the download,
+        #     after every short circuit that would otherwise return 0
+        #     without a network call. Its absence means the canary
+        #     exercised nothing and must not be read as a pass.
+        #   * "Upgrade <from> -> <current> (dry run)" is printed only
+        #     once the archive has been fetched, matched against the
+        #     `archive_sha256` pub.dev published beside it, inflated and
+        #     unpacked into a merge base. A missing or mismatched
+        #     digest, or a redirect off https, raises BundleException
+        #     far above this line — so the line existing IS the digest
+        #     having been verified. The CLI prints nothing about the
+        #     check itself; on the happy path it is silent by design, so
+        #     there is no more direct string to key on.
+        run: |
+          log="${{ runner.temp }}/upgrade.log"
+          dart run bin/fluframe.dart upgrade \
+            --project-dir "$APP" \
+            --from "$FROM" 2>&1 | tee "$log"
+          grep -qF "Fetching the fluframe $FROM template bundle..." "$log"
+          grep -qF "Upgrade $FROM -> $CURRENT (dry run)" "$log"
+          echo "Upgrade canary: verified the $FROM bundle off live pub.dev" \
+            >> "$GITHUB_STEP_SUMMARY"

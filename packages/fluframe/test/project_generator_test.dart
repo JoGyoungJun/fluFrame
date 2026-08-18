@@ -75,9 +75,21 @@ import 'package:fluframe_app/app/app.dart';
         '../../template/lib',
         '../../template/test',
       ]) {
-        final entities = FileSystemEntity.isDirectorySync(root)
-            ? Directory(root).listSync(recursive: true)
-            : <FileSystemEntity>[File(root)];
+        // Assert the fixture resolved before relying on it. The fallback
+        // that used to stand here wrapped an unresolved root in a single
+        // File whose extension is not in `rewritable`, so the loop below
+        // skipped it, `leaks` stayed empty, and this gate — the one that
+        // stops fluFrame branding reaching generated apps — passed while
+        // scanning nothing.
+        expect(
+          FileSystemEntity.isDirectorySync(root),
+          isTrue,
+          reason:
+              'run from packages/fluframe: "$root" must resolve, because '
+              'this gate walks the real template sources and has nothing '
+              'to check without them',
+        );
+        final entities = Directory(root).listSync(recursive: true);
         for (final entity in entities) {
           if (entity is! File) continue;
           if (!rewritable.contains(p.extension(entity.path))) continue;
@@ -921,6 +933,57 @@ version: 0.1.0+1
 
       expect(code, isNot(0));
       expect(calls, isEmpty);
+    });
+
+    test('refuses a name that escapes the output directory', () async {
+      // The name is not always an argument create_command validated:
+      // `fluframe upgrade` passes the one recorded in the app's own
+      // .fluframe.json, and package:path's join discards everything
+      // before an absolute part — so both of these used to put the whole
+      // generated tree at a path the caller never named.
+      final outside = p.join(temp.path, 'outside');
+      final output = p.join(temp.path, 'nested');
+      for (final name in ['../outside', outside]) {
+        log.clear();
+        calls.clear();
+
+        final code = await generator.generate(
+          name: name,
+          org: 'dev.example',
+          outputDirectory: output,
+        );
+
+        expect(code, ExitCode.usage.code, reason: log.toString());
+        expect(log.toString(), contains('escapes the output directory'));
+        expect(Directory(outside).existsSync(), isFalse, reason: name);
+        expect(calls, isEmpty, reason: name);
+      }
+    });
+
+    test('a file-bearing addon with no bundled files fails loudly', () async {
+      // The branch exists for a truncated install — a `dart pub global
+      // activate` that dropped addons/ — and every other fixture here
+      // sets requiresFiles: false, so nothing reached it. Falling through
+      // instead generates an app missing the addon's sources and reports
+      // success.
+      const fake = BackendAddon(name: 'fake', dependencies: [], patches: []);
+      final withAddon = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: fakeRunProcess,
+        log: log,
+        addons: const {'fake': fake},
+      );
+
+      final code = await withAddon.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: temp.path,
+        backend: 'fake',
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains(p.join(temp.path, 'addons', 'fake')));
+      expect(log.toString(), contains('dart pub global activate fluframe'));
     });
   });
 }

@@ -28,12 +28,59 @@ jobs:
         working-directory: packages/fluframe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # setup-dart FIRST, flutter-action second — the order is the
+      # point, not an accident of editing. Both actions prepend their
+      # own bin directory to PATH, so whichever runs LAST owns the bare
+      # `dart` every gate step below calls. With setup-dart last, this
+      # workflow ran `dart pub get`, `dart test` and `dart test -t e2e`
+      # under the standalone SDK — while ci.yml's `e2e` job runs those
+      # same three commands under Flutter's bundled Dart, and no job in
+      # ci.yml installs both actions. The last gate before an
+      # irreversible pub.dev upload was therefore the only place that
+      # pairing was ever exercised, and a green CI said nothing about
+      # it. Flipping the two makes the release gate run the toolchain
+      # CI actually proved.
+      #
+      # setup-dart stays whatever the order: it is what mints the
+      # pub.dev credential from the GitHub OIDC token. That exchange
+      # runs in the action's own Node process against the runner's
+      # ACTIONS_ID_TOKEN_REQUEST_* variables and leaves the result as
+      # job state — an environment variable, and the user-level pub
+      # credentials file, which has lived outside PUB_CACHE since Dart
+      # 2.15 and is read by whichever SDK runs. None of that is
+      # PATH-dependent, and the credential already has to survive the
+      # several minutes of tests between here and the publish step, so
+      # moving this action earlier does not change what it must
+      # outlive. The step below records whether it survived.
+      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
           cache: true
-      # Mints the pub.dev credential from the GitHub OIDC token.
-      - uses: dart-lang/setup-dart@7654d458321ee25acccccfdb86cd48bd95768ff1 # v1.8.0
+      - name: Record the toolchain this release was gated on
+        # Which `dart` answers is decided by PATH order, which is
+        # invisible in a run log — and this is a release record, so it
+        # is worth a few lines. If a future publish fails on an SDK
+        # version or on a missing credential, this block says which SDK
+        # ran the gates and whether a pub.dev credential was ever
+        # configured. It reports presence only, never the token, and
+        # never fails the job: a diagnostic that can block a release is
+        # a diagnostic with a bug.
+        run: |
+          {
+            echo '```'
+            echo "dart on PATH: $(command -v dart)"
+            dart --version 2>&1
+            flutter --version 2>&1 | head -n1
+            if [ -n "${PUB_TOKEN:-}" ]; then
+              echo 'pub.dev credential: PUB_TOKEN is set'
+            elif dart pub token list 2>/dev/null | grep -q 'pub.dev'; then
+              echo 'pub.dev credential: configured for pub.dev'
+            else
+              echo 'pub.dev credential: none visible at this point'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
       - name: Verify tag matches pubspec version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#fluframe-v}"

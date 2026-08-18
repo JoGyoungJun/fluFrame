@@ -84,5 +84,64 @@ const x = 1;
 import 'package:c/c.dart';
 ''');
     });
+
+    test('keeps a wrapped directive whole when sorting moves it', () {
+      // `dart format` breaks a combinator onto its own line once the
+      // directive passes 80 columns, and that line does not start with
+      // `import `. Sorting line by line flushed the run at it, so the
+      // head sorted into place and the orphaned combinator was re-emitted
+      // after it — a file that does not parse, written into every
+      // generated app the moment one template import gets long enough.
+      const source = '''
+import 'package:zzz/z.dart';
+import 'package:aaa/a.dart'
+    show Thing;
+
+void main() {}
+''';
+
+      expect(sortImports(source), '''
+import 'package:aaa/a.dart'
+    show Thing;
+import 'package:zzz/z.dart';
+
+void main() {}
+''');
+    });
+
+    test('carries every continuation line of a wrapped directive', () {
+      // The directive ends at the `;`, not at the first line that is not
+      // an import, so a second combinator line travels with it too.
+      const source = '''
+import 'package:zzz/z.dart';
+import 'package:aaa/a.dart'
+    show Thing
+    hide Other;
+''';
+
+      expect(sortImports(source), '''
+import 'package:aaa/a.dart'
+    show Thing
+    hide Other;
+import 'package:zzz/z.dart';
+''');
+    });
+
+    test('is idempotent over a wrapped directive', () {
+      const source = '''
+import 'package:b/b.dart'
+    as b;
+import 'package:a/a.dart';
+''';
+
+      final once = sortImports(source);
+
+      expect(once, '''
+import 'package:a/a.dart';
+import 'package:b/b.dart'
+    as b;
+''');
+      expect(sortImports(once), once);
+    });
   });
 }

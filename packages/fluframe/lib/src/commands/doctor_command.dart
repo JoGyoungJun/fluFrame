@@ -10,20 +10,30 @@ import 'package:path/path.dart' as p;
 
 /// `fluframe doctor` — diagnoses the environment before a first create.
 class DoctorCommand extends Command<int> {
-  /// Creates the command; [runProcess] and [canCreateSymlink] are
-  /// injectable for tests.
+  /// Creates the command; [runProcess], [canCreateSymlink] and
+  /// [resolveTemplate] are injectable for tests.
   DoctorCommand({
     RunProcess? runProcess,
     StringSink? out,
     bool Function()? canCreateSymlink,
+    Future<io.Directory?> Function()? resolveTemplate,
     this.dartConstraint,
   }) : _runProcess = runProcess ?? defaultRunProcess,
        _out = out ?? io.stdout,
-       _canCreateSymlink = canCreateSymlink ?? host.canCreateSymlink;
+       _canCreateSymlink = canCreateSymlink ?? host.canCreateSymlink,
+       _resolveTemplate = resolveTemplate ?? resolveTemplateDirectory;
 
   final RunProcess _runProcess;
   final StringSink _out;
   final bool Function() _canCreateSymlink;
+
+  /// Finds the template bundle. Injectable for the same reason as the
+  /// three above: the "not found" branch below fires only on a broken
+  /// `dart pub global activate` — the exact install this command exists
+  /// to diagnose — so no test could reach it, and every other test's
+  /// green rested on the repo checkout happening to satisfy the resolver
+  /// rather than on anything the test asserted.
+  final Future<io.Directory?> Function() _resolveTemplate;
 
   /// Overrides the SDK constraint, for tests. In production this is `null`
   /// and the constraint is read from the resolved template's own
@@ -90,7 +100,7 @@ class DoctorCommand extends Command<int> {
       _out.writeln('[ok] $dart');
     }
 
-    final template = await resolveTemplateDirectory();
+    final template = await _resolveTemplate();
 
     // The template's own `environment: sdk:` is the floor, read from the
     // resolved bundle so there is never a second copy to drift. Without this
