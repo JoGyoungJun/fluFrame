@@ -1,3 +1,3 @@
 /// The current version of the fluframe CLI. Keep in sync with
 /// pubspec.yaml (guarded by `test/version_sync_test.dart`).
-const String cliVersion = '1.6.0';
+const String cliVersion = '1.7.0';
