@@ -143,5 +143,64 @@ import 'package:b/b.dart'
 ''');
       expect(sortImports(once), once);
     });
+
+    test('a trailing comment does not swallow the rest of the file', () {
+      // `// ignore: implementation_imports` on an import is a routine
+      // analyzer-suggested edit, and the line then does not end in `;`.
+      // The directive read as wrapped, so the run kept swallowing lines
+      // until one happened to close it — `runApp(...)`, in the next
+      // function — and that whole region sorted along with the head,
+      // landing above the import it is supposed to follow. The result
+      // does not parse.
+      const source = '''
+import 'package:zoo/zoo.dart';
+import 'package:apple/a.dart'; // ignore: implementation_imports
+
+void main() {
+  runApp(const App());
+}
+''';
+
+      expect(sortImports(source), '''
+import 'package:apple/a.dart'; // ignore: implementation_imports
+import 'package:zoo/zoo.dart';
+
+void main() {
+  runApp(const App());
+}
+''');
+    });
+
+    test('a trailing comment does not fuse two directives into one', () {
+      // Quieter than the case above, and the half nothing else catches:
+      // the swallowed region is the next import, so the two travel as one
+      // sort unit and the run comes out misordered while still parsing.
+      // That is #165 again — the bare overlay stops matching `dart fix`,
+      // so every affected file reports to the user as their own edit.
+      const source = '''
+import 'package:zoo/zoo.dart'; // ignore: implementation_imports
+import 'package:apple/a.dart';
+''';
+
+      expect(sortImports(source), '''
+import 'package:apple/a.dart';
+import 'package:zoo/zoo.dart'; // ignore: implementation_imports
+''');
+    });
+
+    test('is idempotent over a trailing-comment import', () {
+      const source = '''
+import 'package:b/b.dart';
+import 'package:a/a.dart'; // ignore: implementation_imports
+''';
+
+      final once = sortImports(source);
+
+      expect(once, '''
+import 'package:a/a.dart'; // ignore: implementation_imports
+import 'package:b/b.dart';
+''');
+      expect(sortImports(once), once);
+    });
   });
 }

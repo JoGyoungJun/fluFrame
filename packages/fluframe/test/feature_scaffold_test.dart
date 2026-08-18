@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fluframe/src/command_runner.dart';
+import 'package:fluframe/src/commands/add_command.dart';
 import 'package:fluframe/src/feature_scaffold.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -735,6 +737,45 @@ void main() {
       expect(
         Directory(
           p.join(project.path, 'test', 'features', 'billing'),
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('a failure the rollback undoes completely is a sentence, not a '
+        'bug report', () async {
+      // apply()'s two failure arms were reported backwards. An incomplete
+      // rollback — the app edited and not compiling — threw a
+      // FeatureScaffoldException and got a clean sentence with exit 74.
+      // A *complete* one rethrew the io.FileSystemException, which
+      // nothing downstream matches: it reached the runner's catch-all as
+      // "This is a bug. Please report it", a stack trace and exit 70. The
+      // best outcome the failure path has was the only one demanding a
+      // bug report from a user whose app is perfectly fine.
+      makeReadOnly('lib/l10n/app_ko.arb');
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err)
+        ..addCommand(AddFeatureCommand(err: err));
+
+      final code = await runner.run([
+        'feature',
+        'billing',
+        '--project-dir',
+        project.path,
+      ]);
+
+      // 74 = EX_IOERR, the code the other arm already uses: the write
+      // failed, and neither the invocation nor fluframe is at fault.
+      expect(code, 74, reason: err.toString());
+      expect(err.toString(), contains('Adding "billing" failed'));
+      expect(err.toString(), contains('Nothing was changed'));
+      expect(err.toString(), isNot(contains('This is a bug')));
+      expect(err.toString(), isNot(contains('#0')));
+      // The sentence has to be true, or it is a worse lie than the trace.
+      expect(read(routerPath), _router);
+      expect(
+        Directory(
+          p.join(project.path, 'lib', 'features', 'billing'),
         ).existsSync(),
         isFalse,
       );
