@@ -464,7 +464,8 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: 'these ship into every generated app; state the reason in '
+        reason:
+            'these ship into every generated app; state the reason in '
             'prose instead of citing an issue number',
       );
     });

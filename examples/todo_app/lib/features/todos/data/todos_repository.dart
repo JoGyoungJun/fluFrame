@@ -78,9 +78,19 @@ class TodosRepository {
     }
   }
 
-  List<Todo> _todosFrom(List<Object?> items) => [
-    for (final json in items) Todo.fromJson(json as Map<String, Object?>),
-  ];
+  /// The todos in [items], or `null` when an element is not a JSON object.
+  ///
+  /// Tested rather than cast: a cast here would be the one place a bad
+  /// element still raised, and the whole point of [_decode] is that it
+  /// answers `null` instead of throwing.
+  List<Todo>? _todosFrom(List<Object?> items) {
+    final todos = <Todo>[];
+    for (final item in items) {
+      if (item is! Map<String, Object?>) return null;
+      todos.add(Todo.fromJson(item));
+    }
+    return todos;
+  }
 }
 
 /// Provider for the app-wide [TodosRepository].

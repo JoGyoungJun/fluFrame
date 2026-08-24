@@ -805,30 +805,30 @@ void main() {
     /// not let go of, so the rollback's recursive delete fails the way it
     /// does when a scanner or an indexer still holds a just-written file.
     ///
-    /// Two mechanisms, because the platforms refuse for different reasons:
-    /// Windows will not delete a read-only file, and POSIX will not unlink
-    /// anything out of a directory it cannot write. Nesting the lock is
-    /// what keeps both faithful — the feature directory itself stays
-    /// writable, so every planned write still lands and the run fails at
-    /// the last ARB, with the router already rewritten.
+    /// Two mechanisms, because the platforms refuse for different reasons.
+    /// Windows will not delete a file another handle still has open, which
+    /// is the scanner case itself — `attrib +R` is not enough there, since
+    /// Dart's recursive delete clears the read-only bit before unlinking.
+    /// POSIX unlinks an open file happily, so the write bit comes off the
+    /// containing directory instead. Nesting the lock is what keeps both
+    /// faithful — the feature directory itself stays writable, so every
+    /// planned write still lands and the run fails at the last ARB, with
+    /// the router already rewritten.
     void lockFeature(String name) {
       final dir = p.join(project.path, 'lib', 'features', name, 'locked');
       Directory(dir).createSync(recursive: true);
       final keep = File(p.join(dir, 'keep.txt'))
         ..writeAsStringSync('held open by a scanner\n');
-      final applied = Platform.isWindows
-          ? Process.runSync('attrib', ['+R', keep.path])
-          : Process.runSync('chmod', ['555', dir]);
-      expect(applied.exitCode, 0, reason: 'could not lock $dir');
       // A lock left behind breaks the temp directory cleanup exactly as it
-      // breaks the rollback.
-      addTearDown(() {
-        if (Platform.isWindows) {
-          Process.runSync('attrib', ['-R', keep.path]);
-        } else {
-          Process.runSync('chmod', ['755', dir]);
-        }
-      });
+      // breaks the rollback, so each one is released at teardown.
+      if (Platform.isWindows) {
+        final handle = keep.openSync(mode: FileMode.write);
+        addTearDown(handle.closeSync);
+      } else {
+        final applied = Process.runSync('chmod', ['555', dir]);
+        expect(applied.exitCode, 0, reason: 'could not lock $dir');
+        addTearDown(() => Process.runSync('chmod', ['755', dir]));
+      }
       // Without this the test would pass on a filesystem that ignores the
       // lock, having exercised nothing at all.
       expect(
