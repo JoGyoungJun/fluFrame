@@ -56,7 +56,7 @@ void main() {
       expect(find.text('signed out'), findsOneWidget);
 
       // Drain the snackbar's display timer: one still pending at
-      // teardown fails the test (see the #158 note in helpers.dart).
+      // teardown fails the test (see the pending-timer note in helpers.dart).
       await tester.pumpAndSettle(const Duration(seconds: 5));
     });
 

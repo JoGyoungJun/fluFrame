@@ -29,7 +29,7 @@ final List<Override> _defaultOverrides = [
 /// Navigating anywhere under `/home/posts` builds the posts list on the
 /// way to the leaf, and the real repository starts a Dio request that no
 /// test environment completes — leaving a pending timer that fails the
-/// test at teardown (#158). A test that wants specific posts behaviour
+/// test at teardown. A test that wants specific posts behaviour
 /// overrides this again with its own fake.
 class InMemoryPostsRepository implements PostsRepository {
   @override
