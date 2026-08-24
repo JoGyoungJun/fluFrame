@@ -133,14 +133,17 @@ lib/
 ├── app/                 # MaterialApp.router, GoRouter, themes
 ├── core/                # config, network, storage, logging, shared widgets
 ├── features/
+│   ├── auth/            # Login/profile flow, gated route — the backend seam
 │   ├── home/            # Counter demo — sync Notifier
 │   ├── posts/           # REST list/detail demo — AsyncNotifier + FutureProvider.family
 │   └── settings/        # Theme + language, persisted via KeyValueStore
 └── l10n/                # ARB sources + generated localizations
 ```
 
-Each feature keeps `data/` (repositories), `domain/` (models), and
-`presentation/` (controllers + screens) side by side. Screens read
+A feature keeps `data/` (repositories), `domain/` (models), and
+`presentation/` (controllers + screens) side by side, adding each layer only
+where it needs one — `auth/` and `posts/` use all three, `home/` is
+presentation only. Screens read
 `AsyncValue`s through a shared `AsyncValueWidget` with loading/error/retry
 handling built in.
 
