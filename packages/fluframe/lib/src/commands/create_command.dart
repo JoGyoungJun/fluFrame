@@ -3,6 +3,7 @@ import 'dart:io' as io;
 import 'package:args/command_runner.dart';
 import 'package:fluframe/src/backends.dart';
 import 'package:fluframe/src/package_name.dart';
+import 'package:fluframe/src/process_runner.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_source.dart';
 import 'package:io/io.dart';
@@ -30,6 +31,7 @@ class CreateCommand extends Command<int> {
       ..addMultiOption(
         'platforms',
         defaultsTo: defaultPlatforms,
+        allowed: defaultPlatforms,
         help: 'Platforms passed through to flutter create.',
       )
       ..addOption(
@@ -92,6 +94,19 @@ class CreateCommand extends Command<int> {
       );
     }
 
+    final outputDirectory = results['output-directory'] as String;
+    // The one create argument that reached `flutter create`
+    // unvalidated: the name and the org above are both checked, while
+    // on Windows cmd.exe splits the command line at a metacharacter
+    // before flutter ever sees it — see shellArgumentRejection.
+    final outputRejection = shellArgumentRejection(outputDirectory);
+    if (outputRejection != null) {
+      usageException(
+        'Cannot create "$projectName" in "$outputDirectory": '
+        'the path $outputRejection.',
+      );
+    }
+
     final templateDirectory = await resolveTemplateDirectory(
       explicitPath: results['template-dir'] as String?,
     );
@@ -114,7 +129,7 @@ class CreateCommand extends Command<int> {
       backend: backend == 'none' ? null : backend,
       errorReporting: errorReporting == 'none' ? null : errorReporting,
       analytics: analytics == 'none' ? null : analytics,
-      outputDirectory: results['output-directory'] as String,
+      outputDirectory: outputDirectory,
       platforms: results['platforms'] as List<String>,
       runPub: results['pub'] as bool,
     );

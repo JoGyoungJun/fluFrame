@@ -427,6 +427,39 @@ version: 0.1.0+1
       );
     });
 
+    test('quotes the path in the partial-output cleanup command', () async {
+      // Pinning #186: `rmdir /s /q C:\temp\my folder\app` deletes
+      // C:\temp\my, silently and recursively. This is the only string
+      // fluframe prints that a user is invited to paste into a
+      // destructive shell command, and both tests that reach this code
+      // generate into Directory.systemTemp — whose path holds no space on
+      // any runner, so both of them pass with the quotes deleted.
+      final spaced = p.join(temp.path, 'with space');
+      Directory(spaced).createSync();
+      final failing = ProjectGenerator(
+        templateDirectory: templateDir,
+        runProcess: (executable, arguments, {workingDirectory}) async {
+          return arguments.join(' ') == 'pub get'
+              ? ProcessResult(0, 1, '', 'boom')
+              : ProcessResult(0, 0, '', '');
+        },
+        log: log,
+      );
+
+      final code = await failing.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: spaced,
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      final target = p.join(spaced, 'demo_app');
+      expect(target, contains(' '), reason: 'the fixture needs a space');
+      final remove = Platform.isWindows ? 'rmdir /s /q' : 'rm -rf';
+      expect(log.toString(), contains('Partial output left at: $target'));
+      expect(log.toString(), contains('$remove "$target"'));
+    });
+
     test('keeps warnings from dart fix and gen-l10n non-fatal', () async {
       final generator = ProjectGenerator(
         templateDirectory: templateDir,
@@ -958,6 +991,40 @@ version: 0.1.0+1
         expect(Directory(outside).existsSync(), isFalse, reason: name);
         expect(calls, isEmpty, reason: name);
       }
+    });
+
+    test('refuses an output path cmd.exe would split at "&"', () async {
+      // Regression: Windows reaches `flutter` only through cmd.exe — a
+      // .bat shim is all that is on PATH — and dart:io appends the
+      // argument list to `cmd /c` unescaped, quoting an argument only
+      // when it holds a space or a tab. `-o "C:\dev&tools\projects"`
+      // therefore arrived as two commands, the first of them
+      // `flutter create C:\dev`, which writes a scaffold over whatever
+      // that directory already holds; the fragment left over exited
+      // 9009, which this CLI reports as "Flutter SDK not found on PATH".
+      // Every other fixture here comes from Directory.systemTemp, whose
+      // path carries no metacharacter on any runner — which is why
+      // nothing here could ever have caught it.
+      final output = p.join(temp.path, 'dev&tools');
+      Directory(output).createSync();
+
+      final code = await generator.generate(
+        name: 'demo_app',
+        org: 'dev.example',
+        outputDirectory: output,
+      );
+
+      expect(code, ExitCode.usage.code, reason: log.toString());
+      final report = log.toString();
+      expect(report, contains(p.join(output, 'demo_app')));
+      expect(report, contains('cmd.exe'));
+      expect(report, contains('"&"'));
+      // The misdiagnosis is half the damage: cmd returns 9009 for the
+      // leftover fragment, which reads exactly like a missing Flutter.
+      expect(report, isNot(contains('Flutter SDK not found')));
+      // Refused before anything was launched or written.
+      expect(calls, isEmpty);
+      expect(Directory(p.join(output, 'demo_app')).existsSync(), isFalse);
     });
 
     test('a file-bearing addon with no bundled files fails loudly', () async {
