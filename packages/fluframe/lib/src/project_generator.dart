@@ -578,6 +578,16 @@ class ProjectGenerator {
       }
     }
     if (insertAt < 0) insertAt = lines.length;
+    // The scan above stops ON the next top-level key, which is one line
+    // past the blank line that separates the blocks — so a dependency
+    // sorting after every existing one (supabase_flutter, in practice)
+    // was written BELOW that blank line, reading as the first entry of
+    // dev_dependencies. YAML still nests it under dependencies, on
+    // indentation, but nobody reading the file would think so. Same at
+    // end of file, where insertAt is past any trailing blank lines.
+    while (insertAt > start + 1 && lines[insertAt - 1].trimRight().isEmpty) {
+      insertAt--;
+    }
     return [
       ...lines.sublist(0, insertAt),
       '  $name: $constraint$eol',
