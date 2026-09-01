@@ -1,2 +1,12 @@
+# The index is LF for every text file (git ls-files --eol: 473/473 i/lf).
+# Without this line that holds only on checkouts with core.autocrlf=true —
+# a contributor or CI checkout with autocrlf=false would commit CRLF bytes
+# verbatim, and the next `dart format` would rewrite the file wholesale.
+* text=auto eol=lf
+
 # Batch files must be CRLF for cmd.exe to parse labels reliably
 *.bat text eol=crlf
+
+# Binary, never munged (59 tracked: png, ico)
+*.png binary
+*.ico binary

@@ -23,6 +23,10 @@ New here? The fastest route in:
 - Open an issue before starting large changes so we can align first.
 - Keep the template **opinionated but minimal**: every added dependency or
   abstraction must earn its place. When in doubt, leave it out.
+- The repository stores **LF** line endings for every text file
+  (`.gitattributes` enforces it); only `*.bat` files are CRLF. Your editor
+  and `core.autocrlf` setting can be whatever you like — git normalizes on
+  commit.
 
 ## Repository layout
 
