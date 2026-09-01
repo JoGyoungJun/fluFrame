@@ -97,7 +97,7 @@ lays both out honestly, including where fluframe loses.
 |---|---|---|
 | `--org` | `com.example` | Bundle/application identifier organization |
 | `--description` | template default | Description for the new `pubspec.yaml` |
-| `--output-directory`, `-o` | `.` | Where to create the project folder |
+| `--output-directory`, `-o` | `.` | Where to create the project folder. May not contain `&` `\|` `<` `>` `^` `"` or `%` — on Windows, `cmd.exe` reads these as command syntax before Flutter ever sees the path, so the rule applies on every platform: one path must behave the same for a whole team (exit `64`) |
 | `--platforms` | all six | Passed through to `flutter create` |
 | `--backend` | `none` | Wire a real auth backend (`supabase` \| `firebase`) into the generated app |
 | `--error-reporting` | `none` | Wire crash reporting (`sentry`) into the error hooks |
