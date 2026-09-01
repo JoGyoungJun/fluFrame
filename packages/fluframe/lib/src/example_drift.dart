@@ -18,6 +18,11 @@ import 'package:path/path.dart' as p;
 /// byte-for-byte after the rename tokens are applied. Add to this list
 /// only with a reason: each entry is a file the drift check can no longer
 /// protect.
+///
+/// Only paths under `lib/` and `test/` belong here — those two are the
+/// whole of what [_sharedFiles] walks. A root file such as `README.md` or
+/// `pubspec.yaml` is outside the byte comparison to begin with, so listing
+/// it exempts nothing and reads as protection that is not there.
 const List<String> intentionallyDivergent = [
   // Each example adds its own feature module and wires it into the shell,
   // so its route table and the doc comment above it are genuinely its own.
@@ -29,9 +34,6 @@ const List<String> intentionallyDivergent = [
   // still checked key-by-key below — the exemption is for the file, not for
   // its contents.
   'lib/l10n/',
-  // The example's own README describes the example, not the template.
-  'README.md',
-  'pubspec.yaml',
 ];
 
 /// Shared ARB keys an example is allowed to give a different value.
