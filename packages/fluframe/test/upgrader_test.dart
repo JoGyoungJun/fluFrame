@@ -719,6 +719,118 @@ void main() {
       );
     });
 
+    /// Puts a directory where `.fluframe.json` has to be written, which is
+    /// the one metadata-write failure that fails the same way on all three
+    /// CI platforms — and leaves the run reading no metadata, so `--from`
+    /// supplies the version these tests upgrade off.
+    void blockMetadataWrite() {
+      File(p.join(project.path, '.fluframe.json')).deleteSync();
+      Directory(p.join(project.path, '.fluframe.json')).createSync();
+    }
+
+    test('a clean apply that cannot record itself is a sentence', () async {
+      // Regression (PI-code-F20): the three metadata writes were bare
+      // `writeAsStringSync` calls next to a content-write loop that had
+      // been guarded. A `.fluframe.json` that could not be written escaped
+      // as "This is a bug" plus a stack trace — after the whole upgrade had
+      // already landed on disk, which is exactly the state the user needs
+      // described rather than dumped as a crash.
+      blockMetadataWrite();
+
+      final code = await upgrader().run(
+        projectDir: project,
+        fromOverride: '0.1.0',
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains('Could not write .fluframe.json'));
+      expect(log.toString(), contains('still says 0.1.0'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+      // The point of the sentence: the merge itself is on disk, so the
+      // re-run it invites finds every file already matching the template.
+      expect(File(p.join(project.path, 'lib', 'b.dart')).existsSync(), isTrue);
+    });
+
+    test(
+      'a conflicted apply that cannot record itself is a sentence',
+      () async {
+        // Same regression, the sibling branch: this one was about to record
+        // pendingUpgrade. Nothing records it, so the re-run would re-merge the
+        // same BASE into files that already carry markers (#166) — the
+        // message has to send the user through git rather than straight back
+        // into --apply.
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha local edit\n');
+        blockMetadataWrite();
+
+        final code = await upgrader().run(
+          projectDir: project,
+          fromOverride: '0.1.0',
+          apply: true,
+          force: true,
+        );
+
+        expect(code, ExitCode.software.code, reason: log.toString());
+        expect(log.toString(), contains('Could not write .fluframe.json'));
+        expect(log.toString(), contains('conflict markers'));
+        expect(log.toString(), contains('restore the tree from git'));
+        expect(log.toString(), isNot(contains('This is a bug')));
+      },
+    );
+
+    test(
+      'resolved conflicts that cannot be recorded are a sentence',
+      () async {
+        // The third bare write: the branch that finishes an interrupted
+        // upgrade. It needs a *readable* .fluframe.json (it is the pending
+        // marker that routes the run here), so the directory trick cannot
+        // reach it — a read-only file can, and only on Windows, where
+        // `attrib +R` blocks writes. Probed below rather than assumed.
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha local edit\n');
+        await upgrader().run(projectDir: project, apply: true, force: true);
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha v2 plus my local edit\n');
+
+        final metaFile = File(p.join(project.path, '.fluframe.json'));
+        final recorded = metaFile.readAsStringSync();
+        Process.runSync('attrib', ['+R', metaFile.path]);
+        addTearDown(() => Process.runSync('attrib', ['-R', metaFile.path]));
+        var blocked = false;
+        try {
+          // The same bytes, so a lock that does not hold changes nothing.
+          metaFile.writeAsStringSync(recorded);
+        } on FileSystemException {
+          blocked = true;
+        }
+        expect(
+          blocked,
+          isTrue,
+          reason:
+              'attrib +R let the write through, so the rest of this test '
+              'would pass without exercising the guard at all',
+        );
+
+        final code = await upgrader().run(
+          projectDir: project,
+          apply: true,
+          force: true,
+        );
+
+        expect(code, ExitCode.software.code, reason: log.toString());
+        expect(log.toString(), contains('Could not write .fluframe.json'));
+        expect(log.toString(), contains('in progress'));
+        expect(log.toString(), isNot(contains('This is a bug')));
+        expect(log.toString(), isNot(contains('Conflicts resolved')));
+      },
+      testOn: 'windows',
+    );
+
     test('preserves non-ASCII content through a clean merge', () async {
       // Regression: the merged bytes used to travel back through a pipe
       // decoded with the OS codepage (cp949 on Korean Windows), which

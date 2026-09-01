@@ -212,9 +212,16 @@ class Upgrader {
       meta = {...meta, 'cliVersion': pending}
         ..remove(_pendingVersionKey)
         ..remove(_pendingFilesKey);
-      metaFile.writeAsStringSync(
-        '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
+      final unrecorded = _recordMeta(
+        metaFile,
+        meta,
+        'The conflicts are resolved and the merged files are already in '
+        'place, so the app is on fluframe $pending — but .fluframe.json '
+        'still records that upgrade as in progress. Once whatever blocked '
+        'the write is cleared, re-running fluframe upgrade --apply records '
+        'it.',
       );
+      if (unrecorded != null) return unrecorded;
       _log.writeln('Conflicts resolved — now on fluframe $pending.');
       return ExitCode.success.code;
     }
@@ -566,9 +573,16 @@ class Upgrader {
         meta = {...meta, 'cliVersion': cliVersion}
           ..remove(_pendingVersionKey)
           ..remove(_pendingFilesKey);
-        metaFile.writeAsStringSync(
-          '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
+        final unrecorded = _recordMeta(
+          metaFile,
+          meta,
+          'Every merged file was written, so the app is on fluframe '
+          '$cliVersion — but .fluframe.json still says $from, so nothing '
+          'records it. Once whatever blocked the write is cleared, '
+          're-running fluframe upgrade --apply records it: the files '
+          'already match this template, so they report as up to date.',
         );
+        if (unrecorded != null) return unrecorded;
       } else {
         // The upgrade is half-done: the tree carries this version's
         // changes plus markers the user has to settle. Record that, so the
@@ -586,9 +600,17 @@ class Upgrader {
               .map((e) => e.key)
               .toList(),
         };
-        metaFile.writeAsStringSync(
-          '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
+        final unrecorded = _recordMeta(
+          metaFile,
+          meta,
+          'The merge was applied and $conflicts file(s) carry conflict '
+          'markers, but .fluframe.json still says $from and does not record '
+          'the upgrade as in progress. Once whatever blocked the write is '
+          'cleared, restore the tree from git and re-run fluframe upgrade '
+          '--apply: re-running over the markers as they stand would merge '
+          'into them (#166).',
         );
+        if (unrecorded != null) return unrecorded;
       }
       _log
         ..writeln()
@@ -608,6 +630,46 @@ class Upgrader {
       _log.writeln('\nDry run — re-run with --apply to write these changes.');
     }
     return ExitCode.success.code;
+  }
+
+  /// Writes [meta] back to `.fluframe.json`, returning `null` once it
+  /// lands and an exit code when it cannot be written.
+  ///
+  /// Every caller reaches this after the tree has ALREADY moved — the
+  /// merge is written, or the conflicts are resolved — so a failure here
+  /// is not a failed upgrade but an unrecorded one, and the message has
+  /// to say so. [consequence] carries that per-site half of it; the
+  /// reason line is shared. Bare `writeAsStringSync` calls stood here
+  /// instead, so a metadata file that could not be written (read-only,
+  /// held open, a directory in its place) escaped as "This is a bug" plus
+  /// a stack trace, with the upgrade itself already on disk.
+  ///
+  /// Returns [ExitCode.software] — deliberately the same code the merged
+  /// content-write guard above returns, not `ioError`. Both are the one
+  /// outcome "the tree moved and the run could not finish"; splitting it
+  /// across two codes would make a caller — or a CI script — tell a
+  /// failed content write from a failed metadata write to reach the same
+  /// conclusion.
+  int? _recordMeta(
+    File metaFile,
+    Map<String, dynamic> meta,
+    String consequence,
+  ) {
+    try {
+      metaFile.writeAsStringSync(
+        '${const JsonEncoder.withIndent('  ').convert(meta)}\n',
+      );
+      return null;
+    } on FileSystemException catch (error) {
+      _log
+        ..writeln()
+        ..writeln(
+          'Could not write .fluframe.json: '
+          '${error.osError?.message ?? error.message}',
+        )
+        ..writeln(consequence);
+      return ExitCode.software.code;
+    }
   }
 
   /// Reads `addons.json` from a bundle root, or `null` when the bundle
