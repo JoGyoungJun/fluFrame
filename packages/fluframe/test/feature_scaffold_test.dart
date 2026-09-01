@@ -762,6 +762,82 @@ void main() {
       );
     });
 
+    /// Replaces [relative] with bytes that are not valid UTF-8.
+    ///
+    /// This is the one read failure that reproduces on every platform:
+    /// `readAsStringSync` never throws FormatException — dart:io wraps a
+    /// decode failure in a FileSystemException — so a file no decoder can
+    /// read is a file the CLI cannot read, with no permissions, locks or
+    /// platform-specific tricks involved.
+    void corrupt(String relative) {
+      File(
+        p.join(project.path, p.joinAll(p.posix.split(relative))),
+      ).writeAsBytesSync([0x7b, 0xff, 0xfe, 0x28, 0x0a]);
+    }
+
+    test('an unreadable pubspec.yaml is a sentence, not a crash', () {
+      // Regression (PI-code-F16): three reads in the planning path were
+      // unguarded, so a FileSystemException out of any of them travelled
+      // to the runner's catch-all as "This is a bug" plus a stack trace —
+      // about a file in the user's own app, before anything was changed.
+      corrupt('pubspec.yaml');
+
+      expect(
+        () => scaffold().plan(name: 'billing', tab: false),
+        throwsA(
+          isA<FeatureScaffoldException>().having(
+            (error) => error.message,
+            'message',
+            contains('Could not read pubspec.yaml'),
+          ),
+        ),
+      );
+    });
+
+    test('an unreadable router is a sentence, not a crash', () {
+      corrupt(routerPath);
+
+      expect(
+        () => scaffold().plan(name: 'billing', tab: false),
+        throwsA(
+          isA<FeatureScaffoldException>().having(
+            (error) => error.message,
+            'message',
+            contains('Could not read $routerPath'),
+          ),
+        ),
+      );
+    });
+
+    test('an unreadable ARB is a sentence through the command, not a '
+        'crash', () async {
+      // Through the runner, because the point of the guard is the channel:
+      // exit 64 with the file named, rather than 70 with a trace.
+      corrupt('lib/l10n/app_ko.arb');
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err)
+        ..addCommand(AddFeatureCommand(err: err));
+
+      final code = await runner.run([
+        'feature',
+        'billing',
+        '--project-dir',
+        project.path,
+      ]);
+
+      expect(code, 64, reason: err.toString());
+      expect(err.toString(), contains('Could not read lib/l10n/app_ko.arb'));
+      expect(err.toString(), isNot(contains('This is a bug')));
+      expect(err.toString(), isNot(contains('#0')));
+      // Nothing was written: this fails during planning.
+      expect(
+        Directory(
+          p.join(project.path, 'lib', 'features', 'billing'),
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
     test('a failure the rollback undoes completely is a sentence, not a '
         'bug report', () async {
       // apply()'s two failure arms were reported backwards. An incomplete

@@ -728,6 +728,60 @@ void main() {
       Directory(p.join(project.path, '.fluframe.json')).createSync();
     }
 
+    /// Replaces [relative] with bytes that are not valid UTF-8.
+    ///
+    /// The one read failure that reproduces on every platform:
+    /// `readAsStringSync` never throws FormatException — dart:io wraps a
+    /// decode failure in a FileSystemException — so a file no decoder can
+    /// read is a file the CLI cannot read, with no permissions or locks
+    /// involved. (A directory in its place does not work here the way it
+    /// does for a write: every one of these reads sits behind an
+    /// existsSync check, which a directory fails.)
+    void corrupt(String relative) {
+      File(p.join(project.path, relative)).writeAsBytesSync([
+        0x7b,
+        0xff,
+        0xfe,
+        0x28,
+        0x0a,
+      ]);
+    }
+
+    test('an unreadable .fluframe.json is a sentence, not a crash', () async {
+      // Regression (PI-code-F16): the read was unguarded, so a
+      // FileSystemException out of it reached the runner's catch-all as
+      // "This is a bug" plus a stack trace. Malformed CONTENT was already
+      // handled — this is the file being unreadable in the first place.
+      corrupt('.fluframe.json');
+
+      final code = await upgrader().run(projectDir: project);
+
+      expect(code, ExitCode.data.code, reason: log.toString());
+      expect(log.toString(), contains('Could not read .fluframe.json'));
+      expect(log.toString(), contains('--from'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+    });
+
+    test('an unreadable pubspec.yaml stops a --from upgrade', () async {
+      // The package name is read from the pubspec only when the metadata
+      // has none to offer. The fallback after it is the FOLDER name, which
+      // a monorepo path or a renamed checkout makes wrong (#168) — so an
+      // unreadable pubspec has to stop the run, not be guessed past.
+      File(p.join(project.path, '.fluframe.json')).deleteSync();
+      corrupt('pubspec.yaml');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        fromOverride: '0.1.0',
+      );
+
+      expect(code, ExitCode.data.code, reason: log.toString());
+      expect(log.toString(), contains('Could not read pubspec.yaml'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+      // It stopped before the merge: no report, nothing classified.
+      expect(log.toString(), isNot(contains('Dry run')));
+    });
+
     test('a clean apply that cannot record itself is a sentence', () async {
       // Regression (PI-code-F20): the three metadata writes were bare
       // `writeAsStringSync` calls next to a content-write loop that had

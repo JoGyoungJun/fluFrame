@@ -103,7 +103,29 @@ class Upgrader {
       // sentence. A bare `as` cast on a wrong type raised a TypeError,
       // which is an Error the top-level handler prints as "This is a bug"
       // with a stack trace (#187).
-      final decoded = jsonDecode(metaFile.readAsStringSync());
+      final String raw;
+      try {
+        raw = metaFile.readAsStringSync();
+      } on FileSystemException catch (error) {
+        // Malformed CONTENT is handled below and by the runner's
+        // FormatException branch; a file that cannot be read at all
+        // reached neither, so it escaped as "This is a bug" with a stack
+        // trace. ExitCode.data, matching every other refusal about this
+        // file: a script branching on 65 already reads it as
+        // ".fluframe.json is the problem".
+        _log
+          ..writeln(
+            'Could not read .fluframe.json: '
+            '${error.osError?.message ?? error.message}',
+          )
+          ..writeln(
+            'It records the version this app was generated with. Clear '
+            'whatever is blocking the read, or move the file aside and '
+            're-run with --from <the version the app was generated with>.',
+          );
+        return ExitCode.data.code;
+      }
+      final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) {
         _log.writeln(
           '.fluframe.json holds a ${decoded.runtimeType}, not an object. '
@@ -298,9 +320,18 @@ class Upgrader {
     // metadata to read it from, and a checkout directory, a monorepo path
     // like apps/mobile, or a renamed folder is not the Dart package name —
     // using it writes imports for a package that does not exist (#168).
+    String? declaredName;
+    if (meta['name'] == null) {
+      // Only read when the metadata has no name to offer, which keeps the
+      // read — and its failure — off the path of every recorded app.
+      final fromPubspec = _packageNameFromPubspec(projectDir);
+      final failure = fromPubspec.failure;
+      if (failure != null) return failure;
+      declaredName = fromPubspec.name;
+    }
     final name =
         meta['name'] as String? ??
-        _packageNameFromPubspec(projectDir) ??
+        declaredName ??
         p.basename(projectDir.absolute.path);
     // Both fallbacks are guesses, and neither is guaranteed to be a
     // package name: a monorepo folder, a quoted pubspec `name:`, or a
@@ -706,15 +737,39 @@ class Upgrader {
     return a.patch > b.patch;
   }
 
-  /// The `name:` declared in [projectDir]'s pubspec.yaml, or `null`.
-  static String? _packageNameFromPubspec(Directory projectDir) {
+  /// The `name:` declared in [projectDir]'s pubspec.yaml.
+  ///
+  /// `name` is null when there is no pubspec, or when it declares none —
+  /// the caller has another guess for that. `failure` is an exit code,
+  /// set only when the file IS there and could not be read: the fallback
+  /// after this one is the folder name, and a monorepo path or a renamed
+  /// checkout is not the package name (#168), so guessing past an I/O
+  /// error would write imports for a package that does not exist. Before
+  /// this the read escaped as "This is a bug" plus a stack trace.
+  ({String? name, int? failure}) _packageNameFromPubspec(Directory projectDir) {
     final pubspec = File(p.join(projectDir.path, 'pubspec.yaml'));
-    if (!pubspec.existsSync()) return null;
+    if (!pubspec.existsSync()) return (name: null, failure: null);
+    final String contents;
+    try {
+      contents = pubspec.readAsStringSync();
+    } on FileSystemException catch (error) {
+      _log
+        ..writeln(
+          'Could not read pubspec.yaml: '
+          '${error.osError?.message ?? error.message}',
+        )
+        ..writeln(
+          'The package name to merge as is read from it. Clear whatever is '
+          'blocking the read, or record the name as "name" in '
+          '.fluframe.json and re-run.',
+        );
+      return (name: null, failure: ExitCode.data.code);
+    }
     final match = RegExp(
       r'^name:\s*(\S+)\s*$',
       multiLine: true,
-    ).firstMatch(pubspec.readAsStringSync());
-    return match?.group(1);
+    ).firstMatch(contents);
+    return (name: match?.group(1), failure: null);
   }
 
   /// A whole `major.minor.patch`, with the optional pre-release and build
