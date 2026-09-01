@@ -53,6 +53,20 @@ release a minor.
   `domain/` layer (it writes `data/` and `presentation/`), and the
   layer-layout paragraph matches the tree that actually ships.
 
+### Dart library surface (not part of the versioned contract)
+
+fluframe's public contract is the executable (`docs/versioning.md`); the
+package's Dart library surface was never documented or consumed, and two
+internal refactors touched it:
+
+- `package:fluframe/fluframe.dart` no longer re-exports eight `src/`
+  libraries — the file remains as the package-resolution anchor only.
+  If you were importing the CLI as a library, open an issue describing
+  the use case.
+- The bundle download/extract internals now return an ownership-aware
+  `BundleCheckout` (which is how `upgrade` stopped leaking one extracted
+  bundle directory into the system temp per run — dry runs included).
+
 ## 1.7.0
 
 **Two improvement passes over the CLI and the template, and 46 findings
