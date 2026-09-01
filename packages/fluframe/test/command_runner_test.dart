@@ -36,6 +36,18 @@ class _FailingCommand extends Command<int> {
 class _UnrestorableScaffold extends FeatureScaffold {
   _UnrestorableScaffold({required super.projectDir});
 
+  /// What this fake throws.
+  ///
+  /// Deliberately NOT the production sentence. A hand-copied replica of
+  /// feature_scaffold's wording, asserted on here, tested only that the
+  /// copy matched itself: the wording could change on one side and this
+  /// file would still pass. The production sentence is covered where it
+  /// is produced (feature_scaffold_test), and what this file is for is
+  /// the RUNNER's half — the exit code and the absence of a bug report —
+  /// so the message only has to be recognisable.
+  static const String sentinel =
+      'scaffold-failed-sentinel: paths were not restored';
+
   @override
   FeaturePlan plan({required String name, required bool tab}) =>
       const FeaturePlan(
@@ -47,11 +59,7 @@ class _UnrestorableScaffold extends FeatureScaffold {
 
   @override
   void apply(FeaturePlan plan, {required String name}) =>
-      throw const FeatureScaffoldException(
-        'Adding "billing" failed, and these paths could not be put back: '
-        'lib/l10n/app_ko.arb. Restore them (git checkout, git clean) before '
-        'building.',
-      );
+      throw const FeatureScaffoldException(sentinel);
 }
 
 /// A scaffold that plans cleanly and records whether `apply` was reached,
@@ -180,6 +188,28 @@ void main() {
       expect(await runner.run(['create', 'my_app', '--org', '1com.x']), 64);
     });
 
+    test('create rejects an output path cmd.exe would split', () async {
+      // The generator layer refuses this too, and is tested there — but
+      // that check fires after `flutter create` has been chosen and
+      // reports through a different channel. This is the runner-level
+      // guard: `-o` is refused as a usage error before anything runs, so
+      // the path never reaches cmd.exe, which would have read `&` as a
+      // command separator and scaffolded over `C:\dev`.
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err);
+
+      final code = await runner.run([
+        'create',
+        'my_app',
+        '-o',
+        r'C:\dev&tools',
+      ]);
+
+      expect(code, 64, reason: err.toString());
+      expect(err.toString(), contains('Cannot create'));
+      expect(err.toString(), contains(r'C:\dev&tools'));
+    });
+
     test('unknown commands are usage errors', () async {
       final runner = FluframeCommandRunner();
 
@@ -271,8 +301,12 @@ void main() {
       // 74 = EX_IOERR: the write failed. Not 64, which would blame the
       // invocation, and not the crash handler's 70.
       expect(code, 74, reason: err.toString());
-      expect(err.toString(), contains('could not be put back'));
-      expect(err.toString(), contains('git checkout'));
+      // What the runner owes this failure: the scaffold's own sentence
+      // reaches stderr instead of being buried, and neither the bug-report
+      // banner nor a stack trace follows it. The wording of the real
+      // sentence belongs to feature_scaffold_test, which asserts it
+      // against the code that produces it.
+      expect(err.toString(), contains(_UnrestorableScaffold.sentinel));
       expect(err.toString(), isNot(contains('This is a bug')));
       expect(err.toString(), isNot(contains('#0')));
     });

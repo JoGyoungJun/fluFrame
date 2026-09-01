@@ -30,7 +30,10 @@ void main() {
       log.clear();
       return Upgrader(
         currentTemplate: newTemplate,
-        oldBundleProvider: (version) async => oldTemplates,
+        oldBundleProvider: (version) async => (
+          templates: oldTemplates,
+          owned: null,
+        ),
         log: log,
       );
     }
@@ -239,7 +242,10 @@ void main() {
         final code =
             await Upgrader(
               currentTemplate: newTemplate,
-              oldBundleProvider: (version) async => oldTemplates,
+              oldBundleProvider: (version) async => (
+                templates: oldTemplates,
+                owned: null,
+              ),
               log: log,
             ).run(
               projectDir: renamed,
@@ -448,7 +454,7 @@ void main() {
           currentTemplate: newTemplate,
           oldBundleProvider: (version) async {
             fetched = true;
-            return oldTemplates;
+            return (templates: oldTemplates, owned: null);
           },
           log: log,
         );
@@ -718,6 +724,211 @@ void main() {
         reason: 'a file left marked is what makes that re-merge destructive',
       );
     });
+
+    /// Puts a directory where `.fluframe.json` has to be written, which is
+    /// the one metadata-write failure that fails the same way on all three
+    /// CI platforms — and leaves the run reading no metadata, so `--from`
+    /// supplies the version these tests upgrade off.
+    void blockMetadataWrite() {
+      File(p.join(project.path, '.fluframe.json')).deleteSync();
+      Directory(p.join(project.path, '.fluframe.json')).createSync();
+    }
+
+    /// Replaces [relative] with bytes that are not valid UTF-8.
+    ///
+    /// The one read failure that reproduces on every platform:
+    /// `readAsStringSync` never throws FormatException — dart:io wraps a
+    /// decode failure in a FileSystemException — so a file no decoder can
+    /// read is a file the CLI cannot read, with no permissions or locks
+    /// involved. (A directory in its place does not work here the way it
+    /// does for a write: every one of these reads sits behind an
+    /// existsSync check, which a directory fails.)
+    void corrupt(String relative) {
+      File(p.join(project.path, relative)).writeAsBytesSync([
+        0x7b,
+        0xff,
+        0xfe,
+        0x28,
+        0x0a,
+      ]);
+    }
+
+    test('the extracted bundle is deleted; a fixture is not', () async {
+      // Regression (PI-code-F21): a successful extraction left its whole
+      // temp tree behind — one extracted template per upgrade run, dry
+      // runs included — because nothing owned it once it was returned.
+      // Ownership now travels with the checkout, which is the only way to
+      // tell an extraction's temp root from a directory the provider
+      // merely pointed at: deleting the parent of whatever arrived would
+      // take this suite's own fixtures with it.
+      final extracted = Directory(p.join(temp.path, 'extracted'))..createSync();
+      final root = p.join(extracted.path, 'templates');
+      writeFile(p.join(root, 'app'), 'pubspec.yaml', 'name: fluframe_app\n');
+      writeFile(p.join(root, 'app'), 'lib/a.dart', 'alpha\n');
+      log.clear();
+      final owning = Upgrader(
+        currentTemplate: newTemplate,
+        oldBundleProvider: (version) async => (
+          templates: Directory(root),
+          owned: extracted,
+        ),
+        log: log,
+      );
+
+      // A dry run: the leak did not need --apply to happen.
+      final code = await owning.run(projectDir: project);
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(extracted.existsSync(), isFalse);
+
+      // And the injected fixture every other test in this file uses
+      // (owned: null) survives its run untouched.
+      final second = await upgrader().run(projectDir: project);
+
+      expect(second, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(oldTemplates.path, 'app', 'lib', 'a.dart')).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('an unreadable .fluframe.json is a sentence, not a crash', () async {
+      // Regression (PI-code-F16): the read was unguarded, so a
+      // FileSystemException out of it reached the runner's catch-all as
+      // "This is a bug" plus a stack trace. Malformed CONTENT was already
+      // handled — this is the file being unreadable in the first place.
+      corrupt('.fluframe.json');
+
+      final code = await upgrader().run(projectDir: project);
+
+      expect(code, ExitCode.data.code, reason: log.toString());
+      expect(log.toString(), contains('Could not read .fluframe.json'));
+      expect(log.toString(), contains('--from'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+    });
+
+    test('an unreadable pubspec.yaml stops a --from upgrade', () async {
+      // The package name is read from the pubspec only when the metadata
+      // has none to offer. The fallback after it is the FOLDER name, which
+      // a monorepo path or a renamed checkout makes wrong (#168) — so an
+      // unreadable pubspec has to stop the run, not be guessed past.
+      File(p.join(project.path, '.fluframe.json')).deleteSync();
+      corrupt('pubspec.yaml');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        fromOverride: '0.1.0',
+      );
+
+      expect(code, ExitCode.data.code, reason: log.toString());
+      expect(log.toString(), contains('Could not read pubspec.yaml'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+      // It stopped before the merge: no report, nothing classified.
+      expect(log.toString(), isNot(contains('Dry run')));
+    });
+
+    test('a clean apply that cannot record itself is a sentence', () async {
+      // Regression (PI-code-F20): the three metadata writes were bare
+      // `writeAsStringSync` calls next to a content-write loop that had
+      // been guarded. A `.fluframe.json` that could not be written escaped
+      // as "This is a bug" plus a stack trace — after the whole upgrade had
+      // already landed on disk, which is exactly the state the user needs
+      // described rather than dumped as a crash.
+      blockMetadataWrite();
+
+      final code = await upgrader().run(
+        projectDir: project,
+        fromOverride: '0.1.0',
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains('Could not write .fluframe.json'));
+      expect(log.toString(), contains('still says 0.1.0'));
+      expect(log.toString(), isNot(contains('This is a bug')));
+      // The point of the sentence: the merge itself is on disk, so the
+      // re-run it invites finds every file already matching the template.
+      expect(File(p.join(project.path, 'lib', 'b.dart')).existsSync(), isTrue);
+    });
+
+    test(
+      'a conflicted apply that cannot record itself is a sentence',
+      () async {
+        // Same regression, the sibling branch: this one was about to record
+        // pendingUpgrade. Nothing records it, so the re-run would re-merge the
+        // same BASE into files that already carry markers (#166) — the
+        // message has to send the user through git rather than straight back
+        // into --apply.
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha local edit\n');
+        blockMetadataWrite();
+
+        final code = await upgrader().run(
+          projectDir: project,
+          fromOverride: '0.1.0',
+          apply: true,
+          force: true,
+        );
+
+        expect(code, ExitCode.software.code, reason: log.toString());
+        expect(log.toString(), contains('Could not write .fluframe.json'));
+        expect(log.toString(), contains('conflict markers'));
+        expect(log.toString(), contains('restore the tree from git'));
+        expect(log.toString(), isNot(contains('This is a bug')));
+      },
+    );
+
+    test(
+      'resolved conflicts that cannot be recorded are a sentence',
+      () async {
+        // The third bare write: the branch that finishes an interrupted
+        // upgrade. It needs a *readable* .fluframe.json (it is the pending
+        // marker that routes the run here), so the directory trick cannot
+        // reach it — a read-only file can, and only on Windows, where
+        // `attrib +R` blocks writes. Probed below rather than assumed.
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha local edit\n');
+        await upgrader().run(projectDir: project, apply: true, force: true);
+        File(
+          p.join(project.path, 'lib', 'a.dart'),
+        ).writeAsStringSync('alpha v2 plus my local edit\n');
+
+        final metaFile = File(p.join(project.path, '.fluframe.json'));
+        final recorded = metaFile.readAsStringSync();
+        Process.runSync('attrib', ['+R', metaFile.path]);
+        addTearDown(() => Process.runSync('attrib', ['-R', metaFile.path]));
+        var blocked = false;
+        try {
+          // The same bytes, so a lock that does not hold changes nothing.
+          metaFile.writeAsStringSync(recorded);
+        } on FileSystemException {
+          blocked = true;
+        }
+        expect(
+          blocked,
+          isTrue,
+          reason:
+              'attrib +R let the write through, so the rest of this test '
+              'would pass without exercising the guard at all',
+        );
+
+        final code = await upgrader().run(
+          projectDir: project,
+          apply: true,
+          force: true,
+        );
+
+        expect(code, ExitCode.software.code, reason: log.toString());
+        expect(log.toString(), contains('Could not write .fluframe.json'));
+        expect(log.toString(), contains('in progress'));
+        expect(log.toString(), isNot(contains('This is a bug')));
+        expect(log.toString(), isNot(contains('Conflicts resolved')));
+      },
+      testOn: 'windows',
+    );
 
     test('preserves non-ASCII content through a clean merge', () async {
       // Regression: the merged bytes used to travel back through a pipe

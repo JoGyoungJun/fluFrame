@@ -247,6 +247,12 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      # Same reasoning as the addons gate above: the examples are what a
+      # reader copies from, and their hand-maintained files (the example's
+      # own feature module, router, l10n) are outside the drift check's
+      # lib/test byte-comparison scope only where they diverge — nothing
+      # else format-checks them.
+      - run: dart format --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
 

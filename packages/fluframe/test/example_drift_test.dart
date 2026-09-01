@@ -193,6 +193,189 @@ void main() {
       expect(out.toString(), isNot(contains('appTitle')));
     });
 
+    group('pubspec dependencies', () {
+      // The examples sat a minor version behind the template on go_router
+      // with nothing to notice it: pubspec.yaml is outside the byte
+      // comparison (the example owns its name and description), so the
+      // pins in it were unguarded in both directions.
+      const templatePubspec = '''
+name: fluframe_app
+description: "A production-ready Flutter application."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  go_router: ^17.5.0
+  intl: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.3.0
+
+flutter:
+  generate: true
+''';
+
+      /// [templatePubspec] with the example's identity, and whatever
+      /// [dependencies] replaces the shared block.
+      String examplePubspec({String? dependencies}) => templatePubspec
+          .replaceFirst('name: fluframe_app', 'name: todo_app')
+          .replaceFirst(
+            'description: "A production-ready Flutter application."',
+            'description: "A todo-list example."',
+          )
+          .replaceFirst(
+            '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  go_router: ^17.5.0
+  intl: any
+''',
+            dependencies ??
+                '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  go_router: ^17.5.0
+  intl: any
+''',
+          );
+
+      test('matching blocks report nothing, identity aside', () {
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(example, 'pubspec.yaml', examplePubspec());
+
+        final out = StringBuffer();
+
+        expect(run(fix: false, out: out).drifted, 0, reason: out.toString());
+      });
+
+      test('a divergent constraint is drift, and names both sides', () {
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(
+          example,
+          'pubspec.yaml',
+          examplePubspec(
+            dependencies: '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  go_router: ^17.4.0
+  intl: any
+''',
+          ),
+        );
+
+        final out = StringBuffer();
+        expect(run(fix: false, out: out).drifted, 1);
+        expect(out.toString(), contains('go_router'));
+        expect(out.toString(), contains('^17.5.0'));
+        expect(out.toString(), contains('^17.4.0'));
+      });
+
+      test('a shared package the example dropped is drift', () {
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(
+          example,
+          'pubspec.yaml',
+          examplePubspec(
+            dependencies: '''
+dependencies:
+  flutter:
+    sdk: flutter
+  go_router: ^17.5.0
+  intl: any
+''',
+          ),
+        );
+
+        final out = StringBuffer();
+        expect(run(fix: false, out: out).drifted, 1);
+        expect(out.toString(), contains('missing dependency'));
+        expect(out.toString(), contains('dio'));
+      });
+
+      test('an example-only package is drift until it is recorded', () {
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(
+          example,
+          'pubspec.yaml',
+          examplePubspec(
+            dependencies: '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  geolocator: ^13.0.0
+  go_router: ^17.5.0
+  intl: any
+''',
+          ),
+        );
+
+        final out = StringBuffer();
+        expect(run(fix: false, out: out).drifted, 1);
+        expect(out.toString(), contains('extra dependency'));
+        expect(out.toString(), contains('geolocator'));
+        // The allowlist is what turns it from drift into a decision — the
+        // real one is empty, so this asserts the shape it is read through
+        // rather than mutating a const.
+        expect(
+          allowedDependencyDivergence['todo_app'] ?? const <String>{},
+          isEmpty,
+        );
+      });
+
+      test('the SDK constraint is compared too', () {
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(
+          example,
+          'pubspec.yaml',
+          examplePubspec().replaceFirst('sdk: ^3.12.1', 'sdk: ^3.10.0'),
+        );
+
+        final out = StringBuffer();
+        expect(run(fix: false, out: out).drifted, 1);
+        expect(out.toString(), contains('environment'));
+        expect(out.toString(), contains('^3.10.0'));
+      });
+
+      test('--fix leaves the pubspec alone', () {
+        // Editing a pin without resolving it leaves pubspec.lock describing
+        // a resolution that no longer exists.
+        write(template, 'pubspec.yaml', templatePubspec);
+        final drifted = examplePubspec(
+          dependencies: '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  go_router: ^17.4.0
+  intl: any
+''',
+        );
+        write(example, 'pubspec.yaml', drifted);
+
+        run(fix: true);
+
+        expect(
+          File(p.join(example.path, 'pubspec.yaml')).readAsStringSync(),
+          drifted,
+        );
+      });
+    });
+
     test('a missing locale is created wholesale by --fix', () {
       File(p.join(example.path, 'lib', 'l10n', 'app_ko.arb')).deleteSync();
 

@@ -357,10 +357,26 @@ class FeatureScaffold {
         hint: 'Restore pubspec.yaml (git checkout pubspec.yaml).',
       );
     }
+    final String contents;
+    try {
+      contents = pubspec.readAsStringSync();
+    } on io.FileSystemException catch (error) {
+      // A pubspec that exists but cannot be read (permissions, an editor
+      // holding it, a bad sector) used to escape the same way the missing
+      // one did before #188: "This is a bug" plus a trace, about a file
+      // the user owns.
+      throw FeatureScaffoldException(
+        'Could not read pubspec.yaml: '
+        '${error.osError?.message ?? error.message}',
+        hint:
+            'The package name to import from is read from it — nothing '
+            'was changed.',
+      );
+    }
     final match = RegExp(
       r'^name:\s*(\S+)\s*$',
       multiLine: true,
-    ).firstMatch(pubspec.readAsStringSync());
+    ).firstMatch(contents);
     final name = match?.group(1);
     if (name == null) {
       throw const FeatureScaffoldException(
@@ -381,9 +397,19 @@ class FeatureScaffold {
         'route.',
       );
     }
+    final String raw;
+    try {
+      raw = file.readAsStringSync();
+    } on io.FileSystemException catch (error) {
+      throw FeatureScaffoldException(
+        'Could not read $routerPath: '
+        '${error.osError?.message ?? error.message}',
+        hint: 'The route has to be registered in it — nothing was changed.',
+      );
+    }
     // Normalized to LF for the insertion helpers; apply() restores the
     // file's own line endings when it writes the result back (#185).
-    final contents = file.readAsStringSync().replaceAll('\r\n', '\n');
+    final contents = raw.replaceAll('\r\n', '\n');
     final required = [
       if (tab) ...[branchesAnchor, destinationsAnchor] else routesAnchor,
     ];
@@ -501,6 +527,17 @@ class FeatureScaffold {
       throw FeatureScaffoldException(
         '$relative is not valid JSON: '
         '${error.message}',
+      );
+    } on io.FileSystemException catch (error) {
+      // The FormatException above covers unreadable CONTENT; a file that
+      // cannot be read at all is a different failure, and it reached the
+      // top-level handler as "This is a bug" with a trace.
+      throw FeatureScaffoldException(
+        'Could not read $relative: '
+        '${error.osError?.message ?? error.message}',
+        hint:
+            'The new strings have to be added to it — nothing was '
+            'changed.',
       );
     }
     for (final entry in keys.entries) {

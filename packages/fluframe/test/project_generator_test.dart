@@ -678,6 +678,77 @@ version: 0.1.0+1
       );
     });
 
+    test(
+      'a dependency sorting last joins the block, not the next one',
+      () async {
+        // Regression (PI-code-F22): the scan for the insertion point stops
+        // ON the next top-level key, which is one line past the blank
+        // separator — so supabase_flutter, which sorts after every entry the
+        // template ships, was written below that blank line and read as the
+        // first line of dev_dependencies. The upgrader's bare merge base
+        // uses this same code path, so both moved together (#180).
+        File(p.join(templateDir.path, 'pubspec.yaml')).writeAsStringSync('''
+name: fluframe_app
+description: "A production-ready Flutter application."
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.1
+
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+''');
+        Directory(
+          p.join(temp.path, 'template_addons', 'fake', 'lib'),
+        ).createSync(recursive: true);
+        File(
+          p.join(temp.path, 'template_addons', 'fake', 'lib', 'extra.dart'),
+        ).writeAsStringSync('// extra for fluframe_app\n');
+        const fake = BackendAddon(
+          name: 'fake',
+          dependencies: ['supabase_flutter:^2.17.1'],
+          patches: [],
+        );
+        final withAddon = ProjectGenerator(
+          templateDirectory: templateDir,
+          runProcess: fakeRunProcess,
+          log: log,
+          addons: const {'fake': fake},
+        );
+
+        final code = await withAddon.generate(
+          name: 'demo_app',
+          org: 'dev.example',
+          outputDirectory: temp.path,
+          backend: 'fake',
+        );
+
+        expect(code, 0, reason: log.toString());
+        expect(
+          File(
+            p.join(temp.path, 'demo_app', 'pubspec.yaml'),
+          ).readAsStringSync(),
+          contains('''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^2.17.1
+
+dev_dependencies:'''),
+          reason:
+              'the entry belongs above the blank line, and the blank '
+              'line has to survive as the separator',
+        );
+      },
+    );
+
     test('--no-pub skips addon pub add and says what is missing', () async {
       // Regression: --no-pub skipped `pub get` but still ran one
       // `pub add` per addon, so the flag resolved over the network

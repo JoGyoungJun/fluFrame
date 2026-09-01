@@ -14,6 +14,12 @@ final dioProvider = Provider<Dio>((ref) {
     BaseOptions(
       baseUrl: apiBaseUrl,
       connectTimeout: const Duration(seconds: 10),
+      // All three, in the order [mapDioException] handles them. Leaving
+      // sendTimeout unset means dio never raises
+      // DioExceptionType.sendTimeout, so that arm of the mapper was dead
+      // code and a request whose body stalled mid-upload waited on the
+      // OS default instead of failing in ten seconds like the other two.
+      sendTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 10),
     ),
   );

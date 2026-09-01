@@ -23,6 +23,15 @@ minor or patch release, that is a bug — please file it.
    bundle remains inside its pub.dev archive forever, so
    `fluframe upgrade` can reconstruct any published base. Skipped
    version numbers are never published and therefore never valid bases.
+7. **Input-domain narrowing** — refusing an argument value that was
+   previously accepted is a **minor** when the refused value could not
+   have produced a correct result (it corrupted state, escaped the
+   project tree, or silently did something other than what it named),
+   and a **major** otherwise. Precedents: the three 1.7.0 `upgrade`
+   refusals (hand-carried `.fluframe.json` values that redirected the
+   merge base), and the `create` output-path metacharacter refusal
+   (a path cmd.exe splits into two commands before Flutter sees it).
+   Such a narrowing must be named in the CHANGELOG entry it ships in.
 
 ## What is NOT covered
 
@@ -42,3 +51,11 @@ pub.dev limits publishes to 12 per rolling 24h — release batching is
 deliberate, and consolidated versions (e.g. work labeled 0.13/0.14
 internally shipping inside 1.0.0) are normal: a version number only
 exists once it is published.
+
+**When a release is cut**: a release is cut when an improvement cycle's
+PR lands on `main`, or sooner when `main` carries a user-facing fix a
+current user is waiting on. The maintainer decides; the decision and its
+version classification are recorded in the cycle report's verdict, and
+the mechanics live in CONTRIBUTING's "Releasing (maintainers)" section.
+`main` should not sit more than one cycle ahead of the last published
+version without either a release or a recorded reason.

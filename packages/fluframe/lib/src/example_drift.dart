@@ -18,6 +18,14 @@ import 'package:path/path.dart' as p;
 /// byte-for-byte after the rename tokens are applied. Add to this list
 /// only with a reason: each entry is a file the drift check can no longer
 /// protect.
+///
+/// Only paths under `lib/` and `test/` belong here — those two are the
+/// whole of what [_sharedFiles] walks. A root file such as `README.md` or
+/// `pubspec.yaml` is outside the byte comparison to begin with, so listing
+/// it exempts nothing and reads as protection that is not there. What
+/// gates `pubspec.yaml` instead is the dependency-block comparison in
+/// [_checkPubspec]: the example owns its name and description, but not
+/// the versions it pins.
 const List<String> intentionallyDivergent = [
   // Each example adds its own feature module and wires it into the shell,
   // so its route table and the doc comment above it are genuinely its own.
@@ -29,9 +37,6 @@ const List<String> intentionallyDivergent = [
   // still checked key-by-key below — the exemption is for the file, not for
   // its contents.
   'lib/l10n/',
-  // The example's own README describes the example, not the template.
-  'README.md',
-  'pubspec.yaml',
 ];
 
 /// Shared ARB keys an example is allowed to give a different value.
@@ -43,6 +48,19 @@ const List<String> intentionallyDivergent = [
 /// exists for — and the fixer never overwrites a value, so an entry here
 /// only silences the report.
 const Map<String, Set<String>> allowedValueDivergence = {};
+
+/// Packages an example is allowed to declare differently from the
+/// template — or to declare at all, when the template does not.
+///
+/// Keyed by example directory name, holding package names (and `sdk`, the
+/// one entry of the `environment:` block). **Empty on purpose.** An
+/// example is a generated app plus a feature, so every pin it shares with
+/// the template is the template's to move; a pin that differs is drift
+/// until someone writes down why it is not. The two cases this exists
+/// for are a package only the example needs — geolocation for the weather
+/// example, say — and a shared package the example must hold back for a
+/// reason worth a comment.
+const Map<String, Set<String>> allowedDependencyDivergence = {};
 
 /// Outcome of one drift check.
 typedef DriftResult = ({int drifted, int keysAdded});
@@ -94,6 +112,14 @@ DriftResult checkExampleDrift({
     final result = _checkStrings(template, example, fix: fix, out: out);
     drifted += result.drifted;
     keysAdded += result.keysAdded;
+  }
+
+  // pubspec.yaml is outside the byte comparison — the example owns its
+  // name and description — but the versions it pins are not its own. The
+  // examples are what the README points a reader at, and they sat a minor
+  // version behind the template on go_router with nothing to say so.
+  for (final example in examples.listSync().whereType<Directory>()) {
+    drifted += _checkPubspec(template, example, out: out);
   }
 
   return (drifted: drifted, keysAdded: keysAdded);
@@ -187,6 +213,118 @@ DriftResult _checkStrings(
   }
 
   return (drifted: drifted, keysAdded: keysAdded);
+}
+
+/// Compares one example's `environment:`, `dependencies:` and
+/// `dev_dependencies:` blocks against the template's.
+///
+/// Reported, never rewritten — a version bump has to be resolved and
+/// locked (`flutter pub get`) in the same change, and a fixer that edited
+/// the pubspec would leave `pubspec.lock` describing a resolution that no
+/// longer exists.
+int _checkPubspec(
+  Directory template,
+  Directory example, {
+  required StringSink out,
+}) {
+  final name = p.basename(example.path);
+  final source = File(p.join(template.path, 'pubspec.yaml'));
+  final target = File(p.join(example.path, 'pubspec.yaml'));
+  // No template pubspec means there is nothing to compare against, which
+  // is the case in unit fixtures that only exercise the file and ARB
+  // loops. A missing one on the example side is real: the drift check is
+  // running against something that is not a generated app.
+  if (!source.existsSync()) return 0;
+  if (!target.existsSync()) {
+    out.writeln('missing: $name/pubspec.yaml');
+    return 1;
+  }
+
+  final expected = _dependencyBlocks(source.readAsStringSync());
+  final actual = _dependencyBlocks(target.readAsStringSync());
+  final exempt = allowedDependencyDivergence[name] ?? const <String>{};
+  var drifted = 0;
+
+  for (final block in expected.keys) {
+    final ours = actual[block] ?? const <String, String>{};
+    for (final entry in expected[block]!.entries) {
+      if (exempt.contains(entry.key)) continue;
+      final constraint = ours[entry.key];
+      if (constraint == null) {
+        drifted++;
+        out.writeln(
+          'missing dependency: $name/pubspec.yaml -> $block: '
+          '${entry.key} (${entry.value})',
+        );
+        continue;
+      }
+      if (constraint == entry.value) continue;
+      drifted++;
+      out.writeln(
+        'differing dependency: $name/pubspec.yaml -> $block: ${entry.key}\n'
+        '    template: ${entry.value}\n'
+        '    example:  $constraint',
+      );
+    }
+    for (final entry in ours.entries) {
+      if (exempt.contains(entry.key)) continue;
+      if (expected[block]!.containsKey(entry.key)) continue;
+      drifted++;
+      out.writeln(
+        'extra dependency: $name/pubspec.yaml -> $block: '
+        '${entry.key} (${entry.value})',
+      );
+    }
+  }
+
+  return drifted;
+}
+
+/// The `environment:`, `dependencies:` and `dev_dependencies:` entries of
+/// [pubspec], as `block -> package -> constraint`.
+///
+/// Line-based rather than parsed with package:yaml. These three blocks
+/// come out of the template generator, so they are flat `  name: value`
+/// lines plus the `sdk: flutter` mappings; taking a YAML dependency onto
+/// a published CLI to read them would cost every user of the package a
+/// transitive dependency for four lines of comparison. The narrowness is
+/// the point — a pubspec shaped unlike the template's is a bigger problem
+/// than a pin, and shows up as drift here either way.
+Map<String, Map<String, String>> _dependencyBlocks(String pubspec) {
+  const blocks = ['environment', 'dependencies', 'dev_dependencies'];
+  final parsed = {for (final block in blocks) block: <String, String>{}};
+  String? current;
+  String? entry;
+
+  for (final line in pubspec.replaceAll('\r\n', '\n').split('\n')) {
+    final text = line.trim();
+    if (text.isEmpty || text.startsWith('#')) continue;
+    if (!line.startsWith(' ')) {
+      current = blocks.contains(text.split(':').first.trim())
+          ? text.split(':').first.trim()
+          : null;
+      entry = null;
+      continue;
+    }
+    if (current == null) continue;
+    final separator = text.indexOf(':');
+    if (separator == -1) continue;
+    final key = text.substring(0, separator).trim();
+    final value = text.substring(separator + 1).trim();
+    final indent = line.length - line.trimLeft().length;
+    if (indent <= 2) {
+      entry = key;
+      parsed[current]![key] = value;
+    } else if (entry != null) {
+      // A nested mapping — `flutter:` followed by `  sdk: flutter`.
+      final head = parsed[current]![entry] ?? '';
+      parsed[current]![entry] = head.isEmpty
+          ? '$key: $value'
+          : '$head, $key: $value';
+    }
+  }
+
+  return parsed;
 }
 
 /// Message keys (everything except `@`-prefixed metadata), in file order.

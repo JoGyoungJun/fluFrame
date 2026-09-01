@@ -103,11 +103,21 @@ it is provably the archive pub.dev published:
 
 In the repository and the release pipeline:
 
-- Every GitHub Action in both workflows is pinned to a full commit SHA, not
-  a mutable tag, with the version in a trailing comment.
-- Both workflows default to `permissions: contents: read`; only the jobs
-  that need more declare it, and only what they need.
+- Every GitHub Action in all three workflows is pinned to a full commit
+  SHA, not a mutable tag, with the version in a trailing comment.
+- All three workflows default to `permissions: contents: read`; only the
+  jobs that need more declare it, and only what they need.
 - Publishing uses pub.dev automated publishing via OIDC — there are no
   long-lived pub.dev credentials in this repository or in CI.
-- Every release gate (tag↔pubspec match, unit tests, bundle sync, e2e,
-  dry-run) runs before the publish step, in the same job.
+- Every release gate (CI's conclusion for the tagged commit, tag↔pubspec
+  match, unit tests, bundle sync, e2e, dry-run) runs before the publish
+  step can upload.
+
+One residual is accepted rather than closed: on Windows,
+`CreateProcess` resolves an executable name against the parent's
+current directory before `PATH`, so a real `git.exe` planted in a
+project tree could answer the `git status` that `upgrade` runs from
+that tree. The `.bat` half of that vector is closed (only `flutter` and
+`dart` route through `cmd.exe`; `git` never does), and the `.exe` half
+falls under the out-of-scope line above — an attacker who can write a
+PE binary into your working tree already controls the machine.

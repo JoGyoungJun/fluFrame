@@ -188,10 +188,16 @@ void main() {
         ...analyticsAddons.values,
       ]) {
         for (final dependency in addon.dependencies) {
+          // A colon alone proved nothing: `supabase_flutter:any` and
+          // `sentry_flutter:` both carry one and both resolve to whatever
+          // is latest. ADR 0001 says these are caret-pinned to one major,
+          // so that is what is checked.
           expect(
             dependency,
-            contains(':'),
-            reason: '${addon.name} depends on "$dependency" unconstrained',
+            matches(RegExp(r':\^\d+\.\d+')),
+            reason:
+                '${addon.name} depends on "$dependency", which is not '
+                'caret-pinned to a major (name:^major.minor.patch)',
           );
         }
       }

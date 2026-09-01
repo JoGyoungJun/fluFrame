@@ -78,6 +78,91 @@ void main() {
       expect(await store.getString('settings.locale'), 'en');
     });
 
+    // Regression: all three pickers fired their setter through
+    // `unawaited`, so a store that refused the write threw into the zone —
+    // where onPlatformError logs it and a release build shows the user
+    // nothing. And because each controller sets `state` before it
+    // persists, the chip stayed selected: the app read as if it had saved
+    // a preference that the next launch would not have.
+    //
+    // One per surface, not one representative: the three call sites were
+    // three separate `unawaited`s, and covering only one leaves the other
+    // two free to regress.
+    testWidgets('a theme mode that cannot be saved is reported', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const SettingsScreen(),
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(
+            FailingKeyValueStore(failWrites: true),
+          ),
+        ],
+      );
+
+      await tester.tap(find.text('Dark'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 750));
+
+      expect(find.text('Something went wrong.'), findsOneWidget);
+
+      // Drain the snackbar's display timer: one still pending at teardown
+      // fails the test.
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+
+    testWidgets('a color preset that cannot be saved is reported', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const SettingsScreen(),
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(
+            FailingKeyValueStore(failWrites: true),
+          ),
+        ],
+      );
+
+      await tester.tap(find.text('Emerald'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 750));
+
+      expect(find.text('Something went wrong.'), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+
+    testWidgets('a language that cannot be saved is reported', (tester) async {
+      await tester.pumpApp(
+        const SettingsScreen(),
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(
+            FailingKeyValueStore(failWrites: true),
+          ),
+        ],
+      );
+
+      await tester.tap(find.text('English'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 750));
+
+      expect(find.text('Something went wrong.'), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+
+    testWidgets('a setting that saves reports nothing', (tester) async {
+      await tester.pumpApp(
+        const SettingsScreen(),
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
+        ],
+      );
+
+      await tester.tap(find.text('Dark'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
     testWidgets('language labels stay on one line at phone width', (
       tester,
     ) async {

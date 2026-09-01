@@ -28,6 +28,11 @@ updates:
     commit-message:
       prefix: 'chore(deps)'
 
+  # The two example apps are deliberately NOT watched here: their pins are
+  # kept in step with /template by check_example_drift's dependency-block
+  # comparison (a divergent pin fails CI), so a template bump PR forces the
+  # matching example bump in the same change instead of via two more bot
+  # PRs a single maintainer has to shepherd.
   - package-ecosystem: pub
     directory: /template
     schedule:

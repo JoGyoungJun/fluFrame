@@ -40,15 +40,31 @@ void main() {
     // Headings are `## <version>` and carry nothing else today. Only the
     // first token is compared, so appending a date later stays a passing
     // heading rather than becoming a false failure.
-    final heading = RegExp(r'^## (\S+)', multiLine: true).firstMatch(changelog);
+    final headings = RegExp(
+      r'^## (\S+)',
+      multiLine: true,
+    ).allMatches(changelog).map((match) => match.group(1)!).toList();
 
-    expect(heading, isNotNull, reason: 'CHANGELOG.md needs a ## heading');
+    expect(headings, isNotEmpty, reason: 'CHANGELOG.md needs a ## heading');
+    // Between releases the top heading may be the literal `Unreleased`,
+    // accumulating notes for the next version — but only while the
+    // heading below it still names the published pubspec version. At
+    // release time step 1 renames `Unreleased`; forget that and bump
+    // pubspec anyway, and neither branch here matches, so the release
+    // still stops. Forget the pubspec bump instead and the rename makes
+    // the first branch fail (and cliVersion above fails with it).
+    final version = pubspecVersion();
+    final newestPublished = headings.first == 'Unreleased'
+        ? (headings.length > 1 ? headings[1] : null)
+        : headings.first;
     expect(
-      heading!.group(1),
-      pubspecVersion(),
+      newestPublished,
+      version,
       reason:
           'The newest CHANGELOG.md heading must name the version in '
-          'pubspec.yaml (see the /release checklist).',
+          'pubspec.yaml — or sit directly under an `## Unreleased` '
+          'section that is renamed at release time (see the /release '
+          'checklist).',
     );
   });
 }

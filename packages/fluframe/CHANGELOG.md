@@ -1,5 +1,72 @@
 # Changelog
 
+## Unreleased
+
+**One improvement pass (cycle 4), led by a behaviour change every
+platform sees.** `create`'s output path now refuses seven characters it
+used to accept, which under the versioning contract makes the next
+release a minor.
+
+### `create` refuses shell metacharacters in `--output-directory` — on every platform
+
+- **The path may no longer contain `&` `|` `<` `>` `^` `"` or `%`.**
+  Exit **64**, and the message names the character it found. On Windows
+  the `flutter` tool is a `.bat` shim, so `create` must go through
+  `cmd.exe` — which splits the command line at a metacharacter *before*
+  Flutter ever sees it. `fluframe create my_app -o "C:\dev&tools\projects"`
+  — the user quoting their own path correctly — reached cmd as two
+  commands: the first was `flutter create C:\dev`, scaffolding **over**
+  that directory if it existed, and the leftover fragment exited with
+  the same code a missing Flutter returns, so the CLI reported "Flutter
+  SDK not found" while a directory you never named was being rewritten.
+- **The refusal is deliberately not gated on Windows.** A POSIX path
+  containing `&` worked before and is refused now — a command documented
+  for a mixed-OS team must not scaffold cleanly for one developer and
+  silently overwrite for another. Escaping was tried first and
+  abandoned: `^` is honoured only outside quotes, dart:io adds quotes
+  exactly when the argument also contains a space, and `%` cannot be
+  escaped for `cmd /c` at all.
+- **`--platforms` values are now validated by the parser** against the
+  six platforms `create` can generate, instead of being passed through.
+- **`git` no longer runs through the shell on Windows.** Only the
+  `flutter` and `dart` `.bat` shims need `cmd.exe`; routing `git`
+  through it made `PATHEXT` apply, so a `git.bat` sitting in the project
+  directory could answer the `git status --porcelain` that `upgrade`
+  runs before a destructive `--apply`. Now only a real `git.exe` can.
+
+### `add feature` rollback is fault-tolerant
+
+- A rollback that cannot remove one of its own half-written files (an
+  editor or antivirus holding it open) no longer dies mid-rollback with
+  a stack trace: it finishes the paths it can, then names exactly which
+  paths could not be put back and how to restore them. Exit **74**.
+
+### Template and examples
+
+- The example todo app no longer wraps its scrollable list in a width
+  clamp (dead scroll gutters on wide windows), and a stored todo list
+  that fails to decode no longer locks the user out of their own todos
+  — the malformed blob is set aside and the list starts fresh.
+- Two issue-tracker citations no longer ship into every generated app's
+  source comments.
+- `template/README.md` no longer claims `add feature` scaffolds a
+  `domain/` layer (it writes `data/` and `presentation/`), and the
+  layer-layout paragraph matches the tree that actually ships.
+
+### Dart library surface (not part of the versioned contract)
+
+fluframe's public contract is the executable (`docs/versioning.md`); the
+package's Dart library surface was never documented or consumed, and two
+internal refactors touched it:
+
+- `package:fluframe/fluframe.dart` no longer re-exports eight `src/`
+  libraries — the file remains as the package-resolution anchor only.
+  If you were importing the CLI as a library, open an issue describing
+  the use case.
+- The bundle download/extract internals now return an ownership-aware
+  `BundleCheckout` (which is how `upgrade` stopped leaking one extracted
+  bundle directory into the system temp per run — dry runs included).
+
 ## 1.7.0
 
 **Two improvement passes over the CLI and the template, and 46 findings
