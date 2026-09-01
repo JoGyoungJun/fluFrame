@@ -1,6 +1,5 @@
-import 'dart:async';
-
 import 'package:fluframe_app/app/theme/app_theme.dart';
+import 'package:fluframe_app/core/logging/app_logger.dart';
 import 'package:fluframe_app/core/widgets/content_width.dart';
 import 'package:fluframe_app/features/settings/presentation/locale_controller.dart';
 import 'package:fluframe_app/features/settings/presentation/theme_mode_controller.dart';
@@ -71,11 +70,19 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
             selected: {themeMode},
-            onSelectionChanged: (selection) => unawaited(
-              ref
-                  .read(themeModeProvider.notifier)
-                  .setThemeMode(selection.first),
-            ),
+            // Awaited inside the callback rather than handed over as a
+            // tear-off, so the failure below is part of the same sequence
+            // instead of a dropped Future.
+            onSelectionChanged: (selection) async {
+              await _persist(
+                context,
+                ref,
+                l10n,
+                () => ref
+                    .read(themeModeProvider.notifier)
+                    .setThemeMode(selection.first),
+              );
+            },
           ),
           const SizedBox(height: 32),
           Text(
@@ -94,11 +101,16 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   label: Text(_presetLabel(l10n, preset)),
                   selected: themePreset == preset,
-                  onSelected: (_) => unawaited(
-                    ref
-                        .read(themePresetProvider.notifier)
-                        .setThemePreset(preset),
-                  ),
+                  onSelected: (_) async {
+                    await _persist(
+                      context,
+                      ref,
+                      l10n,
+                      () => ref
+                          .read(themePresetProvider.notifier)
+                          .setThemePreset(preset),
+                    );
+                  },
                 ),
             ],
           ),
@@ -115,19 +127,55 @@ class SettingsScreen extends ConsumerWidget {
                 ChoiceChip(
                   label: Text(_languageLabel(l10n, code)),
                   selected: (locale?.languageCode ?? _systemLanguage) == code,
-                  onSelected: (_) => unawaited(
-                    ref
-                        .read(localeProvider.notifier)
-                        .setLocale(
-                          code == _systemLanguage ? null : Locale(code),
-                        ),
-                  ),
+                  onSelected: (_) async {
+                    await _persist(
+                      context,
+                      ref,
+                      l10n,
+                      () => ref
+                          .read(localeProvider.notifier)
+                          .setLocale(
+                            code == _systemLanguage ? null : Locale(code),
+                          ),
+                    );
+                  },
                 ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  /// Runs [save], reporting a failure the user can actually see.
+  ///
+  /// All three pickers left through `unawaited` before, so a store that
+  /// refused the write resolved to nothing: the error reached the zone,
+  /// where `onPlatformError` logs it and a release build shows the user
+  /// nothing at all. Worse than silent — each controller sets `state`
+  /// before it persists, so the chip stayed selected and the app looked
+  /// like it had saved a preference the next launch would not have.
+  ///
+  /// The messenger is resolved before the `await` on purpose:
+  /// [BuildContext] must not be touched after the gap.
+  Future<void> _persist(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    Future<void> Function() save,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final logger = ref.read(appLoggerProvider);
+    try {
+      await save();
+    } on Object catch (error, stackTrace) {
+      // Nothing here models a storage failure — `shared_preferences`
+      // raises a PlatformException, web `localStorage` a quota Error — so
+      // the generic message, with the cause kept in the log where the
+      // underlying bug stays findable.
+      logger.error('Saving a setting failed', error, stackTrace);
+      messenger.showSnackBar(SnackBar(content: Text(l10n.genericErrorMessage)));
+    }
   }
 
   String _languageLabel(AppLocalizations l10n, String code) {
