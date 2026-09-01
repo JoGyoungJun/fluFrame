@@ -180,6 +180,28 @@ void main() {
       expect(await runner.run(['create', 'my_app', '--org', '1com.x']), 64);
     });
 
+    test('create rejects an output path cmd.exe would split', () async {
+      // The generator layer refuses this too, and is tested there — but
+      // that check fires after `flutter create` has been chosen and
+      // reports through a different channel. This is the runner-level
+      // guard: `-o` is refused as a usage error before anything runs, so
+      // the path never reaches cmd.exe, which would have read `&` as a
+      // command separator and scaffolded over `C:\dev`.
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err);
+
+      final code = await runner.run([
+        'create',
+        'my_app',
+        '-o',
+        r'C:\dev&tools',
+      ]);
+
+      expect(code, 64, reason: err.toString());
+      expect(err.toString(), contains('Cannot create'));
+      expect(err.toString(), contains(r'C:\dev&tools'));
+    });
+
     test('unknown commands are usage errors', () async {
       final runner = FluframeCommandRunner();
 
