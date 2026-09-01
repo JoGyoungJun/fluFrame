@@ -3,7 +3,7 @@
 > **fluFrame example** — generated with `fluframe create`, then extended
 > with a real REST feature against a keyless public API (Open-Meteo):
 > see `lib/features/weather/` (repository with absolute-URL dio calls,
-> selected-city Notifier, FutureProvider.family, l10n en+ja+ko, 5 tests).
+> selected-city Notifier, FutureProvider.family, l10n en+ja+ko, 6 tests).
 
 A Flutter app generated from the
 [fluFrame](https://github.com/JoGyoungJun/fluFrame) boilerplate.
@@ -35,12 +35,15 @@ lib/
 │   ├── auth/              #   Login/profile flow, gated route (fake repo)
 │   ├── home/              #   Counter demo (sync Notifier)
 │   ├── posts/             #   REST list/detail demo (AsyncNotifier + FutureProvider)
-│   └── settings/          #   Theme + language, persisted
+│   ├── settings/          #   Theme + language, persisted
+│   └── weather/           #   The example's own feature: Open-Meteo REST, per-city fetch
 └── l10n/                  # ARB sources and generated localizations
 ```
 
-Each feature keeps its layers side by side: `data/` (repositories),
-`domain/` (models), `presentation/` (controllers + screens).
+A feature keeps `data/` (repositories), `domain/` (models), and
+`presentation/` (controllers + screens) side by side, adding each layer only
+where it needs one — `auth/`, `posts/` and `weather/` use all three, `home/`
+is presentation only.
 
 ## Getting started
 
@@ -64,7 +67,7 @@ flutter run --dart-define-from-file=env/dev.json
 
 ## Adding a feature
 
-1. Create `lib/features/<name>/` with `data/`, `domain/`, `presentation/`.
+1. Create `lib/features/<name>/` with the layers it needs (`data/`, `domain/`, `presentation/`).
 2. Expose repositories and controllers as Riverpod providers.
 3. Register routes in `lib/app/router/app_router.dart`.
 4. Add strings to `lib/l10n/app_en.arb` (+ translations) and run `flutter gen-l10n`.

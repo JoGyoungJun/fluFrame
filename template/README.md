@@ -35,8 +35,10 @@ lib/
 └── l10n/                  # ARB sources and generated localizations
 ```
 
-Each feature keeps its layers side by side: `data/` (repositories),
-`domain/` (models), `presentation/` (controllers + screens).
+A feature keeps `data/` (repositories), `domain/` (models), and
+`presentation/` (controllers + screens) side by side, adding each layer only
+where it needs one — `auth/` and `posts/` use all three, `home/` is
+presentation only.
 
 ## Getting started
 
@@ -66,8 +68,9 @@ fluframe add feature billing          # a route
 fluframe add feature billing --tab    # ...and a bottom-nav tab for it
 ```
 
-That scaffolds `lib/features/billing/` with `data/`, `domain/` and
-`presentation/`, registers the route (and destination) in
+That scaffolds `lib/features/billing/` with `data/` and `presentation/`
+(add `domain/` yourself when the feature grows a model), registers the
+route (and destination) in
 `lib/app/router/app_router.dart` at the `// fluframe:routes`,
 `// fluframe:branches` and `// fluframe:destinations` anchors, adds the
 strings to all three ARBs, and writes the tests. Run `flutter gen-l10n`
@@ -79,7 +82,8 @@ insertion points.
 <details>
 <summary>By hand, if you would rather not install the CLI</summary>
 
-1. Create `lib/features/<name>/` with `data/`, `domain/`, `presentation/`.
+1. Create `lib/features/<name>/` with the layers it needs (`data/`,
+   `domain/`, `presentation/`).
 2. Expose repositories and controllers as Riverpod providers.
 3. Register routes in `lib/app/router/app_router.dart`.
 4. Add strings to **all three** of `lib/l10n/app_en.arb`, `app_ja.arb` and
