@@ -101,5 +101,107 @@ void main() => stdout.write(Directory.current.resolveSymbolicLinksSync());
         p.canonicalize(nested.resolveSymbolicLinksSync()),
       );
     });
+
+    // The shell boundary — which executables go through cmd.exe and which
+    // arguments may reach it — had no test at all: reverting
+    // `runInShell: _needsShell(executable)` to `runInShell: true` left the
+    // whole suite green, and so did emptying the metacharacter set.
+    group('shell boundary', () {
+      /// A sentinel a planted `.bat` prints, chosen so nothing else can
+      /// emit it by accident.
+      const sentinel = 'fluframe-shim-was-used-4d1f';
+
+      void plantBatch(String name) {
+        File(p.join(temp.path, '$name.bat')).writeAsStringSync(
+          '@echo off\r\necho $sentinel\r\n',
+        );
+      }
+
+      test('every metacharacter cmd.exe reads as syntax is refused', () {
+        // Runs on every platform on purpose: the rule is applied on every
+        // platform (a path that scaffolds cleanly on Linux must not be a
+        // silent overwrite on Windows), so it is pinned on every runner.
+        for (final character in const ['&', '|', '<', '>', '^', '"', '%']) {
+          final rejection = shellArgumentRejection(
+            r'C:\dev' + character + r'tools\projects',
+          );
+          expect(
+            rejection,
+            isNotNull,
+            reason: '"$character" must not reach cmd.exe unescaped',
+          );
+          expect(
+            rejection,
+            contains('"$character"'),
+            reason: 'the message has to name the character it refused',
+          );
+        }
+      });
+
+      test('an ordinary path is not refused', () {
+        expect(shellArgumentRejection(p.join(temp.path, 'my app')), isNull);
+      });
+
+      test(
+        'git is never launched through the shell',
+        () async {
+          // `git` is deliberately absent from the batch-shim set. It is a
+          // real .exe, and shelling it out makes PATHEXT apply — so a
+          // git.bat sitting in the project directory would answer the
+          // `git status --porcelain` that Upgrader._canUndo runs with that
+          // very directory as its working directory, and could report a
+          // dirty tree as clean (or the reverse) to the gate that decides
+          // whether --apply can be undone.
+          plantBatch('git');
+
+          String output;
+          try {
+            final result = await defaultRunProcess('git', [
+              '--version',
+            ], workingDirectory: temp.path);
+            output = '${result.stdout}${result.stderr}';
+          } on ProcessException {
+            // No git on PATH: CreateProcess found nothing, which is itself
+            // proof the .bat next door was out of reach.
+            output = '';
+          }
+
+          expect(
+            output,
+            isNot(contains(sentinel)),
+            reason:
+                'a git.bat in the working directory answered for git, '
+                'so git is going through cmd.exe again',
+          );
+        },
+        testOn: 'windows',
+      );
+
+      test(
+        'flutter is launched through the shell, by design',
+        () async {
+          // The other half of the same decision, pinned so the shim set
+          // cannot be emptied silently: CreateProcess cannot launch a batch
+          // file, and on Windows `flutter` and `dart` exist only as .bat
+          // shims, so those two have to go through cmd.exe. cmd resolves
+          // the current directory before PATH, so the planted shim answers
+          // even on a runner that has a real Flutter installed.
+          plantBatch('flutter');
+
+          final result = await defaultRunProcess('flutter', [
+            '--version',
+          ], workingDirectory: temp.path);
+
+          expect(
+            '${result.stdout}${result.stderr}',
+            contains(sentinel),
+            reason:
+                'flutter stopped going through cmd.exe, so a real '
+                'flutter.bat can no longer be launched at all',
+          );
+        },
+        testOn: 'windows',
+      );
+    });
   });
 }
