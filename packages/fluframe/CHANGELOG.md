@@ -1,11 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.8.0
 
-**One improvement pass (cycle 4), led by a behaviour change every
-platform sees.** `create`'s output path now refuses seven characters it
-used to accept, which under the versioning contract makes the next
-release a minor.
+**Two improvement passes (cycles 4 and 5), led by a behaviour change
+every platform sees.** `create`'s output path now refuses seven
+characters it used to accept, which under the versioning contract
+(point 7, added this release) makes this a minor.
 
 ### `create` refuses shell metacharacters in `--output-directory` — on every platform
 
@@ -41,6 +41,26 @@ release a minor.
   a stack trace: it finishes the paths it can, then names exactly which
   paths could not be put back and how to restore them. Exit **74**.
 
+### Failures on your files are reported as sentences, not stack traces
+
+- **A successful `upgrade --apply` can no longer end in "This is a
+  bug".** The one unguarded write in the apply loop was the
+  `.fluframe.json` bookkeeping write at the very end: a locked or
+  read-only file there crashed the run *after* your tree had been fully
+  and correctly upgraded. It now says the merge succeeded, names what
+  could not be written and why, and explains that a re-run will record
+  the version.
+- **An unreadable project file is named, not reported as a CLI bug.**
+  `.fluframe.json`, `pubspec.yaml`, `app_router.dart` or an ARB that
+  cannot be read — a UTF-16 save from an editor's encoding dropdown, a
+  permission problem, an antivirus lock — used to surface as
+  "This is a bug. Please report it" with a stack trace. Each site now
+  answers with the file's path and the OS reason.
+- `create --backend supabase` writes the new dependency **inside** the
+  `dependencies:` block instead of after its trailing blank line, so
+  the generated `pubspec.yaml` no longer reshuffles on the first
+  `flutter pub add`.
+
 ### Template and examples
 
 - The example todo app no longer wraps its scrollable list in a width
@@ -52,7 +72,16 @@ release a minor.
 - `template/README.md` no longer claims `add feature` scaffolds a
   `domain/` layer (it writes `data/` and `presentation/`), and the
   layer-layout paragraph matches the tree that actually ships.
-
+- **A settings change the store refuses is now reported.** Theme mode,
+  color preset and language changes used to be written fire-and-forget:
+  a failed write showed nothing and the preference silently reverted at
+  the next launch. The screen now shows the generic error snackbar and
+  logs the failure, following the same pattern the todos and profile
+  screens already used.
+- The template's Dio client sets `sendTimeout` alongside its connect
+  and receive timeouts — the error mapper always handled it; now the
+  timeout actually exists, so a stalled upload fails in 10 seconds
+  instead of hanging.
 ### Dart library surface (not part of the versioned contract)
 
 fluframe's public contract is the executable (`docs/versioning.md`); the
