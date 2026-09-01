@@ -244,6 +244,25 @@ class ProjectGenerator {
       return ExitCode.success.code;
     }
 
+    // Windows can reach `flutter` only through cmd.exe, and dart:io
+    // appends the argument list to `cmd /c` unescaped — see
+    // shellArgumentRejection for the mechanism. The short version:
+    // `-o "C:\dev&tools\projects"` arrived as two commands, the first of
+    // them `flutter create C:\dev`, which scaffolds over whatever that
+    // directory already holds; the leftover fragment then exited 9009,
+    // which the check below reads as a missing Flutter. Placed after the
+    // bareOverlay return because that path launches nothing — the
+    // upgrader builds its merge base under a temp directory the user
+    // never chose, and must not be refused for a character in it.
+    for (final argument in [targetPath, name, org, ...platforms]) {
+      final rejection = shellArgumentRejection(argument);
+      if (rejection == null) continue;
+      _log.writeln(
+        'Refusing to run flutter create: "$argument" $rejection.',
+      );
+      return ExitCode.usage.code;
+    }
+
     _log.writeln('Scaffolding $name with flutter create...');
     final ProcessResult create;
     try {

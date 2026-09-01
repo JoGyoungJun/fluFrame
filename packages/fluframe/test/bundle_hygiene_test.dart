@@ -428,4 +428,46 @@ void main() {
       expect(missing(), [addonRoot.path]);
     });
   });
+
+  group('template/ carries no private tracker citations', () {
+    // packages/fluframe/ may cite issue numbers freely — only someone
+    // reading the CLI's own source ever sees them. template/ is different:
+    // it ships verbatim into every generated project, so a citation there
+    // lands in a file the user owns, pointing at a tracker they cannot
+    // open. Enforced here so the boundary stops being re-audited by hand.
+    test('no #NNN issue reference appears in a shipped Dart source', () {
+      final root = Directory(
+        p.normalize(p.join(Directory.current.path, '..', '..', 'template')),
+      );
+      expect(
+        root.existsSync(),
+        isTrue,
+        reason: 'run from packages/fluframe, as sync_template does',
+      );
+
+      final citation = RegExp(r'#\d{3}\b');
+      final offenders = <String>[];
+      for (final directory in const ['lib', 'test']) {
+        final source = Directory(p.join(root.path, directory));
+        for (final entity in source.listSync(recursive: true)) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          final relative = p.relative(entity.path, from: root.path);
+          final lines = entity.readAsLinesSync();
+          for (var i = 0; i < lines.length; i++) {
+            if (citation.hasMatch(lines[i])) {
+              offenders.add('$relative:${i + 1}');
+            }
+          }
+        }
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'these ship into every generated app; state the reason in '
+            'prose instead of citing an issue number',
+      );
+    });
+  });
 }

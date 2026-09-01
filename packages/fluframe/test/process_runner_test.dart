@@ -49,6 +49,34 @@ void main() {
       expect(result.stdout.toString(), isNot(contains('�')));
     });
 
+    test('replaces malformed bytes rather than throwing', () async {
+      // Regression (#184): a strict decoder raised a FormatException from
+      // inside Process.run when a non-UTF-8 Windows console emitted its
+      // own "is not recognized" text, and the top-level handler read that
+      // as a malformed .fluframe.json — so a missing Flutter was reported
+      // as a broken metadata file. The test above feeds valid UTF-8 and
+      // passes either way; only malformed input separates
+      // allowMalformed: true from false.
+      final script = File(p.join(temp.path, 'malformed.dart'))
+        ..writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  stdout.add([0x80, 0x81]);
+  stderr.add([0xfe, 0xff]);
+}
+''');
+
+      final result = await defaultRunProcess(Platform.resolvedExecutable, [
+        'run',
+        script.path,
+      ]);
+
+      expect(result.exitCode, 0, reason: result.stderr.toString());
+      expect(result.stdout.toString(), contains('\u{FFFD}'));
+      expect(result.stderr.toString(), contains('\u{FFFD}'));
+    });
+
     test('runs in the given working directory', () async {
       final script = File(p.join(temp.path, 'cwd.dart'))
         ..writeAsStringSync('''

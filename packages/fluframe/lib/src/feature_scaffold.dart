@@ -174,12 +174,6 @@ class FeatureScaffold {
   /// one reported as if it were. Anything that is not an [Exception] still
   /// escapes, because that one is ours.
   void apply(FeaturePlan plan, {required String name}) {
-    final featureDir = io.Directory(
-      p.join(projectDir.path, 'lib', 'features', name),
-    );
-    final testDir = io.Directory(
-      p.join(projectDir.path, 'test', 'features', name),
-    );
     // Captured before the first write: once the router is overwritten the
     // original is gone, and the ARBs are written after it.
     final originals = _readOriginals([routerPath, ...plan.arbContents.keys]);
@@ -211,17 +205,24 @@ class FeatureScaffold {
     } on Object catch (error) {
       // A partially scaffolded feature is worse than none: it does not
       // compile, and the next run refuses because the directory exists.
-      if (featureDir.existsSync()) featureDir.deleteSync(recursive: true);
-      if (testDir.existsSync()) testDir.deleteSync(recursive: true);
-      final unrestored = _restore(originals);
+      // A delete the filesystem refuses — a scanner still holding a
+      // just-written file is enough — is listed like a file that could not
+      // be restored rather than thrown: escaping here would replace the
+      // error being recovered from and skip the restore below, leaving
+      // whatever the run had already rewritten in place, unmentioned.
+      final unrestored = [
+        ..._remove('lib/features/$name'),
+        ..._remove('test/features/$name'),
+        ..._restore(originals),
+      ];
       if (unrestored.isNotEmpty) {
         // Losing the original error would be worse than this, but so would
         // staying silent: the app is now edited and does not compile, and
         // nothing else is going to say so.
         throw FeatureScaffoldException(
-          'Adding "$name" failed, and these files could not be put back: '
-          '${unrestored.join(', ')}. Restore them (git checkout) before '
-          'building.',
+          'Adding "$name" failed, and these paths could not be put back: '
+          '${unrestored.join(', ')}. Restore them (git checkout, git clean) '
+          'before building.',
         );
       }
       // Not an Exception means fluframe itself is broken, and the runner's
@@ -275,6 +276,24 @@ class FeatureScaffold {
       }
     });
     return unrestored;
+  }
+
+  /// Deletes the directory at [relative], returning it when that fails.
+  ///
+  /// Same contract as [_restore]: this runs inside the rollback, where an
+  /// escaping exception would replace the failure being recovered from and
+  /// skip every step after it. A refused delete is a leftover directory —
+  /// the next run refuses over it — so it belongs in the same sentence.
+  List<String> _remove(String relative) {
+    final dir = io.Directory(
+      p.join(projectDir.path, p.joinAll(p.posix.split(relative))),
+    );
+    try {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    } on io.FileSystemException {
+      return [relative];
+    }
+    return [];
   }
 
   io.File _file(String relative) =>

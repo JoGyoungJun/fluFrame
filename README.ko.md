@@ -79,6 +79,10 @@ Bloc을 쓴다면, 또는 앱이 아니라 패키지가 필요하다면
 
 ```text
 ├── template/            # 보일러플레이트 앱 (fluframe_app) — 항상 컴파일되고 항상 테스트됨
+├── template_addons/     # 선택형 오버레이 (supabase, firebase, amplitude) — 생성된 앱에 복사됨
+├── examples/            # todo_app, weather_app — 템플릿으로 생성한 뒤 확장한 앱
+├── docs/                # 가이드, ADR, 버저닝 정책, 비교 문서
+├── .github/             # CI, 릴리스 워크플로, 이슈 및 PR 템플릿
 └── packages/
     └── fluframe/        # pub.dev에 배포되는 CLI (fluframe create)
 ```
@@ -108,9 +112,14 @@ flutter analyze && flutter test
 # CLI
 cd packages/fluframe
 dart pub get
-dart analyze && dart test -x e2e   # 단위 테스트
-dart test -t e2e                   # 전체 e2e (실제 앱을 생성해 검증)
+dart analyze --fatal-infos && dart test -x e2e   # 단위 테스트
+dart test -t e2e                                 # 전체 e2e (실제 앱을 생성해 검증)
 ```
+
+여기 적힌 두 루프가 전부는 아닙니다 — CI는 `dart format`, 커밋된 코드 생성
+결과, 커버리지 하한, 그리고 `examples/`가 `template/`에서 벗어나지 않았는지도
+함께 검사합니다. 각 게이트와 그것을 재현하는 명령은
+[CONTRIBUTING.md](CONTRIBUTING.md)에 정리되어 있습니다.
 
 ## 기여
 

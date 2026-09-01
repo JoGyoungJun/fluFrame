@@ -48,8 +48,9 @@ class _UnrestorableScaffold extends FeatureScaffold {
   @override
   void apply(FeaturePlan plan, {required String name}) =>
       throw const FeatureScaffoldException(
-        'Adding "billing" failed, and these files could not be put back: '
-        'lib/l10n/app_ko.arb. Restore them (git checkout) before building.',
+        'Adding "billing" failed, and these paths could not be put back: '
+        'lib/l10n/app_ko.arb. Restore them (git checkout, git clean) before '
+        'building.',
       );
 }
 

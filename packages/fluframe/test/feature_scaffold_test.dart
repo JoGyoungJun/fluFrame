@@ -59,6 +59,26 @@ class AppNavigationShell extends StatelessWidget {
 }
 ''';
 
+/// A scaffold that runs [lock] the moment planning succeeds.
+///
+/// The lock has to land between [plan] and [apply] and there is no seam
+/// inside `apply` to hang it on: `plan` refuses a feature whose directory
+/// already exists, so a test cannot make that directory undeletable before
+/// the run starts.
+class _LockingScaffold extends FeatureScaffold {
+  _LockingScaffold({required super.projectDir, required this.lock});
+
+  /// Makes the feature directory undeletable. Called once, after planning.
+  final void Function() lock;
+
+  @override
+  FeaturePlan plan({required String name, required bool tab}) {
+    final planned = super.plan(name: name, tab: tab);
+    lock();
+    return planned;
+  }
+}
+
 void main() {
   group('FeatureScaffold', () {
     late Directory temp;
@@ -778,6 +798,96 @@ void main() {
           p.join(project.path, 'lib', 'features', 'billing'),
         ).existsSync(),
         isFalse,
+      );
+    });
+
+    /// Leaves an entry inside `lib/features/[name]` that the platform will
+    /// not let go of, so the rollback's recursive delete fails the way it
+    /// does when a scanner or an indexer still holds a just-written file.
+    ///
+    /// Two mechanisms, because the platforms refuse for different reasons.
+    /// Windows will not delete a file another handle still has open, which
+    /// is the scanner case itself — `attrib +R` is not enough there, since
+    /// Dart's recursive delete clears the read-only bit before unlinking.
+    /// POSIX unlinks an open file happily, so the write bit comes off the
+    /// containing directory instead. Nesting the lock is what keeps both
+    /// faithful — the feature directory itself stays writable, so every
+    /// planned write still lands and the run fails at the last ARB, with
+    /// the router already rewritten.
+    void lockFeature(String name) {
+      final dir = p.join(project.path, 'lib', 'features', name, 'locked');
+      Directory(dir).createSync(recursive: true);
+      final keep = File(p.join(dir, 'keep.txt'))
+        ..writeAsStringSync('held open by a scanner\n');
+      // A lock left behind breaks the temp directory cleanup exactly as it
+      // breaks the rollback, so each one is released at teardown.
+      if (Platform.isWindows) {
+        final handle = keep.openSync(mode: FileMode.write);
+        addTearDown(handle.closeSync);
+      } else {
+        final applied = Process.runSync('chmod', ['555', dir]);
+        expect(applied.exitCode, 0, reason: 'could not lock $dir');
+        addTearDown(() => Process.runSync('chmod', ['755', dir]));
+      }
+      // Without this the test would pass on a filesystem that ignores the
+      // lock, having exercised nothing at all.
+      expect(
+        () => Directory(dir).deleteSync(recursive: true),
+        throwsA(isA<FileSystemException>()),
+        reason: 'the delete was not refused, so this test proves nothing',
+      );
+    }
+
+    test('a rollback whose delete is refused still restores what it can, '
+        'and says so', () async {
+      // The two deleteSync calls were the only step in the recovery path
+      // that did not defend itself. A refused delete replaced the write
+      // error, skipped the restore three lines below it, and escaped as a
+      // raw FileSystemException — which nothing downstream matches, so it
+      // surfaced as "This is a bug" plus a stack trace, over an app whose
+      // router and ARBs had just been rewritten and then left that way.
+      makeReadOnly('lib/l10n/app_ko.arb');
+      void lock() => lockFeature('billing');
+      final err = StringBuffer();
+      final runner = FluframeCommandRunner(err: err)
+        ..addCommand(
+          AddFeatureCommand(
+            err: err,
+            makeScaffold: (projectDir) =>
+                _LockingScaffold(projectDir: projectDir, lock: lock),
+          ),
+        );
+
+      final code = await runner.run([
+        'feature',
+        'billing',
+        '--project-dir',
+        project.path,
+      ]);
+
+      // 74 with a sentence naming what was left behind, not 70 with a
+      // trace: a filesystem that would not let go of a file is not a bug.
+      expect(code, 74, reason: err.toString());
+      expect(err.toString(), contains('lib/features/billing'));
+      expect(err.toString(), contains('could not be put back'));
+      expect(err.toString(), isNot(contains('This is a bug')));
+      expect(err.toString(), isNot(contains('#0')));
+      // And the rest of the rollback still ran: a delete the filesystem
+      // refuses must not also cost the user the router and the ARBs.
+      expect(read(routerPath), _router);
+      for (final locale in FeatureScaffold.locales) {
+        expect(
+          read('lib/l10n/app_$locale.arb'),
+          isNot(contains('billingTitle')),
+          reason: locale,
+        );
+      }
+      expect(
+        Directory(
+          p.join(project.path, 'test', 'features', 'billing'),
+        ).existsSync(),
+        isFalse,
+        reason: 'the second delete must not be skipped by the first failing',
       );
     });
 

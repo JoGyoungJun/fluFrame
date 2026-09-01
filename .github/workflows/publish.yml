@@ -94,7 +94,7 @@ jobs:
               echo "No push-event CI run for $GITHUB_SHA yet — waiting ${POLL_SECONDS}s."
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::No completed CI run for $GITHUB_SHA after ${TIMEOUT_MINUTES}m. Nothing was published: fix CI, delete the tag, re-tag."
+              echo "::error::No completed CI run for $GITHUB_SHA after ${TIMEOUT_MINUTES}m. Nothing was published. Re-tagging alone does not help: ci.yml runs on push and pull_request only, so a tag creates no new run. Get CI to run and conclude success for this exact commit, then delete and re-push the tag."
               exit 1
             fi
             sleep "$POLL_SECONDS"
@@ -102,7 +102,15 @@ jobs:
           echo "CI for $GITHUB_SHA concluded '$conclusion': $url" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$conclusion" != 'success' ]; then
-            echo "::error::CI concluded '$conclusion' for the tagged commit. Nothing was published: fix CI, delete the tag, re-tag."
+            # 'cancelled' needs a different remedy from 'failure', and the
+            # generic one is actively wrong for it: ci.yml has no tag
+            # trigger, so deleting and re-pushing the tag re-reads this very
+            # run and fails identically. The run must be re-run in place.
+            if [ "$conclusion" = 'cancelled' ]; then
+              echo "::error::CI was cancelled for the tagged commit. Nothing was published. Re-tagging cannot clear this — ci.yml has no tag trigger, so it would re-read this same cancelled run. Re-run it in place (gh run rerun, at $url), wait for success, then delete and re-push the tag."
+            else
+              echo "::error::CI concluded '$conclusion' for the tagged commit ($url). Nothing was published: fix CI on main, then delete and re-push the tag."
+            fi
             exit 1
           fi
 

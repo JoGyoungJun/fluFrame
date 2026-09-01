@@ -8,8 +8,12 @@ class TodosController extends AsyncNotifier<List<Todo>> {
   Future<List<Todo>> build() => ref.watch(todosRepositoryProvider).load();
 
   Future<void> _apply(List<Todo> todos) async {
-    state = AsyncData(todos);
+    // Saved before it is shown. The other order rendered a change that a
+    // failed write never kept: the todo sat on screen, the list came back
+    // without it at the next launch, and the caller's error handling had
+    // a screen that already disagreed with it.
     await ref.read(todosRepositoryProvider).save(todos);
+    state = AsyncData(todos);
   }
 
   /// Adds a todo titled [title]; blank titles are ignored.

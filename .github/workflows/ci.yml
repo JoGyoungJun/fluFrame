@@ -7,7 +7,15 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancelling a PR run is free: the push that superseded it starts its own.
+  # Cancelling a main run is not. `publish.yml`'s verify-ci gate releases a
+  # tag only if CI *concluded success* for that exact commit, and this
+  # workflow has no tag trigger — so a main run cancelled by the next merge
+  # leaves that commit unreleasable, and re-tagging cannot help because it
+  # produces no new run. The margin is real: e520db3's run finished
+  # 2026-08-14T02:54:45Z and the next main push landed 02:55:33Z, 48s later.
+  # Letting main runs finish costs one duplicate run per back-to-back merge.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Least privilege by default. Only `deploy-demo` needs more, and it declares
 # exactly what it needs. Without this every job inherits the repository
