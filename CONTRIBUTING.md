@@ -152,6 +152,11 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    publishes to pub.dev via OIDC — no local credentials involved.
 3. If a gate fails, nothing is published: fix on main via PR, delete and
    re-push the tag.
+   After a successful publish, create the GitHub Release for the tag:
+   `gh release create fluframe-v<version> --title "fluframe <version>"
+   --notes-file <notes>` with notes lifted from the CHANGELOG section.
+   (Releases exist from 1.7.0 onward — 1.6.0 deliberately has none;
+   pub.dev and the CHANGELOG carry its notes.)
 4. Manual fallback: `packages\fluframe\tool\publish.bat` runs the same
    gates locally, then publishes interactively (`--yes` to skip the
    prompt). **Read the dry-run file list — do not just run it.** Unlike
