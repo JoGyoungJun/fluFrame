@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_app/app/theme/app_theme.dart';
+import 'package:todo_app/core/network/api_exception.dart';
 import 'package:todo_app/core/storage/key_value_store.dart';
 import 'package:todo_app/features/auth/domain/user.dart';
 import 'package:todo_app/main.dart';
@@ -51,6 +52,31 @@ void main() {
       expect(boot.themePreset, ThemePreset.emerald);
       expect(boot.locale, const Locale('ko'));
       expect(boot.initialUser, const User(email: 'dev@example.com'));
+    });
+  });
+
+  group('providerRetryPolicy', () {
+    // Regression: this policy lived as an inline closure on the
+    // ProviderScope in main(), and every test builds its own scope — so
+    // nothing in the suite ever evaluated it. Inverting the guard, or
+    // dropping the retry entirely, stayed green. These read the function
+    // directly, which is why it had to become one.
+    test('does not retry a typed API failure', () {
+      expect(
+        providerRetryPolicy(0, const NetworkException('offline')),
+        isNull,
+      );
+    });
+
+    test('retries an untyped failure once, quickly', () {
+      expect(
+        providerRetryPolicy(0, StateError('boom')),
+        const Duration(milliseconds: 200),
+      );
+    });
+
+    test('gives up on an untyped failure after that one retry', () {
+      expect(providerRetryPolicy(1, StateError('boom')), isNull);
     });
   });
 }

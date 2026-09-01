@@ -43,6 +43,23 @@ Future<BootState> loadBootState(KeyValueStore store) async {
   );
 }
 
+/// How long to wait before Riverpod retries a failed provider.
+///
+/// Riverpod 3 retries failing providers with exponential backoff by
+/// default, which keeps AsyncValueWidget in its loading state for
+/// ~40s before the error/retry UI ever appears. Typed API failures
+/// are surfaced immediately; anything else gets one quick retry.
+///
+/// A named top-level function rather than a closure on the
+/// [ProviderScope] below: every test builds its own scope (see
+/// `test/helpers/helpers.dart`), so an inline closure is the one part of
+/// the boot path no test can reach — the guard could invert and the suite
+/// would stay green.
+Duration? providerRetryPolicy(int retryCount, Object error) {
+  if (error is ApiException || retryCount >= 1) return null;
+  return const Duration(milliseconds: 200);
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -62,14 +79,7 @@ Future<void> main() async {
   void start() {
     runApp(
       ProviderScope(
-        // Riverpod 3 retries failing providers with exponential backoff by
-        // default, which keeps AsyncValueWidget in its loading state for
-        // ~40s before the error/retry UI ever appears. Typed API failures
-        // are surfaced immediately; anything else gets one quick retry.
-        retry: (retryCount, error) {
-          if (error is ApiException || retryCount >= 1) return null;
-          return const Duration(milliseconds: 200);
-        },
+        retry: providerRetryPolicy,
         overrides: [
           keyValueStoreProvider.overrideWithValue(store),
           initialThemeModeProvider.overrideWithValue(boot.themeMode),
