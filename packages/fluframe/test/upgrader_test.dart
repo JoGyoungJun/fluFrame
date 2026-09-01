@@ -30,7 +30,10 @@ void main() {
       log.clear();
       return Upgrader(
         currentTemplate: newTemplate,
-        oldBundleProvider: (version) async => oldTemplates,
+        oldBundleProvider: (version) async => (
+          templates: oldTemplates,
+          owned: null,
+        ),
         log: log,
       );
     }
@@ -239,7 +242,10 @@ void main() {
         final code =
             await Upgrader(
               currentTemplate: newTemplate,
-              oldBundleProvider: (version) async => oldTemplates,
+              oldBundleProvider: (version) async => (
+                templates: oldTemplates,
+                owned: null,
+              ),
               log: log,
             ).run(
               projectDir: renamed,
@@ -448,7 +454,7 @@ void main() {
           currentTemplate: newTemplate,
           oldBundleProvider: (version) async {
             fetched = true;
-            return oldTemplates;
+            return (templates: oldTemplates, owned: null);
           },
           log: log,
         );
@@ -746,6 +752,45 @@ void main() {
         0x0a,
       ]);
     }
+
+    test('the extracted bundle is deleted; a fixture is not', () async {
+      // Regression (PI-code-F21): a successful extraction left its whole
+      // temp tree behind — one extracted template per upgrade run, dry
+      // runs included — because nothing owned it once it was returned.
+      // Ownership now travels with the checkout, which is the only way to
+      // tell an extraction's temp root from a directory the provider
+      // merely pointed at: deleting the parent of whatever arrived would
+      // take this suite's own fixtures with it.
+      final extracted = Directory(p.join(temp.path, 'extracted'))..createSync();
+      final root = p.join(extracted.path, 'templates');
+      writeFile(p.join(root, 'app'), 'pubspec.yaml', 'name: fluframe_app\n');
+      writeFile(p.join(root, 'app'), 'lib/a.dart', 'alpha\n');
+      log.clear();
+      final owning = Upgrader(
+        currentTemplate: newTemplate,
+        oldBundleProvider: (version) async => (
+          templates: Directory(root),
+          owned: extracted,
+        ),
+        log: log,
+      );
+
+      // A dry run: the leak did not need --apply to happen.
+      final code = await owning.run(projectDir: project);
+
+      expect(code, ExitCode.success.code, reason: log.toString());
+      expect(extracted.existsSync(), isFalse);
+
+      // And the injected fixture every other test in this file uses
+      // (owned: null) survives its run untouched.
+      final second = await upgrader().run(projectDir: project);
+
+      expect(second, ExitCode.success.code, reason: log.toString());
+      expect(
+        File(p.join(oldTemplates.path, 'app', 'lib', 'a.dart')).existsSync(),
+        isTrue,
+      );
+    });
 
     test('an unreadable .fluframe.json is a sentence, not a crash', () async {
       // Regression (PI-code-F16): the read was unguarded, so a

@@ -6,9 +6,21 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+/// A bundle's `templates/` root, and who owns the temp tree under it.
+///
+/// `owned` is the directory the caller must delete when it is finished
+/// reading — non-null only when the provider CREATED it. A provider
+/// handing back a directory it does not own (a test fixture, a local
+/// checkout) passes null, and the caller then touches nothing. Ownership
+/// travels with the value because it cannot be inferred from it: an
+/// extraction's temp root and a fixture root are the same type, and the
+/// upgrader deleting the parent of whatever it was handed would delete
+/// fixtures out from under the rest of a test suite.
+typedef BundleCheckout = ({Directory templates, Directory? owned});
+
 /// Provides the `templates/` root of a published fluframe [version];
 /// injectable so tests can serve local fixtures instead of the network.
-typedef BundleProvider = Future<Directory> Function(String version);
+typedef BundleProvider = Future<BundleCheckout> Function(String version);
 
 /// How long each stage of a bundle download may take before it is a
 /// failure rather than a slow link.
@@ -126,7 +138,7 @@ class BundleException implements Exception {
 /// [registry] and [timeouts] exist for the tests, which serve the whole
 /// exchange from a local `HttpServer` — the real network is never a test
 /// dependency.
-Future<Directory> downloadPublishedBundle(
+Future<BundleCheckout> downloadPublishedBundle(
   String version, {
   Uri? registry,
   BundleTimeouts timeouts = defaultBundleTimeouts,
@@ -461,14 +473,18 @@ int _readLe32(List<int> bytes, int at) =>
     (bytes[at + 3] << 24);
 
 /// Extracts the `templates/` tree of the fluframe [version] [archive] into
-/// a fresh temp directory, and returns that `templates/` directory.
+/// a fresh temp directory.
 ///
 /// The result outlives this call: the upgrader reads the merge base out of
 /// it for the rest of the run, so it cannot be deleted here — that would
-/// be a use-after-delete. Only the failure paths clean up after
-/// themselves; on a successful extraction the OS temp sweeper owns the
-/// directory, one per upgrade run.
-Directory extractBundleTemplates(Archive archive, String version) {
+/// be a use-after-delete. It is not left to the OS temp sweeper either
+/// (which is what happened before, one whole extracted template per
+/// upgrade run, dry runs included): the returned [BundleCheckout] carries
+/// the temp root as `owned`, and the caller deletes it — with
+/// [deleteBundleCheckout] — once it is done reading. The failure paths
+/// still clean up after themselves here, since nothing is returned to
+/// hand ownership to.
+BundleCheckout extractBundleTemplates(Archive archive, String version) {
   final out = Directory.systemTemp.createTempSync('fluframe_bundle_');
   final root = p.normalize(out.absolute.path);
   try {
@@ -508,8 +524,14 @@ Directory extractBundleTemplates(Archive archive, String version) {
     _deleteQuietly(out);
     rethrow;
   }
-  return Directory(p.join(out.path, 'templates'));
+  return (templates: Directory(p.join(out.path, 'templates')), owned: out);
 }
+
+/// Deletes the temp tree a [BundleCheckout] owns, best effort.
+///
+/// Public because ownership of a successful extraction now leaves this
+/// library with the checkout; the failure paths above use the same helper.
+void deleteBundleCheckout(Directory owned) => _deleteQuietly(owned);
 
 /// Removes a half-written extraction directory.
 ///

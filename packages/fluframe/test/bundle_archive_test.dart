@@ -57,8 +57,15 @@ void main() {
         ..add(ArchiveFile.string('templates/addons.json', '{}\n'))
         ..add(ArchiveFile.string('lib/src/version.dart', "const v = '1';\n"));
 
-      final templates = extractBundleTemplates(archive, '1.1.0');
+      final checkout = extractBundleTemplates(archive, '1.1.0');
+      final templates = checkout.templates;
       addTearDown(() => templates.parent.deleteSync(recursive: true));
+
+      // The extraction hands its temp root back to be deleted rather than
+      // leaving it to the OS sweeper, which is what let one whole
+      // extracted template accumulate per upgrade run.
+      expect(checkout.owned, isNotNull);
+      expect(p.equals(checkout.owned!.path, templates.parent.path), isTrue);
 
       expect(p.basename(templates.path), 'templates');
       expect(
@@ -211,11 +218,11 @@ void main() {
         }
       });
 
-      final templates = await downloadPublishedBundle(
+      final templates = (await downloadPublishedBundle(
         '1.2.0',
         registry: registry,
         timeouts: _patient,
-      );
+      )).templates;
       addTearDown(() => templates.parent.deleteSync(recursive: true));
 
       expect(
@@ -565,11 +572,11 @@ void main() {
         }
       });
 
-      final templates = await downloadPublishedBundle(
+      final templates = (await downloadPublishedBundle(
         '1.2.0',
         registry: registry,
         timeouts: _patient,
-      );
+      )).templates;
       addTearDown(() => templates.parent.deleteSync(recursive: true));
 
       expect(
@@ -692,11 +699,11 @@ void main() {
         }
       });
 
-      final templates = await downloadPublishedBundle(
+      final templates = (await downloadPublishedBundle(
         '1.2.0',
         registry: registry,
         timeouts: _patient,
-      );
+      )).templates;
       addTearDown(() => templates.parent.deleteSync(recursive: true));
 
       expect(File(p.join(templates.path, 'addons.json')).existsSync(), isTrue);

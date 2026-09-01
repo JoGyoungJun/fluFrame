@@ -382,7 +382,8 @@ class Upgrader {
     // red with a log naming neither the string nor the workflow —
     // upgrader_test.dart pins it so the break lands here instead.
     _log.writeln('Fetching the fluframe $from template bundle...');
-    final oldTemplates = await _oldBundle(from);
+    final oldCheckout = await _oldBundle(from);
+    final oldTemplates = oldCheckout.templates;
 
     final results = <String, UpgradeStatus>{};
     final merged = <String, String>{};
@@ -538,6 +539,14 @@ class Upgrader {
       } on FileSystemException {
         // Temp cleanup best-effort.
       }
+      // And the extracted bundle, but only when the provider says this run
+      // created it. A provider that handed back a directory it does not
+      // own — a test fixture, a local checkout — reports owned: null, and
+      // deleting the parent of whatever arrived would take those with it.
+      // Nothing past this point reads the bundle: the merge results and
+      // their content are already in memory.
+      final owned = oldCheckout.owned;
+      if (owned != null) deleteBundleCheckout(owned);
     }
 
     _report(
