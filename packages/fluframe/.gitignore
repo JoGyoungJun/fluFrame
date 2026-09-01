@@ -3,4 +3,5 @@ templates/
 
 .dart_tool/
 build/
-pubspec.lock
+# pubspec.lock is ignored by the root .gitignore's packages/*/pubspec.lock
+# rule, which carries the policy comment — do not duplicate it here.
