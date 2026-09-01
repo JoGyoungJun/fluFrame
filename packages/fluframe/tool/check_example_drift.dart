@@ -59,6 +59,13 @@ void main(List<String> arguments) {
         'both may be a deliberate translation, so it is reported and left '
         'alone. Fix it by hand, or record it in allowedValueDivergence in '
         'lib/src/example_drift.dart with a reason.',
+      )
+      ..writeln(
+        'Nor is any `dependency:` line above: editing a pin without '
+        'resolving it leaves pubspec.lock describing a resolution that no '
+        'longer exists. Change the pubspec by hand, run `flutter pub get` '
+        'in that example, or record the package in '
+        'allowedDependencyDivergence with a reason.',
       );
     return;
   }
@@ -66,9 +73,13 @@ void main(List<String> arguments) {
   stdout.writeln(
     '\n${result.drifted} difference(s) from template/. Re-sync with:\n'
     '  dart run tool/check_example_drift.dart --fix\n'
-    'or, if the difference is deliberate, add the path to '
-    'intentionallyDivergent (or the key to allowedValueDivergence) in '
-    'lib/src/example_drift.dart with a reason.',
+    'A `dependency:` line above is not part of that: change the pin by '
+    'hand and run `flutter pub get` in the example, so pubspec.lock moves '
+    'with it.\n'
+    'If the difference is deliberate, record it in '
+    'lib/src/example_drift.dart with a reason — the path in '
+    'intentionallyDivergent, the ARB key in allowedValueDivergence, the '
+    'package in allowedDependencyDivergence.',
   );
   exitCode = 1;
 }
