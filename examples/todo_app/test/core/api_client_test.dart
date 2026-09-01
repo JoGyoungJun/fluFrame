@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_app/core/network/api_client.dart';
 import 'package:todo_app/core/network/api_exception.dart';
 
+import '../helpers/helpers.dart';
+
 DioException _dioException(
   DioExceptionType type, {
   Response<dynamic>? response,
@@ -13,6 +15,21 @@ DioException _dioException(
 );
 
 void main() {
+  group('dioProvider', () {
+    test('sets every timeout mapDioException claims to handle', () {
+      // Regression: sendTimeout was never configured, so dio could not
+      // raise DioExceptionType.sendTimeout and the arm of the mapper
+      // below that answers it was unreachable. A request whose body
+      // stalled mid-upload waited on the OS default instead of failing in
+      // ten seconds like a connect or receive stall does.
+      final options = createContainer().read(dioProvider).options;
+
+      expect(options.connectTimeout, const Duration(seconds: 10));
+      expect(options.sendTimeout, const Duration(seconds: 10));
+      expect(options.receiveTimeout, const Duration(seconds: 10));
+    });
+  });
+
   group('mapDioException', () {
     test('carries the server error body onto ServerException', () {
       // Regression: only the status code survived, so an app could never
