@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 1.8.0
 
 **Two improvement passes (cycles 4 and 5), led by a behaviour change
