@@ -56,6 +56,15 @@ every variant's suite runs green and offline.
 - Each addon adds an e2e variant (~2 min CI); acceptable at 2-3 backends.
 - Follow-up: `--backend firebase` (v0.5.0) reuses the mechanism as-is.
 
+## Amendment: dependencies are written, not `pub add`-ed (2026-09-07)
+
+Point 1 above says dependencies are "installed with `flutter pub add`".
+They are not, since 1.5.x: `pub add "pkg:^x"` lost its caret on every
+shell but cmd.exe (the batch re-parse wrote exact pins — #181), so the
+generator now writes the `name: ^major.minor` constraint straight into
+the generated app's `pubspec.yaml`. The pinning rationale in the
+2026-08-06 amendment below is unchanged; only the mechanism moved.
+
 ## Amendment: what the addon mechanism owes downstream (2026-08-06)
 
 Two things the original decision got wrong, both found by auditing 1.1.0.
