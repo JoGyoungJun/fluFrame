@@ -40,6 +40,12 @@ updates:
     groups:
       template:
         patterns: ['*']
+        # freezed is filed on its own, outside the group: PR #14 (2026-09-01)
+        # showed a grouped update carrying freezed 3.2.5 -> 4.0.1 despite
+        # the per-dependency ignore rules below (the PR body even listed the
+        # ignore condition it applied). Ungrouped, the ignore decides the
+        # whole PR, so a freezed major can never ride in on a go_router bump.
+        exclude-patterns: ['freezed', 'freezed_annotation']
     commit-message:
       prefix: 'chore(deps)'
     # A template bump changes what every generated app gets, so these are
@@ -54,6 +60,13 @@ updates:
       # 4.0.0-dev prereleases here, which broke the codegen CI gate).
       # Belt and braces: a stored ignore condition for freezed 4.x also
       # exists (created via @dependabot ignore on PR #4).
+      # freezed 4.0.1 is STABLE (2026-09) and resolves together with
+      # build_runner 2.16 / analyzer 13.3 (PR #14's lock proved it), so this
+      # is now a deliberate deferral, not a forced cap. Decided 2026-09-07.
+      # Revisit trigger: the first template dependency that needs
+      # analyzer >= 11, or the next fluframe major — whichever comes first.
+      # The migration is: bump freezed + freezed_annotation together,
+      # regenerate template + both examples, lift these four rules.
       - dependency-name: freezed
         update-types: ['version-update:semver-major']
       - dependency-name: freezed
