@@ -216,10 +216,13 @@ class Upgrader {
       if (unresolved.isNotEmpty) {
         _log.writeln(
           'Upgrade to fluframe $pending is in progress, and '
-          '${unresolved.length} file(s) still carry conflict markers:',
+          '${unresolved.length} file(s) still carry conflict markers or '
+          'could not be read:',
         );
         for (final file in unresolved) {
-          _log.writeln('  ! $file');
+          _log.writeln(
+            '  ! ${file.path}${file.unreadable ? ' (could not be read)' : ''}',
+          );
         }
         _log.writeln('Resolve them, then re-run: fluframe upgrade --apply');
         return ExitCode.software.code;
@@ -800,24 +803,31 @@ class Upgrader {
   /// Metadata key holding the files that `--apply` left marked.
   static const String _pendingFilesKey = 'pendingConflicts';
 
-  /// Of the files an interrupted upgrade marked, those still carrying
-  /// markers.
+  /// Of the files an interrupted upgrade marked, those not resolved yet —
+  /// still carrying markers, or unreadable so nobody can tell.
   ///
   /// Only the recorded files are checked, never the whole tree: a user can
   /// have a git merge of their own in flight, and that is none of this
   /// command's business. A recorded file that has since been deleted counts
   /// as resolved.
-  static List<String> _stillConflicted(
+  static List<({String path, bool unreadable})> _stillConflicted(
     Directory projectDir,
     Map<String, dynamic> meta,
   ) {
     final recorded = (meta[_pendingFilesKey] as List<dynamic>? ?? const [])
         .cast<String>();
-    return [
-      for (final relative in recorded)
-        if (_hasConflictMarkers(File(p.join(projectDir.path, relative))))
-          relative,
-    ];
+    final unresolved = <({String path, bool unreadable})>[];
+    for (final relative in recorded) {
+      final marked = _hasConflictMarkers(
+        File(p.join(projectDir.path, relative)),
+      );
+      if (marked == null) {
+        unresolved.add((path: relative, unreadable: true));
+      } else if (marked) {
+        unresolved.add((path: relative, unreadable: false));
+      }
+    }
+    return unresolved;
   }
 
   /// Whether [relative] stays inside the project it is joined onto.
@@ -833,12 +843,25 @@ class Upgrader {
         !normalized.startsWith('../');
   }
 
-  static bool _hasConflictMarkers(File file) {
+  /// Whether [file] still carries conflict markers, or `null` when it
+  /// could not be read at all.
+  ///
+  /// Unreadable is NOT resolved (PI-code-F23). A conflicted file that a
+  /// lock holds, or that the user re-saved in a legacy encoding, used to
+  /// answer `false` here — so `--apply` recorded the pending upgrade as
+  /// finished, printed "Conflicts resolved", and the `from == cliVersion`
+  /// short circuit then refused every re-merge, sealing the markers into
+  /// the tree. Unknown has to count as unresolved: the one answer that
+  /// keeps the upgrade re-runnable once the read is fixed. A file that no
+  /// longer exists still counts as resolved — that is documented on
+  /// [_stillConflicted] and is a state the user can actually reach on
+  /// purpose.
+  static bool? _hasConflictMarkers(File file) {
     if (!file.existsSync()) return false;
     try {
       return file.readAsStringSync().contains('<<<<<<<');
     } on FileSystemException {
-      return false;
+      return null;
     }
   }
 

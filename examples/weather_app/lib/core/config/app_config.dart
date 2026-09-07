@@ -14,6 +14,8 @@
 /// app calls.
 library;
 
+import 'package:flutter/foundation.dart';
+
 /// The active build flavor (`dev`, `prod`, ...).
 const String appFlavor = String.fromEnvironment(
   'APP_FLAVOR',
@@ -28,3 +30,18 @@ const String apiBaseUrl = String.fromEnvironment(
 
 /// Whether this build is the production flavor.
 const bool isProdFlavor = appFlavor == 'prod';
+
+/// Whether a backend that was selected but never configured must refuse to
+/// work rather than fall back to the in-memory fake.
+///
+/// The `--backend` addons keep a freshly generated app usable by falling
+/// back to `InMemoryAuthRepository`, which accepts ANY email with a
+/// six-character password. That is a convenience while the backend keys
+/// are still empty — and an open front door the moment the same build is
+/// shipped: a release built without `--dart-define-from-file` used to get
+/// the fake with nothing on screen to say so.
+///
+/// Release mode is the obvious half. [isProdFlavor] is the other: a `prod`
+/// flavor debug build is a staging build, and it must not authenticate
+/// anyone either.
+const bool failClosedWhenUnconfigured = kReleaseMode || isProdFlavor;

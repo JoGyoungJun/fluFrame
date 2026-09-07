@@ -12,10 +12,17 @@ import 'package:fluframe_app/features/auth/domain/user.dart';
 /// `main.dart` reports that failure and keeps going; this keeps the app
 /// usable on the in-memory fake instead of leaving a login screen that
 /// crashes the moment it is used.
+///
+/// That convenience is scoped to debug and profile builds of the `dev`
+/// flavor. A release — or any `prod` build — whose `Firebase.initializeApp`
+/// never succeeded gets [UnconfiguredAuthRepository] instead: the fake
+/// signs in any email with a six-character password, and shipping that as
+/// the login screen is worse than shipping one that refuses everybody.
+/// See `failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 AuthRepository firebaseAuthOrFallback(KeyValueStore store) =>
     FirebaseAuthRepository.isConfigured
     ? FirebaseAuthRepository()
-    : InMemoryAuthRepository(store);
+    : unconfiguredBackendRepository('Firebase', store);
 
 /// [AuthRepository] backed by Firebase Auth.
 ///
