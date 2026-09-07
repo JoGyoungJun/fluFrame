@@ -123,8 +123,10 @@ script can branch on what went wrong:
 
 `fluframe create` runs `flutter create --empty` first — so platform folders
 always match **your** installed Flutter version — then overlays the fluFrame
-application template (`lib/`, `test/`, `l10n.yaml`, `env/`,
-`analysis_options.yaml`, `pubspec.yaml`) and rewrites package-name tokens.
+application template — `lib/`, `test/`, `env/`, `l10n.yaml`,
+`analysis_options.yaml`, `pubspec.yaml`, plus a replacement `README.md` and
+`.gitignore` and a ready-made `.github/workflows/ci.yml` — and rewrites
+package-name tokens.
 
 ## License
 
