@@ -210,6 +210,45 @@ void main() {
       expect(err.toString(), contains(r'C:\dev&tools'));
     });
 
+    group("create refuses a value outside an option's allowed set", () {
+      // The four `allowed:` lists in create_command are the only thing
+      // standing between a typo and a run that gets as far as resolving a
+      // template — and nothing drove them through the parser. A dropped
+      // `allowed:` compiles, analyzes clean, and leaves `--backend
+      // firebse` to reach ProjectGenerator, which reports the unknown
+      // addon only after `flutter create` has already scaffolded (the
+      // generator's own guard, tested in project_generator_test). Refusing
+      // at parse time is what keeps the typo from writing anything at all.
+      //
+      // Each case asserts the bad value is echoed: args names the option
+      // and the value it rejected, so a user who mistyped one of six
+      // platforms can see which one.
+      const cases = {
+        'platforms': 'androidd',
+        'backend': 'firebse',
+        'error-reporting': 'sentri',
+        'analytics': 'posthg',
+      };
+
+      for (final entry in cases.entries) {
+        test('--${entry.key}', () async {
+          final err = StringBuffer();
+          final runner = FluframeCommandRunner(err: err);
+
+          final code = await runner.run([
+            'create',
+            'my_app',
+            '--${entry.key}',
+            entry.value,
+          ]);
+
+          expect(code, 64, reason: err.toString());
+          expect(err.toString(), contains(entry.value));
+          expect(err.toString(), contains(entry.key));
+        });
+      }
+    });
+
     test('unknown commands are usage errors', () async {
       final runner = FluframeCommandRunner();
 
