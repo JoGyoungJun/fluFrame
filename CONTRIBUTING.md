@@ -188,6 +188,33 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    (Releases exist from 1.7.0 onward — 1.6.0 deliberately has none;
    pub.dev and the CHANGELOG carry its notes.)
 
+### When the publishing credential authenticates the wrong thing
+
+`setup-dart` configures pub.dev credentials the moment it installs, so
+until 2026-09-11 every gate step in `publish.yml` — `dart pub get`
+included — talked to pub.dev authenticated with the temporary OIDC
+*publishing* token. That worked until pub.dev started refusing package
+reads made with it, and the 1.9.0 tag run died at `dart pub get`:
+
+```text
+Because fluframe depends on very_good_analysis any which doesn't exist
+(authorization failed), version solving failed.
+Insufficient permissions to the resource at the https://pub.dev package
+repository.
+```
+
+Nothing was published — it is a gate failure, so step 3 applies. What
+made it confusing is that the package and the constraint were both fine:
+the same `dart pub get` resolved anonymously on the same commit. Only
+the credential differed.
+
+`publish.yml` now removes the credential right after the version check
+and re-adds it immediately before `dart pub publish`, so the gates run
+anonymously. If a future run fails with an authorization error, check
+*which* step it was: a read (dependency resolution, the dry-run) means
+the credential is in scope where it should not be; the upload itself
+means the credential is missing or expired.
+
 ### When the tag run fails at the upload step
 
 Step 3 covers a gate failing. There is one failure that is not a gate:
