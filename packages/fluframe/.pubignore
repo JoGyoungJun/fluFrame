@@ -10,3 +10,15 @@
 /test/
 /tool/
 /dart_test.yaml
+
+# Maintainer-only libraries. They live under lib/ so test/ can reach them
+# through package: URIs, but nothing in bin/ or the shipped lib/ imports
+# them (template_sync imports bundle_hygiene; that pair leaves together),
+# and each one reads a full monorepo checkout -- repoRoot/template,
+# examples/ -- that a published package never has. Without these three
+# lines ~34 KB of code nobody can run is uploaded in every release and
+# re-downloaded by every `fluframe upgrade`, which fetches the published
+# archive as its merge base (ADR-0002).
+/lib/src/template_sync.dart
+/lib/src/bundle_hygiene.dart
+/lib/src/example_drift.dart

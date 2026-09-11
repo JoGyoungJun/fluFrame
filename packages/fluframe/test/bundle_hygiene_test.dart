@@ -6,6 +6,14 @@ import 'package:fluframe/src/project_generator.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+/// Libraries that live under `lib/` so `test/` can reach them through
+/// `package:` URIs, but that no published release may carry.
+const maintainerOnlyLibraries = [
+  'lib/src/template_sync.dart',
+  'lib/src/bundle_hygiene.dart',
+  'lib/src/example_drift.dart',
+];
+
 void main() {
   group('GitignoreMatcher', () {
     test('matches the rule guarding the documented secret location', () {
@@ -426,6 +434,90 @@ void main() {
       overlayEntries.forEach(writeEntry);
 
       expect(missing(), [addonRoot.path]);
+    });
+  });
+
+  group('the real .pubignore', () {
+    // Two opposite failures, both silent. Anchoring: an unanchored `test/`
+    // would also strip templates/app/test from the archive, publishing a
+    // template with no suite. Reach: three libraries under lib/ are
+    // maintainer-only — they read a monorepo checkout a published package
+    // never has — and shipping them uploads code nobody can run into every
+    // release, and into every `fluframe upgrade` merge base.
+    late GitignoreMatcher matcher;
+    late Directory packageRoot;
+
+    setUpAll(() {
+      packageRoot = Directory(p.normalize(Directory.current.path));
+      final file = File(p.join(packageRoot.path, '.pubignore'));
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: 'run from packages/fluframe, as `dart pub publish` does',
+      );
+      matcher = GitignoreMatcher.parse(file.readAsStringSync());
+    });
+
+    test('excludes the maintainer-only libraries', () {
+      for (final path in maintainerOnlyLibraries) {
+        expect(
+          matcher.ignores(path),
+          isTrue,
+          reason: '$path would be uploaded in every release',
+        );
+      }
+    });
+
+    test('nothing the CLI actually runs imports them', () {
+      // This is what makes excluding them safe, and it is the half that
+      // rots: a future `import 'package:fluframe/src/bundle_hygiene.dart'`
+      // from a command would publish a package that cannot resolve its own
+      // import, and only a real `pub publish` would notice.
+      final excluded = maintainerOnlyLibraries.map(p.basename).toSet();
+      final imports = RegExp("import 'package:fluframe/src/([A-Za-z0-9_.]+)'");
+      final offenders = <String>[];
+      for (final directory in const ['lib', 'bin']) {
+        final source = Directory(p.join(packageRoot.path, directory));
+        for (final entity in source.listSync(recursive: true)) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          final relative = p
+              .relative(entity.path, from: packageRoot.path)
+              .replaceAll(r'\', '/');
+          // The excluded set is closed under its own imports: template_sync
+          // imports bundle_hygiene, and the two leave together.
+          if (maintainerOnlyLibraries.contains(relative)) continue;
+          for (final match in imports.allMatches(entity.readAsStringSync())) {
+            if (excluded.contains(match.group(1))) {
+              offenders.add('$relative -> ${match.group(1)}');
+            }
+          }
+        }
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'a shipped library imports a .pubignored maintainer-only '
+            'library; either stop importing it, or take it back out of '
+            '.pubignore',
+      );
+    });
+
+    test('keeps the bundled template, including its test suite', () {
+      for (final path in const [
+        'templates/app/lib/main.dart',
+        'templates/app/test/main_test.dart',
+        'templates/app/gitignore',
+        'templates/app/github/workflows/ci.yml',
+        'templates/addons.json',
+      ]) {
+        expect(
+          matcher.ignores(path),
+          isFalse,
+          reason: '$path would be dropped — a pattern lost its anchor',
+        );
+      }
     });
   });
 
