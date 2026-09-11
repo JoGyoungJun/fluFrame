@@ -83,124 +83,9 @@ class Upgrader {
     bool restoreDeleted = false,
   }) async {
     final metaFile = File(p.join(projectDir.path, '.fluframe.json'));
-    // Neither marker means this is not an app fluframe can upgrade, and
-    // --apply would unpack a whole template into whatever directory the
-    // shell happened to be in. --from stays usable for pre-1.0.0 apps:
-    // they carry no metadata, but they do have a pubspec.yaml.
-    if (!metaFile.existsSync() &&
-        !File(p.join(projectDir.path, 'pubspec.yaml')).existsSync()) {
-      _log.writeln(
-        '${p.normalize(projectDir.absolute.path)} does not look like a '
-        'generated app: no .fluframe.json and no pubspec.yaml. Run '
-        'fluframe upgrade from the root of the app, or point at it with '
-        '--project-dir.',
-      );
-      return ExitCode.usage.code;
-    }
-    var meta = const <String, dynamic>{};
-    if (metaFile.existsSync()) {
-      // Hand-editable, so every shape it can be in has to die as a
-      // sentence. A bare `as` cast on a wrong type raised a TypeError,
-      // which is an Error the top-level handler prints as "This is a bug"
-      // with a stack trace (#187).
-      final String raw;
-      try {
-        raw = metaFile.readAsStringSync();
-      } on FileSystemException catch (error) {
-        // Malformed CONTENT is handled below and by the runner's
-        // FormatException branch; a file that cannot be read at all
-        // reached neither, so it escaped as "This is a bug" with a stack
-        // trace. ExitCode.data, matching every other refusal about this
-        // file: a script branching on 65 already reads it as
-        // ".fluframe.json is the problem".
-        _log
-          ..writeln(
-            'Could not read .fluframe.json: '
-            '${error.osError?.message ?? error.message}',
-          )
-          ..writeln(
-            'It records the version this app was generated with. Clear '
-            'whatever is blocking the read, or move the file aside and '
-            're-run with --from <the version the app was generated with>.',
-          );
-        return ExitCode.data.code;
-      }
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map<String, dynamic>) {
-        _log.writeln(
-          '.fluframe.json holds a ${decoded.runtimeType}, not an object. '
-          'Fix it, or delete it and re-run with --from <version>.',
-        );
-        return ExitCode.data.code;
-      }
-      meta = decoded;
-      // This list is exactly the set of keys read below with a bare
-      // `as String?`. One that is read but not listed here is #187 again,
-      // one key over: `backend`, `errorReporting` and `analytics` were,
-      // and a number in any of them reached the cast as a TypeError.
-      for (final key in [
-        'cliVersion',
-        'name',
-        'org',
-        'backend',
-        'errorReporting',
-        'analytics',
-        _pendingVersionKey,
-      ]) {
-        final value = meta[key];
-        if (value != null && value is! String) {
-          _log.writeln(
-            '.fluframe.json has "$key": $value — expected a string. '
-            'Fix it, or delete the file and re-run with --from <version>.',
-          );
-          return ExitCode.data.code;
-        }
-      }
-      // The recorded name reaches the filesystem: it is joined onto a
-      // scratch directory to rebuild the merge base below, and
-      // package:path's join discards everything before an absolute part,
-      // so an absolute or climbing name aims that write outside the
-      // scratch tree. `fluframe create` puts every name through this same
-      // validator, so one it refuses cannot have come from a generated
-      // app — and .fluframe.json ships inside every app, ungitignored.
-      final metaName = meta['name'] as String?;
-      if (metaName != null) {
-        final rejection = packageNameRejection(metaName);
-        if (rejection != null) {
-          _log.writeln(
-            '.fluframe.json has "name": "$metaName" — $rejection. Fix '
-            'it, or delete the file and re-run with --from <version>.',
-          );
-          return ExitCode.data.code;
-        }
-      }
-      final pendingFiles = meta[_pendingFilesKey];
-      if (pendingFiles != null &&
-          (pendingFiles is! List || pendingFiles.any((e) => e is! String))) {
-        _log.writeln(
-          '.fluframe.json has "$_pendingFilesKey" that is not a list of '
-          'file paths. Fix it, or delete the file and re-run with '
-          '--from <version>.',
-        );
-        return ExitCode.data.code;
-      }
-      // Those same strings are joined onto the project root to look for
-      // conflict markers, so `..` or an absolute path there points the
-      // check at a file outside the app. Same hygiene AddonPatch.fromJson
-      // applies to a bundle's patch targets, for a file the user edits.
-      if (pendingFiles is List) {
-        for (final entry in pendingFiles.cast<String>()) {
-          if (!_isProjectRelative(entry)) {
-            _log.writeln(
-              '.fluframe.json lists "$entry" under "$_pendingFilesKey", '
-              'which is not a path inside the app. Fix it, or delete the '
-              'file and re-run with --from <version>.',
-            );
-            return ExitCode.data.code;
-          }
-        }
-      }
-    }
+    final read = _readMeta(projectDir, metaFile);
+    if (read.refusal != null) return read.refusal!;
+    final meta = read.meta;
     final from = fromOverride ?? meta['cliVersion'] as String?;
     // An upgrade that ended in conflicts left the tree already carrying
     // the new template's changes. Re-merging the same BASE would conflict
@@ -212,43 +97,13 @@ class Upgrader {
     // written (#178).
     final pending = meta[_pendingVersionKey] as String?;
     if (pending != null) {
-      final unresolved = _stillConflicted(projectDir, meta);
-      if (unresolved.isNotEmpty) {
-        _log.writeln(
-          'Upgrade to fluframe $pending is in progress, and '
-          '${unresolved.length} file(s) still carry conflict markers or '
-          'could not be read:',
-        );
-        for (final file in unresolved) {
-          _log.writeln(
-            '  ! ${file.path}${file.unreadable ? ' (could not be read)' : ''}',
-          );
-        }
-        _log.writeln('Resolve them, then re-run: fluframe upgrade --apply');
-        return ExitCode.software.code;
-      }
-      if (!apply) {
-        _log.writeln(
-          'Upgrade to fluframe $pending is in progress and every conflict '
-          'is resolved. Re-run with --apply to record it.',
-        );
-        return ExitCode.success.code;
-      }
-      meta = {...meta, 'cliVersion': pending}
-        ..remove(_pendingVersionKey)
-        ..remove(_pendingFilesKey);
-      final unrecorded = _recordMeta(
-        metaFile,
-        meta,
-        'The conflicts are resolved and the merged files are already in '
-        'place, so the app is on fluframe $pending — but .fluframe.json '
-        'still records that upgrade as in progress. Once whatever blocked '
-        'the write is cleared, re-running fluframe upgrade --apply records '
-        'it.',
+      return _finishPendingUpgrade(
+        projectDir: projectDir,
+        metaFile: metaFile,
+        meta: meta,
+        pending: pending,
+        apply: apply,
       );
-      if (unrecorded != null) return unrecorded;
-      _log.writeln('Conflicts resolved — now on fluframe $pending.');
-      return ExitCode.success.code;
     }
 
     if (from == null) {
@@ -561,117 +416,327 @@ class Upgrader {
     );
 
     if (apply) {
-      // Conflicted files are written last. A tree left half-way through
-      // this loop can still be re-merged — a file already carrying the
-      // new content matches THEIRS and reports as up to date — but a file
-      // carrying conflict markers cannot: re-merging one writes markers
-      // into markers (#166). Writing them last means the write failures
-      // that actually happen (a read-only file, an editor or antivirus
-      // holding one open, a full disk) leave none behind.
-      final writeOrder = [
-        ...results.keys.where((e) => results[e] != UpgradeStatus.conflict),
-        ...results.keys.where((e) => results[e] == UpgradeStatus.conflict),
-      ];
-      for (final relative in writeOrder) {
-        final content = merged[relative];
-        if (content == null) continue; // removedUpstream: never delete.
-        try {
-          File(p.join(projectDir.path, relative))
-            ..parent.createSync(recursive: true)
-            ..writeAsStringSync(content);
-        } on FileSystemException catch (error) {
-          // Deliberately records nothing. .fluframe.json still names
-          // $from, so the re-run merges the same BASE and picks up
-          // exactly the files this loop never reached; recording the
-          // version — or a pendingUpgrade, which resolves into recording
-          // the version — would claim an upgrade the tree does not have,
-          // and the `from == cliVersion` short-circuit would then seal
-          // the missing files out for good. Without this the failure
-          // escaped as "This is a bug" plus a stack trace, having left
-          // the tree half-upgraded and unrecorded either way.
-          _log
-            ..writeln()
-            ..writeln(
-              'Could not write $relative: '
-              '${error.osError?.message ?? error.message}',
-            )
-            ..writeln(
-              'The upgrade stopped there, so the app is part-way through '
-              'it. Nothing was recorded — .fluframe.json still says '
-              '$from — so once whatever blocked the write is cleared, '
-              're-running fluframe upgrade --apply finishes the rest. To '
-              'start over instead, restore the tree from git first.',
-            );
-          return ExitCode.software.code;
-        }
-      }
-      final conflicts = results.values
-          .where((status) => status == UpgradeStatus.conflict)
-          .length;
-      // Record the new version only once the tree actually matches it.
-      // Otherwise the `from == cliVersion` short-circuit above locks the
-      // user out of re-running after they resolve the markers, and the
-      // only way back is hand-editing .fluframe.json.
-      if (conflicts == 0) {
-        meta = {...meta, 'cliVersion': cliVersion}
-          ..remove(_pendingVersionKey)
-          ..remove(_pendingFilesKey);
-        final unrecorded = _recordMeta(
-          metaFile,
-          meta,
-          'Every merged file was written, so the app is on fluframe '
-          '$cliVersion — but .fluframe.json still says $from, so nothing '
-          'records it. Once whatever blocked the write is cleared, '
-          're-running fluframe upgrade --apply records it: the files '
-          'already match this template, so they report as up to date.',
-        );
-        if (unrecorded != null) return unrecorded;
-      } else {
-        // The upgrade is half-done: the tree carries this version's
-        // changes plus markers the user has to settle. Record that, so the
-        // re-run can finish it instead of merging the same BASE again and
-        // writing markers back into the file they just resolved (#166).
-        meta = {
-          ...meta,
-          // A --from app has no cliVersion; recording the one it is AT
-          // keeps the file self-describing, and keeps the message below
-          // true for it (#178).
-          if (meta['cliVersion'] == null) 'cliVersion': from,
-          _pendingVersionKey: cliVersion,
-          _pendingFilesKey: results.entries
-              .where((e) => e.value == UpgradeStatus.conflict)
-              .map((e) => e.key)
-              .toList(),
-        };
-        final unrecorded = _recordMeta(
-          metaFile,
-          meta,
-          'The merge was applied and $conflicts file(s) carry conflict '
-          'markers, but .fluframe.json still says $from and does not record '
-          'the upgrade as in progress. Once whatever blocked the write is '
-          'cleared, restore the tree from git and re-run fluframe upgrade '
-          '--apply: re-running over the markers as they stand would merge '
-          'into them (#166).',
-        );
-        if (unrecorded != null) return unrecorded;
-      }
-      _log
-        ..writeln()
-        ..writeln('Applied. Next steps:');
-      if (conflicts > 0) {
-        _log
-          ..writeln(
-            '  resolve $conflicts file(s) marked CONFLICT '
-            '(standard git markers)',
-          )
-          ..writeln('  then re-run: fluframe upgrade --apply')
-          ..writeln('  (.fluframe.json stays at $from until they are gone)');
-        return ExitCode.software.code;
-      }
-      _log.writeln('  flutter pub get && dart fix --apply && flutter test');
+      return _applyMerged(
+        projectDir: projectDir,
+        metaFile: metaFile,
+        meta: meta,
+        from: from,
+        results: results,
+        merged: merged,
+      );
     } else if (results.isNotEmpty) {
       _log.writeln('\nDry run — re-run with --apply to write these changes.');
     }
+    return ExitCode.success.code;
+  }
+
+  /// Writes the merged tree, then records the outcome in `.fluframe.json`.
+  ///
+  /// Reached only under `--apply`, after [_report] has printed the plan.
+  /// Always returns the exit code [run] should return: the tree moves
+  /// inside here, so every failure past the first write leaves an
+  /// UNRECORDED upgrade rather than a failed one, and each branch's
+  /// message says which.
+  int _applyMerged({
+    required Directory projectDir,
+    required File metaFile,
+    required Map<String, dynamic> meta,
+    required String from,
+    required Map<String, UpgradeStatus> results,
+    required Map<String, String> merged,
+  }) {
+    // Conflicted files are written last. A tree left half-way through
+    // this loop can still be re-merged — a file already carrying the
+    // new content matches THEIRS and reports as up to date — but a file
+    // carrying conflict markers cannot: re-merging one writes markers
+    // into markers (#166). Writing them last means the write failures
+    // that actually happen (a read-only file, an editor or antivirus
+    // holding one open, a full disk) leave none behind.
+    final writeOrder = [
+      ...results.keys.where((e) => results[e] != UpgradeStatus.conflict),
+      ...results.keys.where((e) => results[e] == UpgradeStatus.conflict),
+    ];
+    for (final relative in writeOrder) {
+      final content = merged[relative];
+      if (content == null) continue; // removedUpstream: never delete.
+      try {
+        File(p.join(projectDir.path, relative))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(content);
+      } on FileSystemException catch (error) {
+        // Deliberately records nothing. .fluframe.json still names
+        // $from, so the re-run merges the same BASE and picks up
+        // exactly the files this loop never reached; recording the
+        // version — or a pendingUpgrade, which resolves into recording
+        // the version — would claim an upgrade the tree does not have,
+        // and the `from == cliVersion` short-circuit would then seal
+        // the missing files out for good. Without this the failure
+        // escaped as "This is a bug" plus a stack trace, having left
+        // the tree half-upgraded and unrecorded either way.
+        _log
+          ..writeln()
+          ..writeln(
+            'Could not write $relative: '
+            '${error.osError?.message ?? error.message}',
+          )
+          ..writeln(
+            'The upgrade stopped there, so the app is part-way through '
+            'it. Nothing was recorded — .fluframe.json still says '
+            '$from — so once whatever blocked the write is cleared, '
+            're-running fluframe upgrade --apply finishes the rest. To '
+            'start over instead, restore the tree from git first.',
+          );
+        return ExitCode.software.code;
+      }
+    }
+    final conflicts = results.values
+        .where((status) => status == UpgradeStatus.conflict)
+        .length;
+    // Record the new version only once the tree actually matches it.
+    // Otherwise the `from == cliVersion` short-circuit above locks the
+    // user out of re-running after they resolve the markers, and the
+    // only way back is hand-editing .fluframe.json.
+    if (conflicts == 0) {
+      final recorded = {...meta, 'cliVersion': cliVersion}
+        ..remove(_pendingVersionKey)
+        ..remove(_pendingFilesKey);
+      final unrecorded = _recordMeta(
+        metaFile,
+        recorded,
+        'Every merged file was written, so the app is on fluframe '
+        '$cliVersion — but .fluframe.json still says $from, so nothing '
+        'records it. Once whatever blocked the write is cleared, '
+        're-running fluframe upgrade --apply records it: the files '
+        'already match this template, so they report as up to date.',
+      );
+      if (unrecorded != null) return unrecorded;
+    } else {
+      // The upgrade is half-done: the tree carries this version's
+      // changes plus markers the user has to settle. Record that, so the
+      // re-run can finish it instead of merging the same BASE again and
+      // writing markers back into the file they just resolved (#166).
+      final recorded = {
+        ...meta,
+        // A --from app has no cliVersion; recording the one it is AT
+        // keeps the file self-describing, and keeps the message below
+        // true for it (#178).
+        if (meta['cliVersion'] == null) 'cliVersion': from,
+        _pendingVersionKey: cliVersion,
+        _pendingFilesKey: results.entries
+            .where((e) => e.value == UpgradeStatus.conflict)
+            .map((e) => e.key)
+            .toList(),
+      };
+      final unrecorded = _recordMeta(
+        metaFile,
+        recorded,
+        'The merge was applied and $conflicts file(s) carry conflict '
+        'markers, but .fluframe.json still says $from and does not record '
+        'the upgrade as in progress. Once whatever blocked the write is '
+        'cleared, restore the tree from git and re-run fluframe upgrade '
+        '--apply: re-running over the markers as they stand would merge '
+        'into them (#166).',
+      );
+      if (unrecorded != null) return unrecorded;
+    }
+    _log
+      ..writeln()
+      ..writeln('Applied. Next steps:');
+    if (conflicts > 0) {
+      _log
+        ..writeln(
+          '  resolve $conflicts file(s) marked CONFLICT '
+          '(standard git markers)',
+        )
+        ..writeln('  then re-run: fluframe upgrade --apply')
+        ..writeln('  (.fluframe.json stays at $from until they are gone)');
+      return ExitCode.software.code;
+    }
+    _log.writeln('  flutter pub get && dart fix --apply && flutter test');
+    return ExitCode.success.code;
+  }
+
+  /// Reads and validates `.fluframe.json`, or refuses with an exit code.
+  ///
+  /// `refusal` is non-null exactly when [run] must stop and return it.
+  /// Every branch here is about a file the user can hand-edit and that
+  /// ships inside every generated app, so each wrong shape dies as a
+  /// sentence rather than as the TypeError the top-level handler prints
+  /// as "This is a bug" (#187).
+  ({Map<String, dynamic> meta, int? refusal}) _readMeta(
+    Directory projectDir,
+    File metaFile,
+  ) {
+    // Neither marker means this is not an app fluframe can upgrade, and
+    // --apply would unpack a whole template into whatever directory the
+    // shell happened to be in. --from stays usable for pre-1.0.0 apps:
+    // they carry no metadata, but they do have a pubspec.yaml.
+    if (!metaFile.existsSync() &&
+        !File(p.join(projectDir.path, 'pubspec.yaml')).existsSync()) {
+      _log.writeln(
+        '${p.normalize(projectDir.absolute.path)} does not look like a '
+        'generated app: no .fluframe.json and no pubspec.yaml. Run '
+        'fluframe upgrade from the root of the app, or point at it with '
+        '--project-dir.',
+      );
+      return (meta: const {}, refusal: ExitCode.usage.code);
+    }
+    var meta = const <String, dynamic>{};
+    if (metaFile.existsSync()) {
+      // Hand-editable, so every shape it can be in has to die as a
+      // sentence. A bare `as` cast on a wrong type raised a TypeError,
+      // which is an Error the top-level handler prints as "This is a bug"
+      // with a stack trace (#187).
+      final String raw;
+      try {
+        raw = metaFile.readAsStringSync();
+      } on FileSystemException catch (error) {
+        // Malformed CONTENT is handled below and by the runner's
+        // FormatException branch; a file that cannot be read at all
+        // reached neither, so it escaped as "This is a bug" with a stack
+        // trace. ExitCode.data, matching every other refusal about this
+        // file: a script branching on 65 already reads it as
+        // ".fluframe.json is the problem".
+        _log
+          ..writeln(
+            'Could not read .fluframe.json: '
+            '${error.osError?.message ?? error.message}',
+          )
+          ..writeln(
+            'It records the version this app was generated with. Clear '
+            'whatever is blocking the read, or move the file aside and '
+            're-run with --from <the version the app was generated with>.',
+          );
+        return (meta: meta, refusal: ExitCode.data.code);
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        _log.writeln(
+          '.fluframe.json holds a ${decoded.runtimeType}, not an object. '
+          'Fix it, or delete it and re-run with --from <version>.',
+        );
+        return (meta: meta, refusal: ExitCode.data.code);
+      }
+      meta = decoded;
+      // This list is exactly the set of keys read below with a bare
+      // `as String?`. One that is read but not listed here is #187 again,
+      // one key over: `backend`, `errorReporting` and `analytics` were,
+      // and a number in any of them reached the cast as a TypeError.
+      for (final key in [
+        'cliVersion',
+        'name',
+        'org',
+        'backend',
+        'errorReporting',
+        'analytics',
+        _pendingVersionKey,
+      ]) {
+        final value = meta[key];
+        if (value != null && value is! String) {
+          _log.writeln(
+            '.fluframe.json has "$key": $value — expected a string. '
+            'Fix it, or delete the file and re-run with --from <version>.',
+          );
+          return (meta: meta, refusal: ExitCode.data.code);
+        }
+      }
+      // The recorded name reaches the filesystem: it is joined onto a
+      // scratch directory to rebuild the merge base below, and
+      // package:path's join discards everything before an absolute part,
+      // so an absolute or climbing name aims that write outside the
+      // scratch tree. `fluframe create` puts every name through this same
+      // validator, so one it refuses cannot have come from a generated
+      // app — and .fluframe.json ships inside every app, ungitignored.
+      final metaName = meta['name'] as String?;
+      if (metaName != null) {
+        final rejection = packageNameRejection(metaName);
+        if (rejection != null) {
+          _log.writeln(
+            '.fluframe.json has "name": "$metaName" — $rejection. Fix '
+            'it, or delete the file and re-run with --from <version>.',
+          );
+          return (meta: meta, refusal: ExitCode.data.code);
+        }
+      }
+      final pendingFiles = meta[_pendingFilesKey];
+      if (pendingFiles != null &&
+          (pendingFiles is! List || pendingFiles.any((e) => e is! String))) {
+        _log.writeln(
+          '.fluframe.json has "$_pendingFilesKey" that is not a list of '
+          'file paths. Fix it, or delete the file and re-run with '
+          '--from <version>.',
+        );
+        return (meta: meta, refusal: ExitCode.data.code);
+      }
+      // Those same strings are joined onto the project root to look for
+      // conflict markers, so `..` or an absolute path there points the
+      // check at a file outside the app. Same hygiene AddonPatch.fromJson
+      // applies to a bundle's patch targets, for a file the user edits.
+      if (pendingFiles is List) {
+        for (final entry in pendingFiles.cast<String>()) {
+          if (!_isProjectRelative(entry)) {
+            _log.writeln(
+              '.fluframe.json lists "$entry" under "$_pendingFilesKey", '
+              'which is not a path inside the app. Fix it, or delete the '
+              'file and re-run with --from <version>.',
+            );
+            return (meta: meta, refusal: ExitCode.data.code);
+          }
+        }
+      }
+    }
+    return (meta: meta, refusal: null);
+  }
+
+  /// Finishes an upgrade a previous run left carrying conflicts.
+  ///
+  /// Re-merging the same BASE would conflict again on the very file the
+  /// user just resolved, so a recorded `pendingUpgrade` short-circuits
+  /// here instead of starting the merge over (#166). Always returns the
+  /// exit code [run] should return.
+  int _finishPendingUpgrade({
+    required Directory projectDir,
+    required File metaFile,
+    required Map<String, dynamic> meta,
+    required String pending,
+    required bool apply,
+  }) {
+    final unresolved = _stillConflicted(projectDir, meta);
+    if (unresolved.isNotEmpty) {
+      _log.writeln(
+        'Upgrade to fluframe $pending is in progress, and '
+        '${unresolved.length} file(s) still carry conflict markers or '
+        'could not be read:',
+      );
+      for (final file in unresolved) {
+        _log.writeln(
+          '  ! ${file.path}${file.unreadable ? ' (could not be read)' : ''}',
+        );
+      }
+      _log.writeln('Resolve them, then re-run: fluframe upgrade --apply');
+      return ExitCode.software.code;
+    }
+    if (!apply) {
+      _log.writeln(
+        'Upgrade to fluframe $pending is in progress and every conflict '
+        'is resolved. Re-run with --apply to record it.',
+      );
+      return ExitCode.success.code;
+    }
+    final recorded = {...meta, 'cliVersion': pending}
+      ..remove(_pendingVersionKey)
+      ..remove(_pendingFilesKey);
+    final unrecorded = _recordMeta(
+      metaFile,
+      recorded,
+      'The conflicts are resolved and the merged files are already in '
+      'place, so the app is on fluframe $pending — but .fluframe.json '
+      'still records that upgrade as in progress. Once whatever blocked '
+      'the write is cleared, re-running fluframe upgrade --apply records '
+      'it.',
+    );
+    if (unrecorded != null) return unrecorded;
+    _log.writeln('Conflicts resolved — now on fluframe $pending.');
     return ExitCode.success.code;
   }
 
