@@ -18,10 +18,17 @@ class StoreFailure implements Exception {
 /// [KeyValueStore] double whose operations fail on demand.
 class FailingKeyValueStore implements KeyValueStore {
   /// Creates a store that fails the operations the flags select.
+  ///
+  /// [failKeys] narrows that to specific keys; left empty, a selected
+  /// operation fails for every key. One corrupt entry is what real
+  /// storage produces — a preferences file whose other values are still
+  /// readable — and the whole-store case cannot tell "each read is
+  /// guarded on its own" apart from "one guard wraps all of them".
   FailingKeyValueStore({
     this.failReads = false,
     this.failWrites = false,
     this.failRemovals = false,
+    this.failKeys = const <String>{},
   });
 
   final Map<String, String> _values = <String, String>{};
@@ -35,21 +42,26 @@ class FailingKeyValueStore implements KeyValueStore {
   /// Whether [remove] throws a [StoreFailure].
   bool failRemovals;
 
+  /// Keys the failure applies to; empty means every key.
+  Set<String> failKeys;
+
+  bool _selected(String key) => failKeys.isEmpty || failKeys.contains(key);
+
   @override
   Future<String?> getString(String key) async {
-    if (failReads) throw const StoreFailure();
+    if (failReads && _selected(key)) throw const StoreFailure();
     return _values[key];
   }
 
   @override
   Future<void> setString(String key, String value) async {
-    if (failWrites) throw const StoreFailure();
+    if (failWrites && _selected(key)) throw const StoreFailure();
     _values[key] = value;
   }
 
   @override
   Future<void> remove(String key) async {
-    if (failRemovals) throw const StoreFailure();
+    if (failRemovals && _selected(key)) throw const StoreFailure();
     _values.remove(key);
   }
 }
