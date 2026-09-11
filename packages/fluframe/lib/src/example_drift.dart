@@ -83,14 +83,26 @@ DriftResult checkExampleDrift({
     final name = p.basename(example.path);
     for (final relative in _sharedFiles(template)) {
       if (intentionallyDivergent.any(relative.startsWith)) continue;
-      final expected = rewriteTemplateContent(
-        File(p.join(template.path, relative)).readAsStringSync(),
-        projectName: name,
+      final source = _readOrReport(
+        File(p.join(template.path, relative)),
+        'template/$relative',
+        out,
       );
+      if (source == null) {
+        drifted++;
+        continue;
+      }
+      final expected = rewriteTemplateContent(source, projectName: name);
       final actual = File(p.join(example.path, relative));
+      final current = actual.existsSync()
+          ? _readOrReport(actual, '$name/$relative', out)
+          : null;
+      if (actual.existsSync() && current == null) {
+        drifted++;
+        continue;
+      }
       final same =
-          actual.existsSync() &&
-          _normalize(actual.readAsStringSync()) == _normalize(expected);
+          current != null && _normalize(current) == _normalize(expected);
       if (same) continue;
       drifted++;
       out.writeln(
@@ -153,14 +165,20 @@ DriftResult _checkStrings(
     // insert what the example WOULD have been generated with. The shared
     // file loop above already rewrites; doing it here too is what keeps
     // `appTitle` from being reported as drift in every example forever.
-    final expected =
-        jsonDecode(
-              rewriteTemplateContent(
-                source.readAsStringSync(),
-                projectName: name,
-              ),
-            )
-            as Map<String, Object?>;
+    final sourceText = _readOrReport(source, 'template/$relative', out);
+    if (sourceText == null) {
+      drifted++;
+      continue;
+    }
+    final expected = _decodeArbOrReport(
+      rewriteTemplateContent(sourceText, projectName: name),
+      'template/$relative',
+      out,
+    );
+    if (expected == null) {
+      drifted++;
+      continue;
+    }
 
     if (!target.existsSync()) {
       drifted++;
@@ -174,8 +192,16 @@ DriftResult _checkStrings(
       continue;
     }
 
-    final actual =
-        jsonDecode(target.readAsStringSync()) as Map<String, Object?>;
+    final targetText = _readOrReport(target, '$name/$relative', out);
+    if (targetText == null) {
+      drifted++;
+      continue;
+    }
+    final actual = _decodeArbOrReport(targetText, '$name/$relative', out);
+    if (actual == null) {
+      drifted++;
+      continue;
+    }
     final merged = Map<String, Object?>.of(actual);
     var changed = false;
 
@@ -240,8 +266,11 @@ int _checkPubspec(
     return 1;
   }
 
-  final expected = _dependencyBlocks(source.readAsStringSync());
-  final actual = _dependencyBlocks(target.readAsStringSync());
+  final sourceText = _readOrReport(source, 'template/pubspec.yaml', out);
+  final targetText = _readOrReport(target, '$name/pubspec.yaml', out);
+  if (sourceText == null || targetText == null) return 1;
+  final expected = _dependencyBlocks(sourceText);
+  final actual = _dependencyBlocks(targetText);
   final exempt = allowedDependencyDivergence[name] ?? const <String>{};
   var drifted = 0;
 
@@ -278,6 +307,48 @@ int _checkPubspec(
   }
 
   return drifted;
+}
+
+/// Reads [file] as text, or returns null after reporting to [out].
+///
+/// `readAsStringSync` throws a `FileSystemException` on a file it cannot
+/// decode — a stray UTF-16 save, a binary file dropped into `lib/` — and
+/// this tool's job is to REPORT what is wrong with a tree, so crashing on
+/// one file hides every remaining difference behind a stack trace.
+String? _readOrReport(File file, String label, StringSink out) {
+  try {
+    return file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    out.writeln(
+      'unreadable: $label (${error.osError?.message ?? error.message})',
+    );
+    return null;
+  }
+}
+
+/// Decodes [content] as a JSON object, or returns null after reporting.
+///
+/// Same class as the bare `as` casts retired from `backends.dart` in #187:
+/// an ARB that is an array or a scalar makes `as Map<String, Object?>`
+/// throw a TypeError, which is an Error rather than the FormatException
+/// callers expect — so the tool dies instead of naming the broken file.
+Map<String, Object?>? _decodeArbOrReport(
+  String content,
+  String label,
+  StringSink out,
+) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(content);
+  } on FormatException catch (error) {
+    out.writeln('malformed JSON: $label (${error.message})');
+    return null;
+  }
+  if (decoded is! Map<String, Object?>) {
+    out.writeln('not a JSON object: $label');
+    return null;
+  }
+  return decoded;
 }
 
 /// The `environment:`, `dependencies:` and `dev_dependencies:` entries of

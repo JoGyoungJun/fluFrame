@@ -93,6 +93,49 @@ void main() {
       out: out ?? StringBuffer(),
     );
 
+    // A maintainer tool's job is to REPORT what is wrong with a tree, so
+    // a file that is wrong in a way the reader did not anticipate has to
+    // become a line of output, not a stack trace that hides every other
+    // difference behind it. These are the #187 class — a bare `as` on a
+    // decode throws TypeError, which is an Error, not the FormatException
+    // a caller would catch.
+    test('an ARB that is not a JSON object is drift, not a crash', () {
+      write(example, 'lib/l10n/app_en.arb', '["not", "an", "object"]\n');
+
+      final out = StringBuffer();
+      final result = run(fix: false, out: out);
+
+      expect(result.drifted, greaterThan(0));
+      expect(out.toString(), contains('not a JSON object'));
+      expect(out.toString(), contains('todo_app/lib/l10n/app_en.arb'));
+    });
+
+    test('an ARB that is not JSON at all is drift, not a crash', () {
+      write(example, 'lib/l10n/app_ko.arb', '{ this is not json\n');
+
+      final out = StringBuffer();
+      final result = run(fix: false, out: out);
+
+      expect(result.drifted, greaterThan(0));
+      expect(out.toString(), contains('malformed JSON'));
+      expect(out.toString(), contains('todo_app/lib/l10n/app_ko.arb'));
+    });
+
+    test('a shared file that cannot be decoded is drift, not a crash', () {
+      // A UTF-16 save from an editor's encoding dropdown — the same class
+      // the 1.8.0 sweep chased through the upgrader.
+      File(p.join(example.path, 'lib', 'main.dart'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync([0xFF, 0xFE, 0x3C, 0x00, 0x00, 0xD8, 0x20, 0x00]);
+
+      final out = StringBuffer();
+      final result = run(fix: false, out: out);
+
+      expect(result.drifted, greaterThan(0));
+      expect(out.toString(), contains('unreadable'));
+      expect(out.toString(), contains('todo_app/lib/main.dart'));
+    });
+
     test('a synced example reports no drift', () {
       final out = StringBuffer();
 
