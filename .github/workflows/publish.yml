@@ -198,6 +198,30 @@ jobs:
           PUB_VERSION="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
           echo "tag=$TAG_VERSION pubspec=$PUB_VERSION"
           test "$TAG_VERSION" = "$PUB_VERSION"
+      - name: Take the publishing credential out of the gates
+        # `setup-dart` runs `dart pub token add https://pub.dev --env-var
+        # PUB_TOKEN` as soon as it installs, so from that point every pub
+        # request — including ordinary dependency downloads — is sent
+        # authenticated with the temporary OIDC *publishing* token. On
+        # 2026-09-11 pub.dev began rejecting those reads: `dart pub get`
+        # died with "Because fluframe depends on very_good_analysis any
+        # which doesn't exist (authorization failed) / Insufficient
+        # permissions", twice, on a tag whose only difference from the
+        # 1.8.0 release that published fine was its version number. An
+        # anonymous `dart pub get` on the same pubspec resolved that same
+        # dependency without complaint, which is what places the failure
+        # in the credential rather than in the package or the constraint.
+        #
+        # The credential is therefore removed here and re-added
+        # immediately before the publish step. That is not a workaround
+        # so much as the arrangement this should always have had: a
+        # publishing credential has no business authenticating a
+        # dependency download, and the narrower window is worth having
+        # whatever pub.dev does next. `--env-var` stores only a REFERENCE
+        # to $PUB_TOKEN, which stays in the job environment throughout, so
+        # re-adding it is a one-line local edit and needs no second OIDC
+        # exchange.
+        run: dart pub token remove https://pub.dev || true
       - run: dart pub get
       - name: Unit tests (includes the cliVersion sync guard)
         run: dart test -x e2e
@@ -207,5 +231,18 @@ jobs:
         run: dart test -t e2e --reporter expanded
       - name: Publish dry-run
         run: dart pub publish --dry-run
+      - name: Restore the publishing credential
+        # Re-points pub at $PUB_TOKEN for the one step that needs it. The
+        # gates above have all passed by now, so this is the last thing
+        # between a green run and an upload that can never be taken back.
+        #
+        # The dry-run above is deliberately left anonymous: the known
+        # failure mode is "publishing token + package read = 403", and a
+        # dry-run re-validates the package. Verified rather than assumed,
+        # because a restore that silently did nothing would surface as an
+        # auth failure during the upload instead of before it.
+        run: |
+          dart pub token add https://pub.dev --env-var PUB_TOKEN
+          dart pub token list | grep -q 'pub.dev'
       - name: Publish
         run: dart pub publish --force
