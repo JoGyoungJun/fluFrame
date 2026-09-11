@@ -1322,9 +1322,9 @@ void main() {
       expect(stranger.listSync(), isEmpty);
     });
 
-    test('--from still upgrades a pre-0.14.0 app with no metadata', () async {
+    test('--from still upgrades a pre-1.0.0 app with no metadata', () async {
       // That refusal must not close the escape hatch it names: apps from
-      // before 0.14.0 have a pubspec.yaml but no .fluframe.json.
+      // before 1.0.0 have a pubspec.yaml but no .fluframe.json.
       File(p.join(project.path, '.fluframe.json')).deleteSync();
 
       final code = await upgrader().run(

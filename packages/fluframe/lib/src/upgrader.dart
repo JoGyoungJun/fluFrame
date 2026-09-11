@@ -85,7 +85,7 @@ class Upgrader {
     final metaFile = File(p.join(projectDir.path, '.fluframe.json'));
     // Neither marker means this is not an app fluframe can upgrade, and
     // --apply would unpack a whole template into whatever directory the
-    // shell happened to be in. --from stays usable for pre-0.14.0 apps:
+    // shell happened to be in. --from stays usable for pre-1.0.0 apps:
     // they carry no metadata, but they do have a pubspec.yaml.
     if (!metaFile.existsSync() &&
         !File(p.join(projectDir.path, 'pubspec.yaml')).existsSync()) {
@@ -254,7 +254,7 @@ class Upgrader {
     if (from == null) {
       _log.writeln(
         'No .fluframe.json found and no --from given. Apps generated '
-        'before fluframe 0.14.0 must pass --from <version> (the fluframe '
+        'before fluframe 1.0.0 must pass --from <version> (the fluframe '
         'version they were created with).',
       );
       return ExitCode.usage.code;

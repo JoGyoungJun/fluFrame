@@ -41,7 +41,7 @@ class UpgradeCommand extends Command<int> {
         'from',
         help:
             'fluframe version the app was generated with (only needed '
-            'for apps created before 0.14.0, which lack .fluframe.json).',
+            'for apps created before 1.0.0, which lack .fluframe.json).',
       )
       ..addOption(
         'project-dir',

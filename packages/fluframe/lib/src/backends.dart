@@ -74,7 +74,13 @@ class BackendAddon {
   /// Addon identifier (CLI option value, addon directory name).
   final String name;
 
-  /// Packages installed with `flutter pub add`.
+  /// Packages written into the generated app's `pubspec.yaml` as
+  /// `name: ^major.minor` constraints.
+  ///
+  /// Not `flutter pub add`: that step is gone since #181, because every
+  /// shell but cmd.exe stripped the quotes from `pub add "pkg:^x"` and the
+  /// batch re-parse ate the caret, writing exact pins. See ADR-0001's
+  /// 2026-09-07 amendment.
   final List<String> dependencies;
 
   /// Anchored edits applied after the addon files are copied.
