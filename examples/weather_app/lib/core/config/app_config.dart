@@ -14,6 +14,8 @@
 /// app calls.
 library;
 
+import 'package:flutter/foundation.dart';
+
 /// The active build flavor (`dev`, `prod`, ...).
 const String appFlavor = String.fromEnvironment(
   'APP_FLAVOR',
@@ -26,5 +28,36 @@ const String apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://jsonplaceholder.typicode.com',
 );
 
+/// How long an HTTP request may take before it fails, in seconds.
+///
+/// Applied to dio's connect, send and receive timeouts alike (see
+/// `core/network/api_client.dart`). It lives here, next to [apiBaseUrl],
+/// because an app pointed at a slower backend has to be able to raise it
+/// — and editing the number in the client source instead makes that file
+/// a local edit `fluframe upgrade` reports as a conflict on every later
+/// template change.
+const int apiTimeoutSeconds = int.fromEnvironment(
+  'API_TIMEOUT_SECONDS',
+  defaultValue: 10,
+);
+
+/// [apiTimeoutSeconds] as a [Duration].
+const Duration apiTimeout = Duration(seconds: apiTimeoutSeconds);
+
 /// Whether this build is the production flavor.
 const bool isProdFlavor = appFlavor == 'prod';
+
+/// Whether a backend that was selected but never configured must refuse to
+/// work rather than fall back to the in-memory fake.
+///
+/// The `--backend` addons keep a freshly generated app usable by falling
+/// back to `InMemoryAuthRepository`, which accepts ANY email with a
+/// six-character password. That is a convenience while the backend keys
+/// are still empty — and an open front door the moment the same build is
+/// shipped: a release built without `--dart-define-from-file` used to get
+/// the fake with nothing on screen to say so.
+///
+/// Release mode is the obvious half. [isProdFlavor] is the other: a `prod`
+/// flavor debug build is a staging build, and it must not authenticate
+/// anyone either.
+const bool failClosedWhenUnconfigured = kReleaseMode || isProdFlavor;

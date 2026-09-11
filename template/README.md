@@ -15,6 +15,7 @@ A Flutter app generated from the
 | Persistence | `KeyValueStore` interface over `SharedPreferencesAsync` |
 | Localization | `flutter gen-l10n` (en, ko, ja) — generated into `lib/l10n/gen` |
 | Theming | Material 3 light/dark with persisted `ThemeMode` |
+| Wide viewports | Screens cap their content at `ContentWidth.maxContentWidth` (840 dp, `lib/core/widgets/content_width.dart`) — on desktop and web the reading column stays centred instead of stretching edge to edge; change the one constant to retune |
 | Config | `--dart-define-from-file` flavors (`env/dev.json`, `env/prod.json`) |
 | Lints | [very_good_analysis](https://pub.dev/packages/very_good_analysis) |
 | Tests | Unit + widget tests with mocktail and Riverpod overrides |
@@ -26,7 +27,7 @@ A Flutter app generated from the
 lib/
 ├── main.dart              # Bootstrap: load persisted settings, runApp
 ├── app/                   # App shell: MaterialApp.router, router, theme
-├── core/                  # Cross-cutting: config, network, storage, logging, widgets
+├── core/                  # Cross-cutting: config, network, storage, logging, widgets (ContentWidth 840 dp cap)
 ├── features/              # Feature-first modules
 │   ├── auth/              #   Login/profile flow, gated route (fake repo)
 │   ├── home/              #   Counter demo (sync Notifier)

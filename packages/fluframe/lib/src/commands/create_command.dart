@@ -11,7 +11,16 @@ import 'package:io/io.dart';
 /// `fluframe create <project_name>` — scaffolds a new app from the template.
 class CreateCommand extends Command<int> {
   /// Creates the command and registers its options.
-  CreateCommand() {
+  ///
+  /// [makeGenerator] is injectable for tests, as `makeUpgrader` is on
+  /// `UpgradeCommand` and `makeScaffold` on `AddFeatureCommand`: it
+  /// receives the resolved template directory and returns the generator
+  /// [run] drives, so the nine values parsed below can be checked where
+  /// they are parsed rather than only where they are already named Dart
+  /// arguments.
+  CreateCommand({
+    ProjectGenerator Function(io.Directory templateDirectory)? makeGenerator,
+  }) : _makeGenerator = makeGenerator ?? _defaultGenerator {
     argParser
       ..addOption(
         'org',
@@ -63,6 +72,13 @@ class CreateCommand extends Command<int> {
         help: 'Run flutter pub get and gen-l10n after generating.',
       );
   }
+
+  final ProjectGenerator Function(io.Directory templateDirectory)
+  _makeGenerator;
+
+  /// The generator the command runs with when nothing was injected.
+  static ProjectGenerator _defaultGenerator(io.Directory templateDirectory) =>
+      ProjectGenerator(templateDirectory: templateDirectory);
 
   @override
   String get name => 'create';
@@ -121,7 +137,7 @@ class CreateCommand extends Command<int> {
     final backend = results['backend'] as String;
     final errorReporting = results['error-reporting'] as String;
     final analytics = results['analytics'] as String;
-    final generator = ProjectGenerator(templateDirectory: templateDirectory);
+    final generator = _makeGenerator(templateDirectory);
     return generator.generate(
       name: projectName,
       org: org,

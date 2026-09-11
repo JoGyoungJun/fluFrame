@@ -2,27 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_app/app/theme/app_theme.dart';
 import 'package:todo_app/core/network/api_exception.dart';
-import 'package:todo_app/core/storage/key_value_store.dart';
 import 'package:todo_app/features/auth/domain/user.dart';
 import 'package:todo_app/main.dart';
 
 import 'helpers/helpers.dart';
-
-/// Storage that fails every operation, the way a corrupted preferences
-/// file or a platform channel that never answers does.
-class _FailingKeyValueStore implements KeyValueStore {
-  @override
-  Future<String?> getString(String key) async =>
-      throw StateError('storage unavailable');
-
-  @override
-  Future<void> setString(String key, String value) async =>
-      throw StateError('storage unavailable');
-
-  @override
-  Future<void> remove(String key) async =>
-      throw StateError('storage unavailable');
-}
 
 void main() {
   group('loadBootState', () {
@@ -31,12 +14,41 @@ void main() {
       // used to take the entire boot down — runApp was never reached and
       // the app opened on a black screen that the error handlers
       // installed moments earlier had no widget tree to draw into.
-      final boot = await loadBootState(_FailingKeyValueStore());
+      final boot = await loadBootState(
+        FailingKeyValueStore(
+          failReads: true,
+          failWrites: true,
+          failRemovals: true,
+        ),
+      );
 
       expect(boot.themeMode, ThemeMode.system);
       expect(boot.themePreset, ThemePreset.indigo);
       expect(boot.locale, isNull);
       expect(boot.initialUser, isNull);
+    });
+
+    test('one unreadable key does not cost the other three', () async {
+      // The four reads are guarded individually, and that is the whole
+      // point of the shape: collapsing them into one try/catch around the
+      // record passes both tests above (all fail -> all defaults; all
+      // succeed -> all values) while a user with one corrupt entry
+      // silently loses their theme, their colour preset AND their signed-in
+      // session as well.
+      final store = FailingKeyValueStore(
+        failReads: true,
+        failKeys: const {'settings.themeMode'},
+      );
+      await store.setString('settings.themePreset', 'emerald');
+      await store.setString('settings.locale', 'ko');
+      await store.setString('auth.session.email', 'dev@example.com');
+
+      final boot = await loadBootState(store);
+
+      expect(boot.themeMode, ThemeMode.system, reason: 'the failing read');
+      expect(boot.themePreset, ThemePreset.emerald);
+      expect(boot.locale, const Locale('ko'));
+      expect(boot.initialUser, const User(email: 'dev@example.com'));
     });
 
     test('returns the persisted values when storage works', () async {

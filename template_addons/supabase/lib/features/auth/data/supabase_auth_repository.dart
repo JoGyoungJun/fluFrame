@@ -11,10 +11,17 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 /// — a black screen with nothing on it. Until `SUPABASE_URL` is set the
 /// app keeps running on the in-memory fake, the same way the Sentry and
 /// Amplitude addons stay inert without their keys.
+///
+/// That convenience is scoped to debug and profile builds of the `dev`
+/// flavor. A release — or any `prod` build — that never received
+/// `SUPABASE_URL` gets [UnconfiguredAuthRepository] instead: the fake
+/// signs in any email with a six-character password, and shipping that as
+/// the login screen is worse than shipping one that refuses everybody.
+/// See `failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
     SupabaseAuthRepository.isConfigured
     ? SupabaseAuthRepository()
-    : InMemoryAuthRepository(store);
+    : unconfiguredBackendRepository('Supabase', store);
 
 /// [AuthRepository] backed by Supabase Auth.
 ///

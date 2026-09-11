@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:todo_app/core/config/app_config.dart';
 import 'package:todo_app/core/storage/key_value_store.dart';
 import 'package:todo_app/features/auth/domain/auth_exception.dart';
 import 'package:todo_app/features/auth/domain/user.dart';
@@ -64,6 +65,65 @@ class InMemoryAuthRepository implements AuthRepository {
     return email == null ? null : User(email: email);
   }
 }
+
+/// [AuthRepository] that refuses every sign-in because this build was
+/// never given the backend it was generated against.
+///
+/// Named after what it is, not what it does: the app has a backend
+/// selected and no configuration for it, and the only safe answer to a
+/// credential is "no". [InMemoryAuthRepository] answers "yes" to any
+/// six-character password, which is why it must never be what a release
+/// falls back to — see [failClosedWhenUnconfigured].
+class UnconfiguredAuthRepository implements AuthRepository {
+  /// Creates a repository naming [backend] in every refusal.
+  const UnconfiguredAuthRepository(this.backend);
+
+  /// Display name of the backend that was selected but not configured.
+  final String backend;
+
+  /// The message every refused sign-in carries.
+  ///
+  /// Deliberately actionable: the failure is a build-configuration
+  /// mistake, and the person who can fix it is the one who ran the build.
+  String get message =>
+      '$backend is not configured for this build — rebuild with '
+      '--dart-define-from-file=env/prod.json once the backend keys are '
+      'set.';
+
+  @override
+  Future<User> signIn({
+    required String email,
+    required String password,
+  }) async => throw AuthException(message);
+
+  /// No-op: [signIn] never succeeds, so there is no session to end.
+  ///
+  /// Throwing here instead would turn a sign-out button that has nothing
+  /// to do into an error the user cannot act on.
+  @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<User?> restoreSession() async => null;
+}
+
+/// The repository a `--backend` build must use while that backend has no
+/// configuration.
+///
+/// Called by the `--backend` addon files (`template_addons/*/`), which is
+/// why it lives here rather than beside them: this is the decision worth
+/// testing, and only `template/lib` is covered by the suite.
+///
+/// [failClosed] defaults to [failClosedWhenUnconfigured]. Tests pass it
+/// explicitly — both halves of that constant fold to `false` under
+/// `flutter test`, so neither branch is otherwise reachable.
+AuthRepository unconfiguredBackendRepository(
+  String backend,
+  KeyValueStore store, {
+  bool failClosed = failClosedWhenUnconfigured,
+}) => failClosed
+    ? UnconfiguredAuthRepository(backend)
+    : InMemoryAuthRepository(store);
 
 /// Provider for the app-wide [AuthRepository] — the swap point for real
 /// backends.

@@ -18,14 +18,17 @@ void main() {
   }
 
   test('cliVersion matches the pubspec.yaml version', () {
-    // The release checklist bumps both places; this test makes forgetting
-    // one of them a red suite instead of a shipped mismatch.
+    // CONTRIBUTING's "Releasing (maintainers)" step 1 bumps both places;
+    // this test makes forgetting one of them a red suite instead of a
+    // shipped mismatch.
     expect(
       cliVersion,
       pubspecVersion(),
       reason:
-          'Keep cliVersion in lib/src/command_runner.dart in sync '
-          'with version: in pubspec.yaml (see the /release checklist).',
+          'Keep cliVersion in lib/src/version.dart in sync with '
+          'version: in pubspec.yaml (see CONTRIBUTING.md, "Releasing '
+          '(maintainers)" step 1). command_runner.dart only re-exports '
+          'it.',
     );
   });
 
@@ -63,8 +66,8 @@ void main() {
       reason:
           'The newest CHANGELOG.md heading must name the version in '
           'pubspec.yaml — or sit directly under an `## Unreleased` '
-          'section that is renamed at release time (see the /release '
-          'checklist).',
+          'section that is renamed at release time (see CONTRIBUTING.md, '
+          '"Releasing (maintainers)" step 1).',
     );
   });
 }

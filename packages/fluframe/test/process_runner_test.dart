@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fluframe/src/process_runner.dart';
@@ -141,6 +142,45 @@ void main() => stdout.write(Directory.current.resolveSymbolicLinksSync());
       test('an ordinary path is not refused', () {
         expect(shellArgumentRejection(p.join(temp.path, 'my app')), isNull);
       });
+
+      test(
+        'POSIX shell-outs pass metacharacters through as argument text',
+        () async {
+          // The other half of the boundary, and until now the untested
+          // one. `_needsShell` returns true for EVERY executable on POSIX,
+          // and `shellArgumentRejection` refuses none of the characters a
+          // POSIX shell reads as syntax (`;` `$` backtick `(` `)` newline)
+          // — the refusal set is cmd.exe's. The whole POSIX safety margin
+          // is one dart:io behaviour: it single-quotes each argument for
+          // `sh -c`, so nothing can splice. That behaviour is real
+          // (verified against dart 3.13.3 while writing this), but no test
+          // observed it, so losing it would be silent — and `create`
+          // passes a user-supplied `-o` straight into a shelled-out
+          // `flutter create`.
+          const hostile = r'pre$(id)mid;echo INJECTED;post`whoami`end';
+
+          final result = await defaultRunProcess('echo', [hostile]);
+
+          expect(result.exitCode, 0, reason: result.stderr.toString());
+          expect(
+            result.stdout.toString().trim(),
+            hostile,
+            reason:
+                'dart:io stopped quoting arguments for sh -c; a path '
+                'given to `create -o` can now splice a command',
+          );
+          // One line out means one command ran. A splice would append the
+          // output of `echo INJECTED` (and of `id`/`whoami`) as extra
+          // lines; asserting the text INJECTED is absent would be
+          // meaningless here, since the literal appears in the argument
+          // that is echoed back.
+          expect(
+            const LineSplitter().convert(result.stdout.toString()),
+            hasLength(1),
+          );
+        },
+        testOn: '!windows',
+      );
 
       test(
         'git is never launched through the shell',

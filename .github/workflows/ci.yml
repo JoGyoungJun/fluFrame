@@ -231,6 +231,30 @@ jobs:
       - run: dart pub get
       - run: dart run tool/check_example_drift.dart
 
+  cli-sdk-floor:
+    # packages/fluframe/pubspec.yaml declares `sdk: ^3.12.0`, which is what
+    # pub.dev lets people install on — but every other job runs
+    # `sdk: stable`, so the floor itself was never compiled. Anything the
+    # CLI picked up from a newer SDK shipped as a broken install for
+    # exactly the users the constraint invites.
+    #
+    # Analyze and unit tests only: `dart format` output changes between SDK
+    # versions, so gating format here would fail on style the stable job
+    # has already accepted, and the e2e tests need Flutter.
+    name: CLI — compiles at its declared SDK floor
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: '3.12.0'
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test -x e2e
+
   examples:
     name: Example apps — analyze & test
     runs-on: ubuntu-latest
@@ -247,6 +271,20 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      - run: flutter gen-l10n
+      - name: Verify generated code is up to date
+        # ADR-0004 says committed codegen is "enforced, not documented",
+        # and this gate ran for template/ only. The examples carry
+        # generated files of their own — todo.g.dart, todo.freezed.dart,
+        # weather_report.freezed.dart, each lib/l10n/gen tree — that the
+        # drift checker cannot cover: it walks the TEMPLATE's file list and
+        # exempts lib/l10n/ from byte comparison outright. So editing an
+        # example's model and forgetting the regen shipped a broken
+        # example, which is the artefact readers copy from.
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          git add -A lib
+          git diff --cached --exit-code -- lib
       # Same reasoning as the addons gate above: the examples are what a
       # reader copies from, and their hand-maintained files (the example's
       # own feature module, router, l10n) are outside the drift check's
@@ -254,7 +292,31 @@ jobs:
       # else format-checks them.
       - run: dart format --set-exit-if-changed lib test
       - run: flutter analyze
-      - run: flutter test
+      - run: flutter test --coverage
+      - name: Coverage floor
+        # The third ratchet, after template (78) and CLI (70). The examples
+        # carry code no other job covers — each example's own feature
+        # module lives outside the drift checker's template walk — so
+        # deleting examples/todo_app/test/features/todos/
+        # todos_controller_test.dart used to be a fully green CI run.
+        env:
+          # Measured 2026-09-11: todo_app 83.29% (882/1059), weather_app
+          # 81.54% (835/1024). Set a few points under the lower of the two,
+          # which lands on the template's own floor. Raise it as coverage
+          # rises; never lower it to make CI green.
+          FLOOR: '78'
+        run: |
+          pct=$(awk -F: '/^LF:/ { f += $2 } /^LH:/ { h += $2 }
+                         END { printf "%.2f", f ? 100 * h / f : 0 }' \
+                coverage/lcov.info)
+          echo "${{ matrix.example }} line coverage: ${pct}% (floor ${FLOOR}%)" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          awk -v pct="$pct" -v floor="$FLOOR" -v name="${{ matrix.example }}" 'BEGIN {
+            if (pct < floor) {
+              print "::error::" name " coverage " pct "% < floor " floor "%"
+              exit 1
+            }
+          }'
 
   generated-android:
     # The e2e generates real apps and then runs `flutter analyze` and
@@ -438,6 +500,7 @@ jobs:
       - e2e
       - e2e-cross-platform
       - example-drift
+      - cli-sdk-floor
       - examples
       - generated-android
       - web-build

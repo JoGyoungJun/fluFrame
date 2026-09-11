@@ -930,6 +930,51 @@ void main() {
       testOn: 'windows',
     );
 
+    test('a pending conflict that cannot be read is not "resolved"', () async {
+      // Regression (PI-code-F23): _hasConflictMarkers answered `false` on a
+      // FileSystemException, so a conflicted file nobody could read looked
+      // exactly like a resolved one. --apply then recorded the pending
+      // version as the app's version and printed "Conflicts resolved" —
+      // after which `from == cliVersion` short-circuits every later run,
+      // so the markers stay in the tree with no upgrade left that would
+      // ever touch them again. Measured against this fixture before the
+      // fix: exit 0, ".fluframe.json" at $cliVersion, markers still on
+      // disk. Unknown now counts as unresolved.
+      File(
+        p.join(project.path, 'lib', 'a.dart'),
+      ).writeAsStringSync('alpha local edit\n');
+      final first = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+      expect(first, ExitCode.software.code, reason: log.toString());
+
+      // The recorded conflict, re-saved as bytes no decoder can read —
+      // the same read failure every platform reproduces.
+      corrupt('lib/a.dart');
+
+      final code = await upgrader().run(
+        projectDir: project,
+        apply: true,
+        force: true,
+      );
+
+      expect(code, ExitCode.software.code, reason: log.toString());
+      expect(log.toString(), contains('lib/a.dart'));
+      expect(log.toString(), contains('could not be read'));
+      expect(log.toString(), isNot(contains('Conflicts resolved')));
+      final meta =
+          jsonDecode(
+                File(p.join(project.path, '.fluframe.json')).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      // Still pending, so fixing the read leaves a run that can finish it.
+      expect(meta['cliVersion'], '0.1.0');
+      expect(meta['pendingUpgrade'], cliVersion);
+      expect(meta['pendingConflicts'], contains('lib/a.dart'));
+    });
+
     test('preserves non-ASCII content through a clean merge', () async {
       // Regression: the merged bytes used to travel back through a pipe
       // decoded with the OS codepage (cp949 on Korean Windows), which
@@ -1277,9 +1322,9 @@ void main() {
       expect(stranger.listSync(), isEmpty);
     });
 
-    test('--from still upgrades a pre-0.14.0 app with no metadata', () async {
+    test('--from still upgrades a pre-1.0.0 app with no metadata', () async {
       // That refusal must not close the escape hatch it names: apps from
-      // before 0.14.0 have a pubspec.yaml but no .fluframe.json.
+      // before 1.0.0 have a pubspec.yaml but no .fluframe.json.
       File(p.join(project.path, '.fluframe.json')).deleteSync();
 
       final code = await upgrader().run(

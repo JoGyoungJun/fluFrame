@@ -6,6 +6,14 @@ import 'package:fluframe/src/project_generator.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+/// Libraries that live under `lib/` so `test/` can reach them through
+/// `package:` URIs, but that no published release may carry.
+const maintainerOnlyLibraries = [
+  'lib/src/template_sync.dart',
+  'lib/src/bundle_hygiene.dart',
+  'lib/src/example_drift.dart',
+];
+
 void main() {
   group('GitignoreMatcher', () {
     test('matches the rule guarding the documented secret location', () {
@@ -429,33 +437,58 @@ void main() {
     });
   });
 
-  group('template/ carries no private tracker citations', () {
-    // packages/fluframe/ may cite issue numbers freely — only someone
-    // reading the CLI's own source ever sees them. template/ is different:
-    // it ships verbatim into every generated project, so a citation there
-    // lands in a file the user owns, pointing at a tracker they cannot
-    // open. Enforced here so the boundary stops being re-audited by hand.
-    test('no #NNN issue reference appears in a shipped Dart source', () {
-      final root = Directory(
-        p.normalize(p.join(Directory.current.path, '..', '..', 'template')),
-      );
-      expect(
-        root.existsSync(),
-        isTrue,
-        reason: 'run from packages/fluframe, as sync_template does',
-      );
+  group('the real .pubignore', () {
+    // Two opposite failures, both silent. Anchoring: an unanchored `test/`
+    // would also strip templates/app/test from the archive, publishing a
+    // template with no suite. Reach: three libraries under lib/ are
+    // maintainer-only — they read a monorepo checkout a published package
+    // never has — and shipping them uploads code nobody can run into every
+    // release, and into every `fluframe upgrade` merge base.
+    late GitignoreMatcher matcher;
+    late Directory packageRoot;
 
-      final citation = RegExp(r'#\d{3}\b');
+    setUpAll(() {
+      packageRoot = Directory(p.normalize(Directory.current.path));
+      final file = File(p.join(packageRoot.path, '.pubignore'));
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: 'run from packages/fluframe, as `dart pub publish` does',
+      );
+      matcher = GitignoreMatcher.parse(file.readAsStringSync());
+    });
+
+    test('excludes the maintainer-only libraries', () {
+      for (final path in maintainerOnlyLibraries) {
+        expect(
+          matcher.ignores(path),
+          isTrue,
+          reason: '$path would be uploaded in every release',
+        );
+      }
+    });
+
+    test('nothing the CLI actually runs imports them', () {
+      // This is what makes excluding them safe, and it is the half that
+      // rots: a future `import 'package:fluframe/src/bundle_hygiene.dart'`
+      // from a command would publish a package that cannot resolve its own
+      // import, and only a real `pub publish` would notice.
+      final excluded = maintainerOnlyLibraries.map(p.basename).toSet();
+      final imports = RegExp("import 'package:fluframe/src/([A-Za-z0-9_.]+)'");
       final offenders = <String>[];
-      for (final directory in const ['lib', 'test']) {
-        final source = Directory(p.join(root.path, directory));
+      for (final directory in const ['lib', 'bin']) {
+        final source = Directory(p.join(packageRoot.path, directory));
         for (final entity in source.listSync(recursive: true)) {
           if (entity is! File || !entity.path.endsWith('.dart')) continue;
-          final relative = p.relative(entity.path, from: root.path);
-          final lines = entity.readAsLinesSync();
-          for (var i = 0; i < lines.length; i++) {
-            if (citation.hasMatch(lines[i])) {
-              offenders.add('$relative:${i + 1}');
+          final relative = p
+              .relative(entity.path, from: packageRoot.path)
+              .replaceAll(r'\', '/');
+          // The excluded set is closed under its own imports: template_sync
+          // imports bundle_hygiene, and the two leave together.
+          if (maintainerOnlyLibraries.contains(relative)) continue;
+          for (final match in imports.allMatches(entity.readAsStringSync())) {
+            if (excluded.contains(match.group(1))) {
+              offenders.add('$relative -> ${match.group(1)}');
             }
           }
         }
@@ -465,8 +498,106 @@ void main() {
         offenders,
         isEmpty,
         reason:
+            'a shipped library imports a .pubignored maintainer-only '
+            'library; either stop importing it, or take it back out of '
+            '.pubignore',
+      );
+    });
+
+    test('keeps the bundled template, including its test suite', () {
+      for (final path in const [
+        'templates/app/lib/main.dart',
+        'templates/app/test/main_test.dart',
+        'templates/app/gitignore',
+        'templates/app/github/workflows/ci.yml',
+        'templates/addons.json',
+      ]) {
+        expect(
+          matcher.ignores(path),
+          isFalse,
+          reason: '$path would be dropped — a pattern lost its anchor',
+        );
+      }
+    });
+  });
+
+  group('the shipped trees carry no private tracker citations', () {
+    // packages/fluframe/ may cite issue numbers freely — only someone
+    // reading the CLI's own source ever sees them. What ships verbatim
+    // into a generated project is different: a citation there lands in a
+    // file the user owns, pointing at a tracker they cannot open.
+    // Enforced here so the boundary stops being re-audited by hand.
+    final repoRoot = p.normalize(
+      p.join(Directory.current.path, '..', '..'),
+    );
+
+    /// Every tree that reaches a generated app: the template overlay, and
+    /// the `--backend` / `--analytics` / `--error-reporting` addon sources
+    /// spliced in on top of it. The addons were outside the original walk.
+    const shippedTrees = [
+      'template/lib',
+      'template/test',
+      'template_addons',
+    ];
+
+    /// The one allowed link, and the reason it is allowed: the auth
+    /// scaffold's doc comment points at the public backend guides, which
+    /// is where a reader of that file has to go next.
+    const allowedLinkFile =
+        'template/lib/features/auth/data/auth_repository.dart';
+
+    List<String> scanFor(RegExp pattern, {String? allowedIn}) {
+      final offenders = <String>[];
+      for (final tree in shippedTrees) {
+        final source = Directory(p.join(repoRoot, tree));
+        expect(
+          source.existsSync(),
+          isTrue,
+          reason: 'run from packages/fluframe, as sync_template does',
+        );
+        for (final entity in source.listSync(recursive: true)) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          final relative = p
+              .relative(entity.path, from: repoRoot)
+              .replaceAll(r'\', '/');
+          if (relative == allowedIn) continue;
+          final lines = entity.readAsLinesSync();
+          for (var i = 0; i < lines.length; i++) {
+            if (pattern.hasMatch(lines[i])) {
+              offenders.add('$relative:${i + 1}');
+            }
+          }
+        }
+      }
+      return offenders;
+    }
+
+    test('no #NNN issue reference appears in a shipped Dart source', () {
+      expect(
+        scanFor(RegExp(r'#\d{3}\b')),
+        isEmpty,
+        reason:
             'these ship into every generated app; state the reason in '
             'prose instead of citing an issue number',
+      );
+    });
+
+    test('no tracker URL appears in a shipped Dart source', () {
+      // The other half of the same leak, and the half the 1.8.0 sweep
+      // fixed by hand: a bare repository URL in a comment is a link into
+      // a project the app owner has nothing to do with. Only the guides
+      // pointer in the auth scaffold is allowed, and it is named here so
+      // a second one cannot appear quietly beside it.
+      expect(
+        scanFor(
+          RegExp(r'github\.com/JoGyoungJun'),
+          allowedIn: allowedLinkFile,
+        ),
+        isEmpty,
+        reason:
+            'a generated app should not carry links into this repository; '
+            'if a pointer is genuinely useful to the app owner, add it to '
+            'the allowance in this test and say why',
       );
     });
   });

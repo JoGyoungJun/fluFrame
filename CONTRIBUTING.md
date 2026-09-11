@@ -124,6 +124,9 @@ The e2e test requires the Flutter SDK on PATH and takes a few minutes.
    scope, e.g. `feat(template): add golden test setup`,
    `fix(cli): handle spaces in output path`.
 4. Describe **what** and **why** in the PR body; link the related issue.
+   If the change is user-visible, add a line under `## Unreleased` in
+   `packages/fluframe/CHANGELOG.md` in the same PR — release notes are
+   accumulated there, not reconstructed from `git log` at release time.
 5. If your change moves or renames something a document points at — a
    file path, a command, a flag, a CI job name — update that document in
    the **same PR**. This applies to `README.md` and `docs/`. Those files
@@ -143,8 +146,10 @@ lands through a pull request with all CI jobs green. Nothing merges red.
 
 ## Releasing (maintainers)
 
-1. Bump `version` in `packages/fluframe/pubspec.yaml`, `cliVersion` in
-   `lib/src/version.dart`, and update `CHANGELOG.md`; land the
+1. Bump `version` in `packages/fluframe/pubspec.yaml` and `cliVersion` in
+   `lib/src/version.dart`; in `CHANGELOG.md` rename the `## Unreleased`
+   heading to the new version and open a fresh, empty `## Unreleased`
+   above it (`version_sync_test` checks the heading pairing). Land the
    bump on `main` via PR.
 2. Push the release tag: `git tag fluframe-v<version> && git push origin
    fluframe-v<version>`. The `publish.yml` workflow re-runs every gate
@@ -152,11 +157,6 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    publishes to pub.dev via OIDC — no local credentials involved.
 3. If a gate fails, nothing is published: fix on main via PR, delete and
    re-push the tag.
-   After a successful publish, create the GitHub Release for the tag:
-   `gh release create fluframe-v<version> --title "fluframe <version>"
-   --notes-file <notes>` with notes lifted from the CHANGELOG section.
-   (Releases exist from 1.7.0 onward — 1.6.0 deliberately has none;
-   pub.dev and the CHANGELOG carry its notes.)
 4. Manual fallback: `packages\fluframe\tool\publish.bat` runs the same
    gates locally, then publishes interactively (`--yes` to skip the
    prompt). **Read the dry-run file list — do not just run it.** Unlike
@@ -164,8 +164,11 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    `packages/fluframe/.gitignore` hides `templates/` from `git status`,
    so the dry-run list is the only place you ever see what is about to be
    uploaded. It must include `templates/app/lib/...`,
-   `templates/app/test/...`, and `templates/app/gitignore` — a missing
-   `test/` means a `.pubignore` pattern lost its anchoring slash. It must
+   `templates/app/test/...`, `templates/app/gitignore`, and
+   `templates/app/github/workflows/ci.yml` — a missing `test/` means a
+   `.pubignore` pattern lost its anchoring slash; a missing `github/`
+   means the dot-renamed overlay entry was dropped (nothing hard-stops
+   on it, unlike `lib/` and `test/`). It must
    include no `*.local.json`, `.env`, key, keystore or credentials file;
    `sync_template.dart` excludes those and exits non-zero if any reach
    the bundle, but this is the check that does not trust the filter.
@@ -177,6 +180,13 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    this path because a tag run already failed at its upload step, in
    which case the tag is already on the release commit and there is
    nothing left to push.
+5. After a successful publish — by either path — create the GitHub
+   Release for the tag: `gh release create fluframe-v<version> --title
+   "fluframe <version>" --notes-file <notes>` with notes lifted from the
+   CHANGELOG section. This step is easy to skip because nothing fails
+   without it; it is the one part of a release no gate enforces.
+   (Releases exist from 1.7.0 onward — 1.6.0 deliberately has none;
+   pub.dev and the CHANGELOG carry its notes.)
 
 ### When the tag run fails at the upload step
 

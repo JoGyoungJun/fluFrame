@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fluframe/src/host_capabilities.dart';
 import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/template_sync.dart';
 import 'package:path/path.dart' as p;
@@ -55,14 +56,17 @@ void main() {
       }
     });
 
-    int run({void Function()? onSourcesVerified, StringSink? err}) =>
-        syncTemplate(
-          packageRoot: packageRoot,
-          repoRoot: repoRoot,
-          out: StringBuffer(),
-          err: err ?? StringBuffer(),
-          onSourcesVerified: onSourcesVerified,
-        );
+    int run({
+      void Function()? onSourcesVerified,
+      StringSink? out,
+      StringSink? err,
+    }) => syncTemplate(
+      packageRoot: packageRoot,
+      repoRoot: repoRoot,
+      out: out ?? StringBuffer(),
+      err: err ?? StringBuffer(),
+      onSourcesVerified: onSourcesVerified,
+    );
 
     test('a complete checkout syncs and exits 0', () {
       final err = StringBuffer();
@@ -139,6 +143,46 @@ void main() {
       // The clean scan is what used to reset this to 0.
       expect(err.toString(), isNot(contains('SECRET-LIKE FILES')));
     });
+
+    test(
+      'a symlink in the template fails the sync instead of being inlined',
+      () {
+        // The one bundle input both publish guards are blind to. The
+        // .gitignore filter matches the relative PATH and
+        // findSecretLikeFiles matches the FILE NAME, so a link named
+        // env/dev.json passes both — and with followLinks, copySync would
+        // write the bytes of whatever it points at under that benign name,
+        // into an archive that is never replaced once published.
+        final secret = File(p.join(sandbox.path, 'outside_secret.txt'))
+          ..writeAsStringSync('AKIAIOSFODNN7EXAMPLE\n');
+        Link(
+          p.join(template.path, 'env', 'dev.json'),
+        ).createSync(secret.path);
+
+        final err = StringBuffer();
+        final out = StringBuffer();
+
+        expect(
+          run(out: out, err: err),
+          1,
+          reason: out.toString(),
+        );
+        expect(err.toString(), contains('SYMLINKS IN THE BUNDLE SOURCE'));
+        expect(err.toString(), contains('env/dev.json'));
+
+        final bundled = File(
+          p.join(packageRoot.path, 'templates', 'app', 'env', 'dev.json'),
+        );
+        expect(
+          bundled.existsSync() && bundled.readAsStringSync().contains('AKIA'),
+          isFalse,
+          reason: 'the link target was inlined into the bundle',
+        );
+      },
+      skip: canCreateSymlink()
+          ? null
+          : 'this host cannot create symlinks (on Windows: Developer Mode)',
+    );
 
     test('a secret-like file in the template never reaches the bundle', () {
       write(template, 'env/dev.local.json', '{"token": "real"}\n');

@@ -296,3 +296,33 @@ jobs:
           grep -qF "Upgrade $FROM -> $CURRENT (dry run)" "$log"
           echo "Upgrade canary: verified the $FROM bundle off live pub.dev" \
             >> "$GITHUB_STEP_SUMMARY"
+
+  addon-pin-watch:
+    # The constraints `fluframe add <addon>` writes into a user's pubspec
+    # — `supabase_flutter:^2.17.1` and four siblings — are string literals
+    # in packages/fluframe/lib/src/backends.dart. They appear in no
+    # pubspec, no lockfile and no dependabot entry, and a caret pin keeps
+    # resolving inside its own major forever, so a new major produces no
+    # red anywhere: the e2e backend variants keep resolving 2.x/4.x,
+    # dependabot never files a PR, and the example-drift check only
+    # compares examples to the template. The pins hold every newly
+    # generated app back while the bundled addon sources rot against an
+    # API nobody is watching. ADR-0001's 2026-08-06 amendment assigns that
+    # cost to "the scheduled dependency-watch passes" — this is that pass.
+    #
+    # Nightly, never on push, for the same reason as upgrade-canary: the
+    # verdict depends on pub.dev being up, and the script treats an
+    # unreachable registry as unknown rather than as up to date.
+    name: Addons — pinned majors still current on pub.dev
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - name: Compare each addon pin against pub.dev
+        run: dart run tool/check_addon_pins.dart | tee -a "$GITHUB_STEP_SUMMARY"

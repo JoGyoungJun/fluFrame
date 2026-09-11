@@ -125,6 +125,26 @@ void main() {
       );
     });
 
+    test('missing dart is fatal, not a warning', () async {
+      // Dart ships inside Flutter, so a host with Flutter but no `dart` on
+      // PATH is a PATH-ordering problem, not a missing install — and every
+      // later step shells out to `dart`. Dropping the `fatal = true` on
+      // this branch alone leaves doctor printing "[!!] Dart not found" and
+      // then "All set", exit 0, with the whole suite still green.
+      final runner = runnerWith((executable, arguments, {workingDirectory}) {
+        if (executable == 'dart') {
+          throw const ProcessException('dart', ['--version']);
+        }
+        return Future.value(ProcessResult(0, 0, '$executable 3.12.1\n', ''));
+      });
+
+      final code = await runner.run(['doctor']);
+
+      expect(code, 69);
+      expect(out.toString(), contains('[!!] Dart not found on PATH'));
+      expect(out.toString(), isNot(contains('All set')));
+    });
+
     test('missing git is a warning, not a failure', () async {
       final runner = runnerWith((executable, arguments, {workingDirectory}) {
         if (executable == 'git') {

@@ -4,8 +4,10 @@ import 'package:args/command_runner.dart';
 import 'package:fluframe/src/bundle_archive.dart';
 import 'package:fluframe/src/command_runner.dart';
 import 'package:fluframe/src/commands/add_command.dart';
+import 'package:fluframe/src/commands/create_command.dart';
 import 'package:fluframe/src/commands/upgrade_command.dart';
 import 'package:fluframe/src/feature_scaffold.dart';
+import 'package:fluframe/src/project_generator.dart';
 import 'package:fluframe/src/upgrader.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -124,6 +126,56 @@ class _RecordingUpgrader extends Upgrader {
   }
 }
 
+/// A [ProjectGenerator] that records what it was called with and
+/// generates nothing.
+///
+/// `create` reads nine values out of the parser and hands them to
+/// `ProjectGenerator.generate`; every other generator test calls that
+/// method with named Dart arguments, so nothing crossed the parser.
+/// `--org`, `--description` and `--output-directory` are all read
+/// `as String`, and `--backend`, `--error-reporting` and `--analytics`
+/// are all read `as String` and all mapped `'none' -> null`, which makes
+/// swapping any two of them a change that compiles and type-checks.
+class _RecordingGenerator extends ProjectGenerator {
+  _RecordingGenerator({required super.templateDirectory});
+
+  /// What [generate] was handed, each null until it is called.
+  String? name;
+  String? org;
+  String? description;
+  String? backend;
+  String? errorReporting;
+  String? analytics;
+  String? outputDirectory;
+  List<String>? platforms;
+  bool? runPub;
+
+  @override
+  Future<int> generate({
+    required String name,
+    required String org,
+    required String outputDirectory,
+    String? description,
+    String? backend,
+    String? errorReporting,
+    String? analytics,
+    List<String> platforms = defaultPlatforms,
+    bool runPub = true,
+    bool bareOverlay = false,
+  }) async {
+    this.name = name;
+    this.org = org;
+    this.outputDirectory = outputDirectory;
+    this.description = description;
+    this.backend = backend;
+    this.errorReporting = errorReporting;
+    this.analytics = analytics;
+    this.platforms = platforms;
+    this.runPub = runPub;
+    return 0;
+  }
+}
+
 /// A [Stdout] that keeps what was written to it.
 ///
 /// `add feature` prints its report straight to `io.stdout`, and
@@ -208,6 +260,45 @@ void main() {
       expect(code, 64, reason: err.toString());
       expect(err.toString(), contains('Cannot create'));
       expect(err.toString(), contains(r'C:\dev&tools'));
+    });
+
+    group("create refuses a value outside an option's allowed set", () {
+      // The four `allowed:` lists in create_command are the only thing
+      // standing between a typo and a run that gets as far as resolving a
+      // template — and nothing drove them through the parser. A dropped
+      // `allowed:` compiles, analyzes clean, and leaves `--backend
+      // firebse` to reach ProjectGenerator, which reports the unknown
+      // addon only after `flutter create` has already scaffolded (the
+      // generator's own guard, tested in project_generator_test). Refusing
+      // at parse time is what keeps the typo from writing anything at all.
+      //
+      // Each case asserts the bad value is echoed: args names the option
+      // and the value it rejected, so a user who mistyped one of six
+      // platforms can see which one.
+      const cases = {
+        'platforms': 'androidd',
+        'backend': 'firebse',
+        'error-reporting': 'sentri',
+        'analytics': 'posthg',
+      };
+
+      for (final entry in cases.entries) {
+        test('--${entry.key}', () async {
+          final err = StringBuffer();
+          final runner = FluframeCommandRunner(err: err);
+
+          final code = await runner.run([
+            'create',
+            'my_app',
+            '--${entry.key}',
+            entry.value,
+          ]);
+
+          expect(code, 64, reason: err.toString());
+          expect(err.toString(), contains(entry.value));
+          expect(err.toString(), contains(entry.key));
+        });
+      }
     });
 
     test('unknown commands are usage errors', () async {
@@ -351,6 +442,118 @@ void main() {
       expect(code, 0, reason: report.toString());
       expect(scaffold.applied, isTrue, reason: report.toString());
       expect(report.toString(), contains('Created:'));
+    });
+
+    test('create parses each option onto its own parameter', () async {
+      // Nine values cross the parser on the way to
+      // ProjectGenerator.generate and none of them had a test that went
+      // through the parser at all — every generator test calls generate
+      // with named Dart arguments, which cannot see the wiring in
+      // between. The wiring is correct; this pins it. Three of the nine
+      // are plain `as String` reads (--org, --description,
+      // --output-directory) and three more are `as String` plus the same
+      // `'none' -> null` mapping (--backend, --error-reporting,
+      // --analytics), so swapping any pair within either group compiles,
+      // type-checks, and would silently generate an app wired to the
+      // wrong service — or scaffold it into the wrong directory.
+      //
+      // The double ignores its template root; the command still resolves
+      // the real one and hands it to the seam.
+      final template = Directory.current;
+
+      Future<_RecordingGenerator> createWith(List<String> arguments) async {
+        final generator = _RecordingGenerator(templateDirectory: template);
+        final runner = CommandRunner<int>('test', 'test')
+          ..addCommand(CreateCommand(makeGenerator: (_) => generator));
+        final code = await runner.run(['create', ...arguments]);
+        expect(code, 0, reason: 'create $arguments did not run');
+        return generator;
+      }
+
+      final everything = await createWith([
+        'my_app',
+        '--org',
+        'dev.example.co',
+        '--description',
+        'a described app',
+        '--output-directory',
+        'somewhere_else',
+        '--platforms',
+        'web,linux',
+        '--backend',
+        'supabase',
+        '--error-reporting',
+        'sentry',
+        '--analytics',
+        'amplitude',
+        '--no-pub',
+      ]);
+
+      expect(everything.name, 'my_app');
+      expect(everything.org, 'dev.example.co');
+      expect(everything.description, 'a described app');
+      expect(everything.outputDirectory, 'somewhere_else');
+      expect(everything.platforms, ['web', 'linux']);
+      expect(everything.backend, 'supabase');
+      expect(everything.errorReporting, 'sentry');
+      expect(everything.analytics, 'amplitude');
+      expect(everything.runPub, isFalse);
+
+      // One option at a time, which is the half that can see a crossed
+      // wire: with all of them set at once, two swapped record the same
+      // set of values and everything above still passes.
+      final backendOnly = await createWith(['my_app', '--backend', 'firebase']);
+      expect(backendOnly.backend, 'firebase');
+      expect(backendOnly.errorReporting, isNull);
+      expect(backendOnly.analytics, isNull);
+
+      final errorsOnly = await createWith([
+        'my_app',
+        '--error-reporting',
+        'sentry',
+      ]);
+      expect(errorsOnly.errorReporting, 'sentry');
+      expect(errorsOnly.backend, isNull);
+      expect(errorsOnly.analytics, isNull);
+
+      final analyticsOnly = await createWith([
+        'my_app',
+        '--analytics',
+        'amplitude',
+      ]);
+      expect(analyticsOnly.analytics, 'amplitude');
+      expect(analyticsOnly.backend, isNull);
+      expect(analyticsOnly.errorReporting, isNull);
+
+      final orgOnly = await createWith(['my_app', '--org', 'dev.only.org']);
+      expect(orgOnly.org, 'dev.only.org');
+      expect(orgOnly.description, isNull);
+      expect(orgOnly.outputDirectory, '.');
+
+      final describedOnly = await createWith([
+        'my_app',
+        '--description',
+        'only the description',
+      ]);
+      expect(describedOnly.description, 'only the description');
+      expect(describedOnly.org, 'com.example');
+      expect(describedOnly.outputDirectory, '.');
+
+      final outputOnly = await createWith(['my_app', '-o', 'only_output']);
+      expect(outputOnly.outputDirectory, 'only_output');
+      expect(outputOnly.org, 'com.example');
+      expect(outputOnly.description, isNull);
+
+      // Nothing at all: the defaults are part of the wiring too, and
+      // `--pub` defaulting to false would skip pub get and gen-l10n on
+      // every generated app.
+      final defaults = await createWith(['named_only_app']);
+      expect(defaults.name, 'named_only_app');
+      expect(defaults.runPub, isTrue);
+      expect(defaults.platforms, defaultPlatforms);
+      expect(defaults.backend, isNull);
+      expect(defaults.errorReporting, isNull);
+      expect(defaults.analytics, isNull);
     });
 
     test('upgrade parses each option onto its own parameter', () async {
