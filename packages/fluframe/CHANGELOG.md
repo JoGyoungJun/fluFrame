@@ -2,6 +2,75 @@
 
 ## Unreleased
 
+**Improvement cycle 6.** Two of these change what a shipped app does; the
+rest close gaps that had no test or no owner.
+
+### A backend you selected but never configured now refuses to sign anyone in
+
+- **`--backend supabase` / `--backend firebase` fail closed in release and
+  in the `prod` flavor.** The generated app falls back to the in-memory
+  auth fake when its backend URL is empty, so a freshly generated app is
+  usable before you have keys. That constant folds at compile time, so a
+  **release** build made without `--dart-define-from-file` got the same
+  fake — which accepts any email with any six-character password — with no
+  crash, no visible difference, and no log, because a release build has no
+  `dart:developer` sink to report into. The fallback is now gated on
+  `failClosedWhenUnconfigured` (`kReleaseMode || isProdFlavor`), and an
+  unconfigured release refuses every sign-in with a message naming the
+  missing build flag. Debug and profile builds are unchanged.
+
+### `upgrade` no longer records an unreadable conflict as resolved
+
+- **A conflicted file that cannot be read counts as still conflicted.** If
+  a file left carrying conflict markers became unreadable between runs — an
+  editor holding it open, a re-save in UTF-16 — the check that looks for
+  markers treated "cannot read" as "no markers", so `upgrade --apply`
+  reported "Conflicts resolved", recorded the new version, and the
+  already-up-to-date short circuit then refused to merge again. The file
+  kept its `<<<<<<<` markers with no way back except hand-editing
+  `.fluframe.json`. The re-run now names the file and stays in progress.
+- **The `--from` help and the no-metadata error say "before 1.0.0"**, which
+  is when `.fluframe.json` actually started shipping. They said "0.14.0", a
+  version that was never published, so following the advice literally could
+  only fail at bundle fetch.
+
+### Template
+
+- **HTTP timeouts are configurable.** `API_TIMEOUT_SECONDS` (default 10)
+  joins `API_BASE_URL` in `env/dev.json` and `env/prod.json`, and
+  `apiTimeout` in `core/config/app_config.dart` feeds dio's connect, send
+  and receive timeouts. Pointing an app at a slower backend no longer means
+  editing `api_client.dart`, which `upgrade` would then report as a
+  conflict on every later template change.
+- **Wide viewports are documented.** The 840 dp `ContentWidth` cap that
+  centres content on desktop and web is now named in the app README, with
+  the constant to change.
+
+### Publishing
+
+- **The published package no longer carries maintainer-only code.**
+  `template_sync.dart`, `bundle_hygiene.dart` and `example_drift.dart` (~34
+  KB) only run against a full monorepo checkout, and were uploaded in every
+  release — and re-downloaded by every `upgrade`, which uses the published
+  archive as its merge base.
+- **A symbolic link under `template/` stops the bundle sync.** Following
+  one would copy its target's bytes into the archive under the link's own
+  name, which both publish guards — a path filter and a filename scan —
+  would pass.
+
+### Internal
+
+- New gates so these stop being re-audited by hand: parser-level tests for
+  every `create` option, a `CreateCommand` generator seam, ARB parity that
+  compares placeholders rather than key sets, a per-key boot-failure
+  isolation test, `doctor`'s missing-Dart branch, the POSIX half of the
+  shell boundary, `.pubignore` reach and anchoring, tracker citations in
+  the addon sources, and the examples' own codegen drift and coverage
+  floor. CI now also compiles the CLI at its declared SDK floor (3.12.0),
+  and a nightly job checks the addon dependency pins against pub.dev.
+- `Upgrader.run` is 355 lines instead of 596, split into metadata read,
+  pending-upgrade resume, and apply-and-record. No behaviour change.
+
 ## 1.8.0
 
 **Two improvement passes (cycles 4 and 5), led by a behaviour change
