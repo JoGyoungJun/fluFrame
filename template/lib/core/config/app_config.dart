@@ -28,6 +28,22 @@ const String apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://jsonplaceholder.typicode.com',
 );
 
+/// How long an HTTP request may take before it fails, in seconds.
+///
+/// Applied to dio's connect, send and receive timeouts alike (see
+/// `core/network/api_client.dart`). It lives here, next to [apiBaseUrl],
+/// because an app pointed at a slower backend has to be able to raise it
+/// — and editing the number in the client source instead makes that file
+/// a local edit `fluframe upgrade` reports as a conflict on every later
+/// template change.
+const int apiTimeoutSeconds = int.fromEnvironment(
+  'API_TIMEOUT_SECONDS',
+  defaultValue: 10,
+);
+
+/// [apiTimeoutSeconds] as a [Duration].
+const Duration apiTimeout = Duration(seconds: apiTimeoutSeconds);
+
 /// Whether this build is the production flavor.
 const bool isProdFlavor = appFlavor == 'prod';
 

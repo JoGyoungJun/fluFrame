@@ -1,4 +1,5 @@
 {
   "APP_FLAVOR": "dev",
-  "API_BASE_URL": "https://jsonplaceholder.typicode.com"
+  "API_BASE_URL": "https://jsonplaceholder.typicode.com",
+  "API_TIMEOUT_SECONDS": 10
 }

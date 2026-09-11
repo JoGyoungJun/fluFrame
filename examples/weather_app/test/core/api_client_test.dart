@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:weather_app/core/config/app_config.dart';
 import 'package:weather_app/core/network/api_client.dart';
 import 'package:weather_app/core/network/api_exception.dart';
 
@@ -24,9 +25,13 @@ void main() {
       // ten seconds like a connect or receive stall does.
       final options = createContainer().read(dioProvider).options;
 
-      expect(options.connectTimeout, const Duration(seconds: 10));
-      expect(options.sendTimeout, const Duration(seconds: 10));
-      expect(options.receiveTimeout, const Duration(seconds: 10));
+      // Against apiTimeout, not a repeated literal: the point of the
+      // constant is that all three move together, and three copies of
+      // `Duration(seconds: 10)` here would pass while two of the three
+      // stayed behind.
+      expect(options.connectTimeout, apiTimeout);
+      expect(options.sendTimeout, apiTimeout);
+      expect(options.receiveTimeout, apiTimeout);
     });
   });
 
