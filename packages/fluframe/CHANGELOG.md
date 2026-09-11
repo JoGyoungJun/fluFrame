@@ -2,8 +2,19 @@
 
 ## Unreleased
 
+## 1.9.0
+
 **Improvement cycle 6.** Two of these change what a shipped app does; the
 rest close gaps that had no test or no owner.
+
+**Why a minor.** Nothing here breaks the public contract in
+`docs/versioning.md` — no CLI option is renamed or removed, no argument
+value is refused, the metadata schema is unchanged, and template internals
+are explicitly free to evolve. A patch would have satisfied the contract.
+It is a minor because the authentication behaviour of a generated app
+changes: an unconfigured backend that used to sign anyone in now refuses
+to, and that is something an app owner should learn from the version
+number rather than from the diff. Maintainer decision, 2026-09-11.
 
 ### A backend you selected but never configured now refuses to sign anyone in
 
