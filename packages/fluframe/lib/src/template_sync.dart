@@ -104,6 +104,11 @@ int syncTemplate({
   // the end must not undo that.
   var failed = false;
   var copied = 0;
+  // A symlink under template/ is never intentional — `git ls-files -s
+  // template` carries no 120000 mode — and it is the one bundle input both
+  // publish guards are blind to, so it fails the run rather than being
+  // skipped quietly.
+  final symlinks = <String>[];
   for (final entry in overlayEntries) {
     final source = p.join(repoTemplate.path, entry);
     // Dot-prefixed entries ship under the dot-less name the CLI overlay
@@ -118,6 +123,7 @@ int syncTemplate({
         Directory(destination),
         excluded,
         relativeRoot: entry,
+        symlinks: symlinks,
       );
       copied++;
     } else if (FileSystemEntity.isFileSync(source)) {
@@ -140,7 +146,13 @@ int syncTemplate({
   if (addonBundle.existsSync()) {
     addonBundle.deleteSync(recursive: true);
   }
-  _copyDirectory(repoAddons, addonBundle, excluded, relativeRoot: '');
+  _copyDirectory(
+    repoAddons,
+    addonBundle,
+    excluded,
+    relativeRoot: '',
+    symlinks: symlinks,
+  );
   output.writeln('Synced template_addons into templates/addons.');
 
   // Ship the addon patch definitions WITH the bundle. `fluframe upgrade`
@@ -168,6 +180,17 @@ int syncTemplate({
   // clean, so this re-reads the result rather than trusting it. A hit here
   // means the filter has a hole, and the only safe outcome is a non-zero
   // exit — publish.bat runs this before uploading.
+  if (symlinks.isNotEmpty) {
+    errors.writeln(
+      'SYMLINKS IN THE BUNDLE SOURCE — refusing to publish:\n'
+      '${symlinks.map((path) => '  $path').join('\n')}\n'
+      "A link is copied as its target's bytes under the link's own name, "
+      'which neither the .gitignore filter nor the secret scan can see. '
+      'Replace each with the real file.',
+    );
+    failed = true;
+  }
+
   final leaks = reportBundleLeaks(
     Directory(p.join(packageRoot.path, 'templates')),
     errors,
@@ -219,9 +242,17 @@ void _copyDirectory(
   Directory destination,
   _BundleFilter excluded, {
   required String relativeRoot,
+  required List<String> symlinks,
 }) {
   destination.createSync(recursive: true);
-  for (final entity in source.listSync()) {
+  // followLinks:false, because the default resolves a Link to the File it
+  // points at, and copySync then inlines the TARGET's bytes under the
+  // LINK's name. Both publish guards match names — the .gitignore filter
+  // on the relative path, findSecretLikeFiles on the filename — so
+  // `env/dev.json -> ~/.aws/credentials` passes both and is uploaded under
+  // a benign name, and a published version is never replaced. Recorded
+  // rather than followed; the caller fails the run.
+  for (final entity in source.listSync(followLinks: false)) {
     final name = p.basename(entity.path);
     // Paths are matched relative to the template root, because that is what
     // template/.gitignore's anchored patterns (`env/*.local.json`) mean.
@@ -234,7 +265,10 @@ void _copyDirectory(
         Directory(target),
         excluded,
         relativeRoot: relative,
+        symlinks: symlinks,
       );
+    } else if (entity is Link) {
+      symlinks.add(relative);
     } else if (entity is File) {
       if (excluded.rejects(relative)) continue;
       entity.copySync(target);
