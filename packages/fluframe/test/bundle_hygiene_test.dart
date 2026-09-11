@@ -521,44 +521,83 @@ void main() {
     });
   });
 
-  group('template/ carries no private tracker citations', () {
+  group('the shipped trees carry no private tracker citations', () {
     // packages/fluframe/ may cite issue numbers freely — only someone
-    // reading the CLI's own source ever sees them. template/ is different:
-    // it ships verbatim into every generated project, so a citation there
-    // lands in a file the user owns, pointing at a tracker they cannot
-    // open. Enforced here so the boundary stops being re-audited by hand.
-    test('no #NNN issue reference appears in a shipped Dart source', () {
-      final root = Directory(
-        p.normalize(p.join(Directory.current.path, '..', '..', 'template')),
-      );
-      expect(
-        root.existsSync(),
-        isTrue,
-        reason: 'run from packages/fluframe, as sync_template does',
-      );
+    // reading the CLI's own source ever sees them. What ships verbatim
+    // into a generated project is different: a citation there lands in a
+    // file the user owns, pointing at a tracker they cannot open.
+    // Enforced here so the boundary stops being re-audited by hand.
+    final repoRoot = p.normalize(
+      p.join(Directory.current.path, '..', '..'),
+    );
 
-      final citation = RegExp(r'#\d{3}\b');
+    /// Every tree that reaches a generated app: the template overlay, and
+    /// the `--backend` / `--analytics` / `--error-reporting` addon sources
+    /// spliced in on top of it. The addons were outside the original walk.
+    const shippedTrees = [
+      'template/lib',
+      'template/test',
+      'template_addons',
+    ];
+
+    /// The one allowed link, and the reason it is allowed: the auth
+    /// scaffold's doc comment points at the public backend guides, which
+    /// is where a reader of that file has to go next.
+    const allowedLinkFile =
+        'template/lib/features/auth/data/auth_repository.dart';
+
+    List<String> scanFor(RegExp pattern, {String? allowedIn}) {
       final offenders = <String>[];
-      for (final directory in const ['lib', 'test']) {
-        final source = Directory(p.join(root.path, directory));
+      for (final tree in shippedTrees) {
+        final source = Directory(p.join(repoRoot, tree));
+        expect(
+          source.existsSync(),
+          isTrue,
+          reason: 'run from packages/fluframe, as sync_template does',
+        );
         for (final entity in source.listSync(recursive: true)) {
           if (entity is! File || !entity.path.endsWith('.dart')) continue;
-          final relative = p.relative(entity.path, from: root.path);
+          final relative = p
+              .relative(entity.path, from: repoRoot)
+              .replaceAll(r'\', '/');
+          if (relative == allowedIn) continue;
           final lines = entity.readAsLinesSync();
           for (var i = 0; i < lines.length; i++) {
-            if (citation.hasMatch(lines[i])) {
+            if (pattern.hasMatch(lines[i])) {
               offenders.add('$relative:${i + 1}');
             }
           }
         }
       }
+      return offenders;
+    }
 
+    test('no #NNN issue reference appears in a shipped Dart source', () {
       expect(
-        offenders,
+        scanFor(RegExp(r'#\d{3}\b')),
         isEmpty,
         reason:
             'these ship into every generated app; state the reason in '
             'prose instead of citing an issue number',
+      );
+    });
+
+    test('no tracker URL appears in a shipped Dart source', () {
+      // The other half of the same leak, and the half the 1.8.0 sweep
+      // fixed by hand: a bare repository URL in a comment is a link into
+      // a project the app owner has nothing to do with. Only the guides
+      // pointer in the auth scaffold is allowed, and it is named here so
+      // a second one cannot appear quietly beside it.
+      expect(
+        scanFor(
+          RegExp(r'github\.com/JoGyoungJun'),
+          allowedIn: allowedLinkFile,
+        ),
+        isEmpty,
+        reason:
+            'a generated app should not carry links into this repository; '
+            'if a pointer is genuinely useful to the app owner, add it to '
+            'the allowance in this test and say why',
       );
     });
   });
