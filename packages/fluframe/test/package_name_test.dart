@@ -5,46 +5,46 @@ import 'package:fluframe/src/package_name.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('isValidPackageName', () {
+  group('packageNameRejection accepts and refuses', () {
     test('accepts lower_snake_case names', () {
-      expect(isValidPackageName('my_app'), isTrue);
-      expect(isValidPackageName('app2'), isTrue);
-      expect(isValidPackageName('demo_app'), isTrue);
+      expect(packageNameRejection('my_app'), isNull);
+      expect(packageNameRejection('app2'), isNull);
+      expect(packageNameRejection('demo_app'), isNull);
     });
 
     test('rejects invalid names', () {
-      expect(isValidPackageName('MyApp'), isFalse);
-      expect(isValidPackageName('1app'), isFalse);
-      expect(isValidPackageName('my-app'), isFalse);
-      expect(isValidPackageName('my app'), isFalse);
-      expect(isValidPackageName(''), isFalse);
+      expect(packageNameRejection('MyApp'), isNotNull);
+      expect(packageNameRejection('1app'), isNotNull);
+      expect(packageNameRejection('my-app'), isNotNull);
+      expect(packageNameRejection('my app'), isNotNull);
+      expect(packageNameRejection(''), isNotNull);
       // pub tolerates a leading underscore; flutter create and every
       // import in the generated app do not benefit from it.
-      expect(isValidPackageName('_private'), isFalse);
+      expect(packageNameRejection('_private'), isNotNull);
     });
 
     test('rejects Dart reserved words', () {
-      expect(isValidPackageName('class'), isFalse);
-      expect(isValidPackageName('switch'), isFalse);
-      expect(isValidPackageName('void'), isFalse);
+      expect(packageNameRejection('class'), isNotNull);
+      expect(packageNameRejection('switch'), isNotNull);
+      expect(packageNameRejection('void'), isNotNull);
     });
 
     test('rejects names the generated app already depends on', () {
       // Each of these used to pass validation and then fail generation
       // with "A package may not list itself as a dependency".
       for (final name in ['dio', 'go_router', 'intl', 'shared_preferences']) {
-        expect(isValidPackageName(name), isFalse, reason: name);
+        expect(packageNameRejection(name), isNotNull, reason: name);
       }
       // Addon dependencies count too — `--backend firebase` pub-adds them.
-      expect(isValidPackageName('firebase_core'), isFalse);
-      expect(isValidPackageName('sentry_flutter'), isFalse);
+      expect(packageNameRejection('firebase_core'), isNotNull);
+      expect(packageNameRejection('sentry_flutter'), isNotNull);
     });
 
     test('rejects Windows reserved device names', () {
       // `flutter create con` fails with a raw OS error (errno 161) after
       // a minute of work, on Windows only.
       for (final name in ['con', 'aux', 'nul', 'com1', 'lpt9']) {
-        expect(isValidPackageName(name), isFalse, reason: name);
+        expect(packageNameRejection(name), isNotNull, reason: name);
       }
     });
   });

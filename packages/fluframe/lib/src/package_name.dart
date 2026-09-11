@@ -132,17 +132,6 @@ const Set<String> generatedAppDependencyNames = {
 // generator should not hand people a name they will have to change.
 final RegExp _packageNamePattern = RegExp(r'^[a-z][a-z0-9_]*$');
 
-/// Whether [name] is usable as the package name of a generated app.
-///
-/// Stricter than pub's own rule, because a name that pub accepts can still
-/// make generation fail: see [generatedAppDependencyNames] and
-/// [windowsReservedNames].
-bool isValidPackageName(String name) =>
-    _packageNamePattern.hasMatch(name) &&
-    !_reservedWords.contains(name) &&
-    !windowsReservedNames.contains(name) &&
-    !generatedAppDependencyNames.contains(name);
-
 /// Explains, in one sentence, why [name] was rejected.
 ///
 /// Returns `null` when [name] is fine. The generic "lower_snake_case, no
