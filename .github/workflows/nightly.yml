@@ -298,7 +298,8 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
 
   addon-pin-watch:
-    # The constraints `fluframe add <addon>` writes into a user's pubspec
+    # The constraints `fluframe create --backend/--error-reporting/
+    # --analytics` writes into a user's pubspec
     # — `supabase_flutter:^2.17.1` and four siblings — are string literals
     # in packages/fluframe/lib/src/backends.dart. They appear in no
     # pubspec, no lockfile and no dependabot entry, and a caret pin keeps
