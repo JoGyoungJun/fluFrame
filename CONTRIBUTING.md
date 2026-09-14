@@ -210,10 +210,28 @@ the credential differed.
 
 `publish.yml` now removes the credential right after the version check
 and re-adds it immediately before `dart pub publish`, so the gates run
-anonymously. If a future run fails with an authorization error, check
-*which* step it was: a read (dependency resolution, the dry-run) means
-the credential is in scope where it should not be; the upload itself
-means the credential is missing or expired.
+anonymously.
+
+**Correction (2026-09-14): that diagnosis does not hold, and the rule it
+produced is wrong.** On the same morning, 73 minutes *before* the tag run
+failed, PR #18's `CLI — analyze & unit tests` job produced the identical
+`Package not available (authorization failed).` at `dart pub get` — and
+that job has no `id-token`, no `PUB_TOKEN`, and no pub credential of any
+kind (`ci.yml` grants `contents: read` at workflow level and
+`id-token: write` only to `deploy-demo`). A credential that is not there
+cannot be what authenticated the request. Both failures also landed on
+the same package, and a credential-free job resolved it fine 50 minutes
+later. A registry-side incident explains all three observations; the
+credential explains only one.
+
+So do **not** read an authorization error on a read as proof the
+credential is in scope. Check <https://status.pub.dev> and re-run first.
+
+Keeping the credential out of the gate steps is still right — a
+publishing token should not be live while the gates resolve and execute
+third-party packages — but it is least-privilege hygiene, not a fix for
+this incident. Do not cite this incident as evidence that it was
+exploited.
 
 ### When the tag run fails at the upload step
 

@@ -209,8 +209,17 @@ jobs:
         # permissions", twice, on a tag whose only difference from the
         # 1.8.0 release that published fine was its version number. An
         # anonymous `dart pub get` on the same pubspec resolved that same
-        # dependency without complaint, which is what places the failure
-        # in the credential rather than in the package or the constraint.
+        # dependency without complaint, which at the time looked like it
+        # placed the failure in the credential.
+        #
+        # CORRECTION (2026-09-14): it does not. PR #18's `CLI — analyze &
+        # unit tests` job hit the identical error at `dart pub get` 73
+        # minutes EARLIER the same morning, and that job has no id-token,
+        # no PUB_TOKEN and no pub credential at all. A registry-side
+        # incident covers every observation; the credential covers one.
+        # Keep this step — a publishing token has no business being live
+        # while the gates resolve and run third-party code — but keep it
+        # as least-privilege hygiene, not as a fix for that incident.
         #
         # The credential is therefore removed here and re-added
         # immediately before the publish step. That is not a workaround

@@ -396,8 +396,9 @@ const String _supabaseSetupNote =
     'Supabase: copy env/dev.json to env/dev.local.json (gitignored) and put '
     'your real SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY there, then run with '
     '--dart-define-from-file=env/dev.local.json and enable Email/Password '
-    'auth in your Supabase project. Until then the app runs on the '
-    'in-memory auth fake.';
+    'auth in your Supabase project. Until then a debug or profile dev '
+    'build runs on the in-memory auth fake; a release or prod build '
+    'refuses every sign-in instead of falling back to it.';
 
 /// The Firebase auth backend (stage 3 of the backend roadmap).
 const BackendAddon firebaseAddon = BackendAddon(
@@ -495,7 +496,9 @@ const String _firebaseSetupNote1 =
     'Firebase: run `dart pub global activate flutterfire_cli` then '
     '`flutterfire configure` inside the project (replaces the '
     'lib/firebase_options.dart placeholder). Until you do, the app logs '
-    'the configuration error and runs on the in-memory auth fake.';
+    'the configuration error; a debug or profile dev build then runs on '
+    'the in-memory auth fake, while a release or prod build refuses every '
+    'sign-in instead of falling back to it.';
 
 const String _firebaseSetupNote2 =
     'Firebase: enable Email/Password under Authentication > Sign-in '
