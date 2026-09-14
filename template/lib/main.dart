@@ -22,24 +22,43 @@ typedef BootState = ({
   User? initialUser,
 });
 
+/// How a failed boot read is reported. Matches [onPlatformError].
+typedef ReportBootError = bool Function(Object error, StackTrace stackTrace);
+
 /// Reads every persisted startup value from [store].
 ///
 /// A read that fails falls back to its default and is reported through
-/// [onPlatformError] instead of propagating. This runs before `runApp`,
-/// so an escaping storage error meant `runApp` was never reached at all:
-/// a black screen, and the handlers installed just above it have no
-/// widget tree to render the failure into. Booting on defaults with the
-/// error in the crash report beats not booting.
-Future<BootState> loadBootState(KeyValueStore store) async {
+/// [report] — [onPlatformError] in production — instead of propagating.
+/// This runs before `runApp`, so an escaping storage error meant `runApp`
+/// was never reached at all: a black screen, and the handlers installed
+/// just above it have no widget tree to render the failure into. Booting
+/// on defaults with the error in the crash report beats not booting.
+///
+/// [report] is injectable because both halves of that sentence are the
+/// contract and only one of them used to be testable. Asserting the
+/// fallback VALUES leaves the reporting call free to be deleted with the
+/// suite still green — the app would boot on defaults with the storage
+/// failure swallowed in total silence, which is the failure mode
+/// `core/logging/error_handlers.dart` calls out as "vanish without a
+/// trace".
+Future<BootState> loadBootState(
+  KeyValueStore store, {
+  ReportBootError report = onPlatformError,
+}) async {
   final settings = SettingsRepository(store);
   return (
-    themeMode: await _orDefault(settings.loadThemeMode, ThemeMode.system),
+    themeMode: await _orDefault(
+      settings.loadThemeMode,
+      ThemeMode.system,
+      report,
+    ),
     themePreset: await _orDefault(
       settings.loadThemePreset,
       ThemePreset.indigo,
+      report,
     ),
-    locale: await _orDefault<Locale?>(settings.loadLocale, null),
-    initialUser: await _restoreSession(store),
+    locale: await _orDefault<Locale?>(settings.loadLocale, null, report),
+    initialUser: await _restoreSession(store, report),
   );
 }
 
@@ -95,16 +114,23 @@ Future<void> main() async {
   start();
 }
 
-Future<T> _orDefault<T>(Future<T> Function() read, T fallback) async {
+Future<T> _orDefault<T>(
+  Future<T> Function() read,
+  T fallback,
+  ReportBootError report,
+) async {
   try {
     return await read();
   } on Object catch (error, stackTrace) {
-    onPlatformError(error, stackTrace);
+    report(error, stackTrace);
     return fallback;
   }
 }
 
-Future<User?> _restoreSession(KeyValueStore store) async {
+Future<User?> _restoreSession(
+  KeyValueStore store,
+  ReportBootError report,
+) async {
   try {
     // Spelled out here instead of passed to [_orDefault] as a tear-off:
     // the `--backend` addons rewrite this exact expression when they swap
@@ -112,7 +138,7 @@ Future<User?> _restoreSession(KeyValueStore store) async {
     // generation.
     return await InMemoryAuthRepository(store).restoreSession();
   } on Object catch (error, stackTrace) {
-    onPlatformError(error, stackTrace);
+    report(error, stackTrace);
     return null;
   }
 }

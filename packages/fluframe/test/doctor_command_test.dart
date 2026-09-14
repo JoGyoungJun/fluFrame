@@ -202,5 +202,97 @@ void main() {
       expect(code, 0, reason: out.toString());
       expect(out.toString(), contains('[ok] symbolic links available'));
     });
+
+    test(
+      'a tool that exits 0 printing nothing is reported as missing',
+      () async {
+        // `''.split('\n')` is `['']`, so an empty trimmed stdout used to
+        // come back as the empty string rather than null: `run()` printed a
+        // bare `[ok] ` with no version, and the SDK-floor check silently
+        // degraded to `unknown` while the report still ended "All set".
+        // A shim that writes `--version` to stderr does exactly this.
+        final runner = runnerWith((executable, arguments, {workingDirectory}) {
+          if (executable == 'flutter') {
+            return Future.value(ProcessResult(0, 0, '   \n', ''));
+          }
+          return allToolsPresent(
+            executable,
+            arguments,
+            workingDirectory: workingDirectory,
+          );
+        });
+
+        final code = await runner.run(['doctor']);
+
+        final report = out.toString();
+        expect(code, 69, reason: report);
+        expect(report, contains('[!!] Flutter SDK not found on PATH.'));
+        expect(report, isNot(contains('[ok] \n')));
+        expect(report, isNot(contains('All set')));
+      },
+    );
+
+    group('the production SDK-floor path', () {
+      // Every other test in this file injects `dartConstraint`, which is
+      // the LEFT operand of `dartConstraint ?? _constraintOf(template)`.
+      // That leaves the production path — locate pubspec.yaml under the
+      // resolved bundle and read its `environment: sdk:` — driven by
+      // nothing. If that join breaks, the floor check reports `unknown`,
+      // prints "skipping that check", and still ends "All set": the exact
+      // silent pass the check was added to stop.
+      late Directory templateDir;
+
+      setUp(() {
+        templateDir = Directory.systemTemp.createTempSync('fluframe_doctor_');
+      });
+
+      tearDown(() {
+        if (templateDir.existsSync()) templateDir.deleteSync(recursive: true);
+      });
+
+      CommandRunner<int> runnerReadingTemplate() {
+        out = StringBuffer();
+        return CommandRunner<int>('test', 'test')..addCommand(
+          DoctorCommand(
+            runProcess: allToolsPresent,
+            out: out,
+            canCreateSymlink: () => true,
+            // dartConstraint is deliberately NOT passed. Leaving it at its
+            // default of null is what selects the production path — read
+            // the floor out of the resolved bundle's own pubspec — which
+            // every other test in this file overrides away.
+            resolveTemplate: () async => templateDir,
+          ),
+        );
+      }
+
+      test('reads the constraint out of the resolved bundle pubspec', () async {
+        File('${templateDir.path}/pubspec.yaml').writeAsStringSync(
+          'name: fluframe_app\n'
+          'environment:\n'
+          '  sdk: ^3.99.0\n',
+        );
+
+        final code = await runnerReadingTemplate().run(['doctor']);
+
+        final report = out.toString();
+        // allToolsPresent reports Dart 3.12.1, which cannot satisfy ^3.99.0.
+        expect(code, 69, reason: report);
+        expect(report, contains('^3.99.0'));
+        expect(report, isNot(contains('skipping that check')));
+        expect(report, isNot(contains('All set')));
+      });
+
+      test(
+        'a bundle with no pubspec degrades to a stated skip, not a throw',
+        () async {
+          final code = await runnerReadingTemplate().run(['doctor']);
+
+          final report = out.toString();
+          expect(code, 0, reason: report);
+          expect(report, contains('skipping that check'));
+        },
+      );
+    });
   });
 }

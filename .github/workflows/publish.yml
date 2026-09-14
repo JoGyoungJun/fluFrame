@@ -114,14 +114,26 @@ jobs:
             exit 1
           fi
 
-  publish:
-    name: Gate & publish fluframe
-    # Every gate precedes the upload, and this is now the first of them.
+  gate:
+    name: Gate fluframe for release
+    # Every gate precedes the upload, and verify-ci is the first of them.
     needs: verify-ci
     runs-on: ubuntu-latest
+    # No `id-token` here, which is the whole point of this job existing.
+    # setup-dart mints the pub.dev PUBLISHING token the moment it installs
+    # and leaves it in the job environment for every later step — the
+    # workflow says so itself further down. These gates run `flutter
+    # create` and `flutter pub get` on a freshly generated app, resolving
+    # and executing a whole third-party dependency tree with no lockfile,
+    # so any of it could read that token. Without `id-token: write` there
+    # is no token for it to read: the exchange cannot happen at all.
+    #
+    # Removing the credential from pub's credentials file, which is what
+    # the publish job below still does, narrows what pub SENDS. It does
+    # not narrow what a process can READ out of the environment. Only the
+    # job boundary does that.
     permissions:
       contents: read
-      id-token: write # OIDC token exchange for pub.dev
     defaults:
       run:
         working-directory: packages/fluframe
@@ -198,7 +210,7 @@ jobs:
           PUB_VERSION="$(grep '^version:' pubspec.yaml | awk '{print $2}')"
           echo "tag=$TAG_VERSION pubspec=$PUB_VERSION"
           test "$TAG_VERSION" = "$PUB_VERSION"
-      - name: Take the publishing credential out of the gates
+      - name: Belt and braces — leave pub anonymous here too
         # `setup-dart` runs `dart pub token add https://pub.dev --env-var
         # PUB_TOKEN` as soon as it installs, so from that point every pub
         # request — including ordinary dependency downloads — is sent
@@ -209,18 +221,30 @@ jobs:
         # permissions", twice, on a tag whose only difference from the
         # 1.8.0 release that published fine was its version number. An
         # anonymous `dart pub get` on the same pubspec resolved that same
-        # dependency without complaint, which is what places the failure
-        # in the credential rather than in the package or the constraint.
+        # dependency without complaint, which at the time looked like it
+        # placed the failure in the credential.
         #
-        # The credential is therefore removed here and re-added
-        # immediately before the publish step. That is not a workaround
-        # so much as the arrangement this should always have had: a
-        # publishing credential has no business authenticating a
-        # dependency download, and the narrower window is worth having
-        # whatever pub.dev does next. `--env-var` stores only a REFERENCE
-        # to $PUB_TOKEN, which stays in the job environment throughout, so
-        # re-adding it is a one-line local edit and needs no second OIDC
-        # exchange.
+        # CORRECTION (2026-09-14): it does not. PR #18's `CLI — analyze &
+        # unit tests` job hit the identical error at `dart pub get` 73
+        # minutes EARLIER the same morning, and that job has no id-token,
+        # no PUB_TOKEN and no pub credential at all. A registry-side
+        # incident covers every observation; the credential covers one.
+        # Keep this step — a publishing token has no business being live
+        # while the gates resolve and run third-party code — but keep it
+        # as least-privilege hygiene, not as a fix for that incident.
+        #
+        # As of 2026-09-14 this job has no `id-token: write`, so there is
+        # no OIDC exchange and no credential to remove — setup-dart finds
+        # nothing to mint from. This line is kept because it costs one
+        # `|| true` and it fails safe: if the permission is ever widened
+        # back onto this job, the gates still run anonymously rather than
+        # silently regaining a publishing token.
+        #
+        # It is NOT the protection, though, and the distinction is the
+        # reason the job split exists. `--env-var` stores only a REFERENCE
+        # to $PUB_TOKEN; the variable itself stays in the job environment
+        # whatever pub's credentials file says. Removing the entry narrows
+        # what pub SENDS, never what a process can READ.
         run: dart pub token remove https://pub.dev || true
       - run: dart pub get
       - name: Unit tests (includes the cliVersion sync guard)
@@ -231,18 +255,51 @@ jobs:
         run: dart test -t e2e --reporter expanded
       - name: Publish dry-run
         run: dart pub publish --dry-run
-      - name: Restore the publishing credential
-        # Re-points pub at $PUB_TOKEN for the one step that needs it. The
-        # gates above have all passed by now, so this is the last thing
-        # between a green run and an upload that can never be taken back.
-        #
-        # The dry-run above is deliberately left anonymous: the known
-        # failure mode is "publishing token + package read = 403", and a
-        # dry-run re-validates the package. Verified rather than assumed,
-        # because a restore that silently did nothing would surface as an
-        # auth failure during the upload instead of before it.
+      # `templates/` is gitignored but published, so the publish job cannot
+      # just check the repository out — it has to receive the exact bundle
+      # these gates validated. Handing it over as an artifact is also what
+      # keeps the publish job from needing `dart pub get`: regenerating the
+      # bundle there would mean resolving dependencies with the credential
+      # live again, which is the exposure this split exists to close.
+      - name: Hand the validated bundle to the publish job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: template-bundle
+          path: packages/fluframe/templates
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish fluframe to pub.dev
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token exchange for pub.dev
+    defaults:
+      run:
+        working-directory: packages/fluframe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # setup-dart mints the publishing credential here. Nothing between
+      # this line and the upload resolves or runs third-party code: no
+      # `pub get`, no tests, no Flutter. `dart pub publish` needs neither
+      # — verified by running it against this package with `.dart_tool`
+      # removed and no prior resolution: 0 warnings.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+      - name: Restore the validated bundle
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: template-bundle
+          path: packages/fluframe/templates
+      - name: Confirm the bundle arrived and the credential is configured
+        # Both are cheap, and both fail better here than mid-upload. An
+        # empty templates/ would publish a CLI that cannot generate
+        # anything; a missing credential would surface as an auth error
+        # on an upload that can never be taken back.
         run: |
-          dart pub token add https://pub.dev --env-var PUB_TOKEN
+          test -f templates/app/pubspec.yaml
+          test -f templates/addons.json
           dart pub token list | grep -q 'pub.dev'
       - name: Publish
         run: dart pub publish --force

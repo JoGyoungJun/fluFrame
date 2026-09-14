@@ -324,8 +324,19 @@ const BackendAddon supabaseAddon = BackendAddon(
     // Anchored AFTER the error hooks, not on ensureInitialized(): an
     // initialize() that throws before they are installed escapes into the
     // root zone, and since it also precedes runApp there is no widget
-    // tree to show it — the user gets a black screen. Guarded on a
-    // configured URL for the same reason.
+    // tree to show it — the user gets a black screen.
+    //
+    // The try/catch is the same shape the Firebase patch below uses, and
+    // for the same reason: the key gate only covers an EMPTY config, not
+    // a wrong one. A typo'd URL, a trailing space, anything Uri.parse
+    // rejects — all throw here, in a configured build, past the gate.
+    //
+    // Setting `supabaseInitialized` is what makes the catch worth having.
+    // Without it the app boots, `isConfigured` is still true, the real
+    // SupabaseAuthRepository is handed out, and its `_client` getter
+    // throws "not initialized" on every auth call. Firebase needs no
+    // equivalent line because `Firebase.apps.isNotEmpty` already answers
+    // this; supabase_flutter exposes nothing that does.
     AddonPatch(
       file: 'lib/main.dart',
       anchor:
@@ -335,13 +346,18 @@ const BackendAddon supabaseAddon = BackendAddon(
           '  WidgetsBinding.instance.platformDispatcher.onError = '
           'onPlatformError;\n'
           '\n'
-          '  if (SupabaseAuthRepository.isConfigured) {\n'
-          '    await supabase.Supabase.initialize(\n'
-          "      url: const String.fromEnvironment('SUPABASE_URL'),\n"
-          '      publishableKey: const String.fromEnvironment(\n'
-          "        'SUPABASE_PUBLISHABLE_KEY',\n"
-          '      ),\n'
-          '    );\n'
+          '  if (supabaseKeysPresent) {\n'
+          '    try {\n'
+          '      await supabase.Supabase.initialize(\n'
+          "        url: const String.fromEnvironment('SUPABASE_URL'),\n"
+          '        publishableKey: const String.fromEnvironment(\n'
+          "          'SUPABASE_PUBLISHABLE_KEY',\n"
+          '        ),\n'
+          '      );\n'
+          '      supabaseInitialized = true;\n'
+          '    } on Object catch (error, stackTrace) {\n'
+          '      onPlatformError(error, stackTrace);\n'
+          '    }\n'
           '  }',
     ),
     // main.dart: restore the session from Supabase instead of the fake.
@@ -396,8 +412,9 @@ const String _supabaseSetupNote =
     'Supabase: copy env/dev.json to env/dev.local.json (gitignored) and put '
     'your real SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY there, then run with '
     '--dart-define-from-file=env/dev.local.json and enable Email/Password '
-    'auth in your Supabase project. Until then the app runs on the '
-    'in-memory auth fake.';
+    'auth in your Supabase project. Until then a debug or profile dev '
+    'build runs on the in-memory auth fake; a release or prod build '
+    'refuses every sign-in instead of falling back to it.';
 
 /// The Firebase auth backend (stage 3 of the backend roadmap).
 const BackendAddon firebaseAddon = BackendAddon(
@@ -495,7 +512,9 @@ const String _firebaseSetupNote1 =
     'Firebase: run `dart pub global activate flutterfire_cli` then '
     '`flutterfire configure` inside the project (replaces the '
     'lib/firebase_options.dart placeholder). Until you do, the app logs '
-    'the configuration error and runs on the in-memory auth fake.';
+    'the configuration error; a debug or profile dev build then runs on '
+    'the in-memory auth fake, while a release or prod build refuses every '
+    'sign-in instead of falling back to it.';
 
 const String _firebaseSetupNote2 =
     'Firebase: enable Email/Password under Authentication > Sign-in '

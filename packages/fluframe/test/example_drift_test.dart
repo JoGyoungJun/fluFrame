@@ -86,11 +86,18 @@ void main() {
 
     tearDown(() => sandbox.deleteSync(recursive: true));
 
-    DriftResult run({required bool fix, StringSink? out}) => checkExampleDrift(
+    DriftResult run({
+      required bool fix,
+      StringSink? out,
+      Map<String, Set<String>>? valueExemptions,
+      Map<String, Set<String>>? dependencyExemptions,
+    }) => checkExampleDrift(
       template: template,
       examples: examples,
       fix: fix,
       out: out ?? StringBuffer(),
+      valueExemptions: valueExemptions ?? allowedValueDivergence,
+      dependencyExemptions: dependencyExemptions ?? allowedDependencyDivergence,
     );
 
     // A maintainer tool's job is to REPORT what is wrong with a tree, so
@@ -223,6 +230,34 @@ void main() {
       expect(out.toString(), contains('homeTab'));
 
       // Overwriting a translation is worse than the drift.
+      expect(readArb(example, 'ko')['homeTab'], '홈 화면');
+    });
+
+    test('recording a deliberately different translation silences it', () {
+      // `allowedValueDivergence` had no test at all — the branch that
+      // reads it was executed by nothing, in production or in the suite,
+      // so the documented escape hatch could have been deleted or
+      // inverted without a single assertion noticing.
+      final arb = readArb(example, 'ko')..['homeTab'] = '홈 화면';
+      write(
+        example,
+        'lib/l10n/app_ko.arb',
+        '${const JsonEncoder.withIndent('  ').convert(arb)}\n',
+      );
+
+      final out = StringBuffer();
+      expect(
+        run(
+          fix: false,
+          out: out,
+          valueExemptions: const {
+            'todo_app': {'homeTab'},
+          },
+        ).drifted,
+        0,
+      );
+      expect(out.toString(), isNot(contains('homeTab')));
+      // The exemption silences the report; it never rewrites the value.
       expect(readArb(example, 'ko')['homeTab'], '홈 화면');
     });
 
@@ -371,13 +406,44 @@ dependencies:
         expect(run(fix: false, out: out).drifted, 1);
         expect(out.toString(), contains('extra dependency'));
         expect(out.toString(), contains('geolocator'));
-        // The allowlist is what turns it from drift into a decision — the
-        // real one is empty, so this asserts the shape it is read through
-        // rather than mutating a const.
-        expect(
-          allowedDependencyDivergence['todo_app'] ?? const <String>{},
-          isEmpty,
+      });
+
+      test('recording an example-only package silences it', () {
+        // The escape hatch, actually executed. This used to be asserted as
+        // `allowedDependencyDivergence['todo_app'] ?? const {}` being
+        // empty — a property of a `const {}` that no code change could
+        // falsify. Deleting every line that reads the map would have left
+        // that assertion green while the documented hatch quietly stopped
+        // existing.
+        write(template, 'pubspec.yaml', templatePubspec);
+        write(
+          example,
+          'pubspec.yaml',
+          examplePubspec(
+            dependencies: '''
+dependencies:
+  dio: ^5.11.0
+  flutter:
+    sdk: flutter
+  geolocator: ^13.0.0
+  go_router: ^17.5.0
+  intl: any
+''',
+          ),
         );
+
+        final out = StringBuffer();
+        expect(
+          run(
+            fix: false,
+            out: out,
+            dependencyExemptions: const {
+              'todo_app': {'geolocator'},
+            },
+          ).drifted,
+          0,
+        );
+        expect(out.toString(), isNot(contains('geolocator')));
       });
 
       test('the SDK constraint is compared too', () {

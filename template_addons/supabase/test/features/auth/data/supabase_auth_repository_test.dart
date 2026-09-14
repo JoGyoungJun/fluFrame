@@ -22,6 +22,35 @@ void main() {
       );
     });
 
+    test('the key gate requires BOTH keys, not just the URL', () {
+      // The addon seeds SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY empty in
+      // both env files, so a half-filled env/dev.local.json is the likely
+      // first state. Gating on the URL alone flipped `isConfigured` true,
+      // bypassed UnconfiguredAuthRepository and its release-mode refusal,
+      // and produced a client that 401s on every request rather than an
+      // app that says it is not configured.
+      expect(supabaseKeysPresent, isFalse);
+    });
+
+    test('initialize failing leaves the build unconfigured', () {
+      // Firebase reads `Firebase.apps.isNotEmpty`, which is false when
+      // initializeApp threw. supabase_flutter has no equivalent probe, so
+      // main.dart records the outcome here. Without it, a configured
+      // build whose initialize failed (a typo'd URL — past the key gate)
+      // still looked configured, got the real repository, and threw
+      // "not initialized" on every auth call.
+      expect(
+        supabaseInitialized,
+        isFalse,
+        reason: 'main.dart has not run in a widget test',
+      );
+      expect(
+        SupabaseAuthRepository.isConfigured,
+        isFalse,
+        reason: 'isConfigured must require the initialize to have succeeded',
+      );
+    });
+
     test('returns the in-memory fake while unconfigured', () async {
       final store = InMemoryKeyValueStore();
 

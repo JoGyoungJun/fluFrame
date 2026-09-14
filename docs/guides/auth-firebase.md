@@ -52,12 +52,22 @@ import 'package:fluframe_app/features/auth/domain/user.dart';
 /// `main.dart` reports that failure and keeps going; this keeps the app
 /// usable on the in-memory fake instead of leaving a login screen that
 /// crashes the moment it is used.
+///
+/// That convenience is scoped to debug and profile builds of the `dev`
+/// flavor. A release — or any `prod` build — whose `Firebase.initializeApp`
+/// never succeeded gets [UnconfiguredAuthRepository] instead: the fake
+/// signs in any email with a six-character password, and shipping that as
+/// the login screen is worse than shipping one that refuses everybody.
+/// See `failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 AuthRepository firebaseAuthOrFallback(KeyValueStore store) =>
     FirebaseAuthRepository.isConfigured
     ? FirebaseAuthRepository()
-    : InMemoryAuthRepository(store);
+    : unconfiguredBackendRepository('Firebase', store);
 
 /// [AuthRepository] backed by Firebase Auth.
+///
+/// Requires `flutterfire configure` to have replaced
+/// `lib/firebase_options.dart` (see the post-create notes).
 class FirebaseAuthRepository implements AuthRepository {
   /// Whether `Firebase.initializeApp` succeeded during boot.
   static bool get isConfigured => firebase_core.Firebase.apps.isNotEmpty;
@@ -88,8 +98,9 @@ class FirebaseAuthRepository implements AuthRepository {
     try {
       await _auth.signOut();
     } on firebase.FirebaseAuthException catch (error) {
-      // Same reason as signIn: a caller that wants to tell one
-      // sign-out failure from another needs the app's own type.
+      // Mapped exactly as signIn maps it: AuthRepository.signOut
+      // documents AuthException, and a bare `=> _auth.signOut()` let the
+      // SDK's own type straight past that seam.
       throw AuthException(error.message ?? error.code);
     }
   }
@@ -136,8 +147,15 @@ configure` has run. Anchored on `ensureInitialized()`, that throw escaped
 before the hooks existed **and** before `runApp`, so there was no widget
 tree — the first run of every `--backend firebase` app was a black screen
 with no error anywhere. Reported through the app's own seam instead, the
-app boots on the in-memory fake and the failure lands in your crash
-reporter.
+app boots and the failure lands in your crash reporter.
+
+What it boots *on* depends on the build. A debug or profile `dev` build
+falls back to the in-memory fake so the app stays usable while you finish
+the console steps. A release — or any `prod` build — gets
+`UnconfiguredAuthRepository`, which refuses every sign-in: the fake signs
+in any email with a six-character password, and shipping that as the login
+screen is worse than shipping one that refuses everybody. That split is
+`failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 
 Finally, replace the session-restore call in `_restoreSession` — Firebase
 persists sessions itself:

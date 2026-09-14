@@ -84,9 +84,9 @@ dart run tool/check_example_drift.dart   # --fix re-syncs what it can
   `.freezed.dart` you forgot to `git add` fails there while your own
   `git diff` looks clean.
 - `flutter test --coverage` is gated on a line-coverage floor, as are
-  the CLI's unit tests. The numbers live in `.github/workflows/ci.yml`
-  and only move upward; deleting a test file is the usual way to trip
-  one.
+  the CLI's unit tests and each example app — three ratchets in all. The
+  numbers live in `.github/workflows/ci.yml` and only move upward;
+  deleting a test file is the usual way to trip one.
 
 Rules of thumb:
 
@@ -102,6 +102,38 @@ Rules of thumb:
 - Keep the `fluframe_app` / `FluFrame App` / `FluFrame 앱` /
   `FluFrame アプリ` tokens intact:
   the CLI rewrites them when generating projects.
+
+## Developing the examples
+
+`examples/todo_app` and `examples/weather_app` are generated apps plus one
+feature each. Most of their source is the template's, kept byte-equal by
+`check_example_drift.dart` — but each carries a feature module no other
+job covers, so CI runs a full set of gates per example:
+
+```sh
+cd examples/todo_app          # and again for weather_app
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+git add -A lib && git diff --cached --exit-code   # committed codegen
+dart format --set-exit-if-changed lib test
+flutter analyze
+flutter test --coverage       # floor: 78
+```
+
+Two things to know before you touch one:
+
+- **A template change reaches them through the drift tool, not by hand.**
+  Run `dart run tool/check_example_drift.dart --fix` from
+  `packages/fluframe`, then `dart fix --apply` in each example — the
+  copies arrive carrying the *template's* import order, and
+  `directives_ordering` is fatal here.
+- **A Dependabot template bump arrives red on this gate**, always. The
+  bot edits `/template` only (deliberately — see the comment in
+  `.github/dependabot.yml`), so the matching example pins and lockfiles
+  are yours to move in the same PR. Change the pubspec by hand and run
+  `flutter pub get` in that example; `--fix` will not touch a dependency
+  line, because editing a pin without resolving it leaves `pubspec.lock`
+  describing a resolution that no longer exists.
 
 ## Developing the CLI
 
@@ -152,11 +184,22 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    above it (`version_sync_test` checks the heading pairing). Land the
    bump on `main` via PR.
 2. Push the release tag: `git tag fluframe-v<version> && git push origin
-   fluframe-v<version>`. The `publish.yml` workflow re-runs every gate
-   (tag↔pubspec match, unit tests, bundle sync, e2e, dry-run) and then
-   publishes to pub.dev via OIDC — no local credentials involved.
+   fluframe-v<version>`. The `publish.yml` workflow runs three jobs in
+   sequence: `verify-ci` (CI was green for this commit), `gate`
+   (tag↔pubspec match, unit tests, bundle sync, e2e, dry-run), then
+   `publish`, which uploads to pub.dev via OIDC — no local credentials
+   involved.
 3. If a gate fails, nothing is published: fix on main via PR, delete and
    re-push the tag.
+
+   The three-job shape is a security boundary, not organisation. Only
+   `publish` holds `id-token: write`, so the pub.dev *publishing* token
+   exists only in the job that uploads — and that job runs no tests, no
+   `pub get`, and no third-party code. The `gate` job, which resolves and
+   executes a whole generated app's dependency tree, has no token to
+   leak. It hands the validated `templates/` bundle over as an artifact
+   rather than having `publish` rebuild it, because rebuilding would mean
+   resolving dependencies with the credential live again.
 4. Manual fallback: `packages\fluframe\tool\publish.bat` runs the same
    gates locally, then publishes interactively (`--yes` to skip the
    prompt). **Read the dry-run file list — do not just run it.** Unlike
@@ -210,10 +253,28 @@ the credential differed.
 
 `publish.yml` now removes the credential right after the version check
 and re-adds it immediately before `dart pub publish`, so the gates run
-anonymously. If a future run fails with an authorization error, check
-*which* step it was: a read (dependency resolution, the dry-run) means
-the credential is in scope where it should not be; the upload itself
-means the credential is missing or expired.
+anonymously.
+
+**Correction (2026-09-14): that diagnosis does not hold, and the rule it
+produced is wrong.** On the same morning, 73 minutes *before* the tag run
+failed, PR #18's `CLI — analyze & unit tests` job produced the identical
+`Package not available (authorization failed).` at `dart pub get` — and
+that job has no `id-token`, no `PUB_TOKEN`, and no pub credential of any
+kind (`ci.yml` grants `contents: read` at workflow level and
+`id-token: write` only to `deploy-demo`). A credential that is not there
+cannot be what authenticated the request. Both failures also landed on
+the same package, and a credential-free job resolved it fine 50 minutes
+later. A registry-side incident explains all three observations; the
+credential explains only one.
+
+So do **not** read an authorization error on a read as proof the
+credential is in scope. Check <https://status.pub.dev> and re-run first.
+
+Keeping the credential out of the gate steps is still right — a
+publishing token should not be live while the gates resolve and execute
+third-party packages — but it is least-privilege hygiene, not a fix for
+this incident. Do not cite this incident as evidence that it was
+exploited.
 
 ### When the tag run fails at the upload step
 

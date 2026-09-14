@@ -4,19 +4,35 @@ import 'package:fluframe_app/features/auth/domain/auth_exception.dart';
 import 'package:fluframe_app/features/auth/domain/user.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
+/// Whether this build was compiled with both Supabase keys.
+///
+/// Compile-time, so `main.dart` can decide whether to attempt
+/// `Supabase.initialize` at all — which is why this is separate from
+/// [SupabaseAuthRepository.isConfigured], the runtime answer that also
+/// requires the initialize to have succeeded.
+const bool supabaseKeysPresent =
+    String.fromEnvironment('SUPABASE_URL') != '' &&
+    String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY') != '';
+
+/// Set by `main.dart` once `Supabase.initialize` returns without throwing.
+///
+/// Stands in for the `Firebase.apps.isNotEmpty` probe the Firebase addon
+/// gets from its SDK; supabase_flutter has no readable equivalent.
+bool supabaseInitialized = false;
+
 /// The auth backend this build should use.
 ///
 /// A freshly generated app has no Supabase project yet, and
 /// `Supabase.initialize` with an empty URL throws before the first frame
-/// — a black screen with nothing on it. Until `SUPABASE_URL` is set the
-/// app keeps running on the in-memory fake, the same way the Sentry and
+/// — a black screen with nothing on it. Until both keys are set the app
+/// keeps running on the in-memory fake, the same way the Sentry and
 /// Amplitude addons stay inert without their keys.
 ///
 /// That convenience is scoped to debug and profile builds of the `dev`
-/// flavor. A release — or any `prod` build — that never received
-/// `SUPABASE_URL` gets [UnconfiguredAuthRepository] instead: the fake
-/// signs in any email with a six-character password, and shipping that as
-/// the login screen is worse than shipping one that refuses everybody.
+/// flavor. A release — or any `prod` build — that never received them
+/// gets [UnconfiguredAuthRepository] instead: the fake signs in any email
+/// with a six-character password, and shipping that as the login screen
+/// is worse than shipping one that refuses everybody.
 /// See `failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
     SupabaseAuthRepository.isConfigured
@@ -29,8 +45,25 @@ AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
 /// SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY) via `Supabase.initialize` in
 /// `main.dart`.
 class SupabaseAuthRepository implements AuthRepository {
-  /// Whether this build was given a Supabase project to talk to.
-  static const bool isConfigured = String.fromEnvironment('SUPABASE_URL') != '';
+  /// Whether this build reached a Supabase project: it was given both
+  /// keys, and `Supabase.initialize` then succeeded.
+  ///
+  /// Both halves are load-bearing, and neither is enough alone.
+  ///
+  /// Firebase gets the second half for free — `Firebase.apps.isNotEmpty`
+  /// is false when `initializeApp` threw, so its fallback is correct
+  /// without any extra state. Supabase exposes no equivalent probe:
+  /// `Supabase.instance` throws rather than reporting, so a build whose
+  /// `initialize` failed would otherwise still look configured here, be
+  /// handed the real repository, and throw "not initialized" on every
+  /// single auth call. [supabaseInitialized] closes that gap.
+  ///
+  /// The first half reads BOTH keys because the addon seeds both empty in
+  /// `env/*.json`. Gating on the URL alone meant a half-filled env file
+  /// flipped this to true, bypassed [unconfiguredBackendRepository] and
+  /// its release-mode refusal, and produced a client that 401s on every
+  /// request instead of an app that says it is not configured.
+  static bool get isConfigured => supabaseKeysPresent && supabaseInitialized;
 
   supabase.SupabaseClient get _client => supabase.Supabase.instance.client;
 

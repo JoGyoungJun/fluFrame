@@ -40,11 +40,18 @@ updates:
     groups:
       template:
         patterns: ['*']
-        # freezed is filed on its own, outside the group: PR #14 (2026-09-01)
-        # showed a grouped update carrying freezed 3.2.5 -> 4.0.1 despite
-        # the per-dependency ignore rules below (the PR body even listed the
-        # ignore condition it applied). Ungrouped, the ignore decides the
-        # whole PR, so a freezed major can never ride in on a go_router bump.
+        # freezed is filed on its own, outside the group. This was adopted
+        # after PR #14 (2026-09-01) carried freezed 3.2.5 -> 4.0.1 despite
+        # the per-dependency ignore rules below, on the theory that grouping
+        # let it ride in on another bump.
+        #
+        # That theory was WRONG, and PR #19 (2026-09-11) proved it by doing
+        # the same thing with this exclusion in place. freezed moves because
+        # build_runner >=2.15.2 forces it (see the analyzer constraints in
+        # the ignore block below) -- a transitive co-bump no grouping or
+        # ignore rule governs. The build_runner cap is what actually stops
+        # it. This exclusion is kept because filing freezed on its own is
+        # still the clearer shape, not because it prevents anything.
         exclude-patterns: ['freezed', 'freezed_annotation']
     commit-message:
       prefix: 'chore(deps)'
@@ -65,8 +72,11 @@ updates:
       # is now a deliberate deferral, not a forced cap. Decided 2026-09-07.
       # Revisit trigger: the first template dependency that needs
       # analyzer >= 11, or the next fluframe major — whichever comes first.
-      # The migration is: bump freezed + freezed_annotation together,
-      # regenerate template + both examples, lift these four rules.
+      # The migration is: bump freezed, regenerate template + both
+      # examples, lift these five rules. freezed_annotation does NOT move
+      # with it -- freezed 4.0.1 depends on freezed_annotation 3.1.0
+      # exactly, the same version freezed 3.2.5 wants (verified against
+      # pub.dev's API, 2026-09-14).
       - dependency-name: freezed
         update-types: ['version-update:semver-major']
       - dependency-name: freezed
@@ -75,3 +85,18 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: freezed_annotation
         versions: ['>=4.0.0-0']
+      # build_runner is capped BY the freezed deferral, not by a judgement
+      # about build_runner itself. The constraints are disjoint:
+      #   freezed 3.2.5        -> analyzer >=9.0.0  <11.0.0
+      #   build_runner 2.15.1  -> analyzer >=8.0.0  <14.0.0   (compatible)
+      #   build_runner 2.15.2+ -> analyzer >=13.3.0 <15.0.0   (NOT)
+      # So build_runner >=2.15.2 cannot resolve while freezed is held at
+      # 3.x, and dependabot must move freezed to propose it. That is a
+      # transitive co-bump, which `ignore` and `exclude-patterns` do not
+      # govern -- which is why PR #14 (2026-09-01) and PR #19 (2026-09-11)
+      # both carried an undisclosed freezed 4 despite the rules above, and
+      # why splitting freezed out of the group (PR #14's remediation) did
+      # not stop it. Capping build_runner here is what actually stops it.
+      # Lift this rule in the same change that lifts the freezed ones.
+      - dependency-name: build_runner
+        versions: ['>=2.15.2']

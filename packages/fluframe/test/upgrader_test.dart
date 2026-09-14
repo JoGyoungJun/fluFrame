@@ -1467,5 +1467,61 @@ void main() {
         expect(log.toString(), contains('Falling back'), reason: registry);
       }
     });
+
+    test(
+      'a scratch dir that cannot be created still frees the bundle',
+      () async {
+        // `createTempSync` used to sit one line ABOVE the try whose finally
+        // deletes the extracted bundle, so a temp volume that refused the
+        // scratch directory orphaned the whole `templates/` tree the run
+        // had already downloaded. A full temp volume is also the likeliest
+        // reason for that refusal, so the leak compounded its own cause.
+        //
+        // Driven through TMPDIR because `Directory.systemTemp` reads it:
+        // pointing it at a path that does not exist is the one way to make
+        // createTempSync fail without root-only tricks (this suite runs as
+        // root in CI, where a read-only directory would not stop it).
+        final owned = Directory.systemTemp.createTempSync('fluframe_owned_');
+        addTearDown(() {
+          if (owned.existsSync()) owned.deleteSync(recursive: true);
+        });
+        final bundleTemplates = Directory(p.join(owned.path, 'templates'))
+          ..createSync(recursive: true);
+        writeFile(
+          bundleTemplates.path,
+          'app/lib/main.dart',
+          'void main() {}\n',
+        );
+
+        final upgraderWithOwnedBundle = Upgrader(
+          currentTemplate: newTemplate,
+          oldBundleProvider: (version) async => (
+            templates: bundleTemplates,
+            owned: owned,
+          ),
+          log: log,
+        );
+
+        await IOOverrides.runZoned(
+          () async {
+            await expectLater(
+              upgraderWithOwnedBundle.run(projectDir: project),
+              throwsA(isA<FileSystemException>()),
+            );
+          },
+          getSystemTempDirectory: () =>
+              Directory(p.join(owned.path, 'no', 'such', 'dir')),
+        );
+
+        expect(
+          owned.existsSync(),
+          isFalse,
+          reason:
+              'the finally must free the extracted bundle even when the '
+              'scratch directory was never created',
+        );
+      },
+      testOn: '!windows',
+    );
   });
 }

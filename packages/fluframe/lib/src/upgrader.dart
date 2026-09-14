@@ -248,8 +248,19 @@ class Upgrader {
     var upToDate = 0;
     var localEdits = 0;
 
-    final work = Directory.systemTemp.createTempSync('fluframe_upgrade_');
+    // Inside the try, not above it. The extracted bundle is already on
+    // disk by this point and only the finally below deletes it, so a
+    // createTempSync that throws — a full temp volume, a permission or
+    // quota refusal — used to orphan the whole extracted `templates/`
+    // tree. A full temp volume is also the likeliest reason for this
+    // line to fail, so the leak compounded the condition that caused it.
+    Directory? scratch;
     try {
+      // `scratch` is the nullable the finally cleans up; `work` is the
+      // non-null view the body uses, so nothing below needs a null check.
+      final work = scratch = Directory.systemTemp.createTempSync(
+        'fluframe_upgrade_',
+      );
       Future<Directory?> bare(
         Directory template,
         String label, {
@@ -393,7 +404,7 @@ class Upgrader {
       // Every run, dry ones included, used to leave them behind, so the
       // temp volume grew by a template per invocation.
       try {
-        work.deleteSync(recursive: true);
+        scratch?.deleteSync(recursive: true);
       } on FileSystemException {
         // Temp cleanup best-effort.
       }
