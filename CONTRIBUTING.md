@@ -184,11 +184,22 @@ lands through a pull request with all CI jobs green. Nothing merges red.
    above it (`version_sync_test` checks the heading pairing). Land the
    bump on `main` via PR.
 2. Push the release tag: `git tag fluframe-v<version> && git push origin
-   fluframe-v<version>`. The `publish.yml` workflow re-runs every gate
-   (tag↔pubspec match, unit tests, bundle sync, e2e, dry-run) and then
-   publishes to pub.dev via OIDC — no local credentials involved.
+   fluframe-v<version>`. The `publish.yml` workflow runs three jobs in
+   sequence: `verify-ci` (CI was green for this commit), `gate`
+   (tag↔pubspec match, unit tests, bundle sync, e2e, dry-run), then
+   `publish`, which uploads to pub.dev via OIDC — no local credentials
+   involved.
 3. If a gate fails, nothing is published: fix on main via PR, delete and
    re-push the tag.
+
+   The three-job shape is a security boundary, not organisation. Only
+   `publish` holds `id-token: write`, so the pub.dev *publishing* token
+   exists only in the job that uploads — and that job runs no tests, no
+   `pub get`, and no third-party code. The `gate` job, which resolves and
+   executes a whole generated app's dependency tree, has no token to
+   leak. It hands the validated `templates/` bundle over as an artifact
+   rather than having `publish` rebuild it, because rebuilding would mean
+   resolving dependencies with the credential live again.
 4. Manual fallback: `packages\fluframe\tool\publish.bat` runs the same
    gates locally, then publishes interactively (`--yes` to skip the
    prompt). **Read the dry-run file list — do not just run it.** Unlike
