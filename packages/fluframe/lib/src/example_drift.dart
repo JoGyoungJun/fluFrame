@@ -75,6 +75,8 @@ DriftResult checkExampleDrift({
   required Directory examples,
   required bool fix,
   required StringSink out,
+  Map<String, Set<String>> valueExemptions = allowedValueDivergence,
+  Map<String, Set<String>> dependencyExemptions = allowedDependencyDivergence,
 }) {
   var drifted = 0;
   var keysAdded = 0;
@@ -121,7 +123,13 @@ DriftResult checkExampleDrift({
   // exactly how both examples ended up on en+ko while the shared settings
   // screen offered a Japanese chip.
   for (final example in examples.listSync().whereType<Directory>()) {
-    final result = _checkStrings(template, example, fix: fix, out: out);
+    final result = _checkStrings(
+      template,
+      example,
+      fix: fix,
+      out: out,
+      exemptions: valueExemptions,
+    );
     drifted += result.drifted;
     keysAdded += result.keysAdded;
   }
@@ -131,7 +139,12 @@ DriftResult checkExampleDrift({
   // examples are what the README points a reader at, and they sat a minor
   // version behind the template on go_router with nothing to say so.
   for (final example in examples.listSync().whereType<Directory>()) {
-    drifted += _checkPubspec(template, example, out: out);
+    drifted += _checkPubspec(
+      template,
+      example,
+      out: out,
+      exemptions: dependencyExemptions,
+    );
   }
 
   return (drifted: drifted, keysAdded: keysAdded);
@@ -143,6 +156,7 @@ DriftResult _checkStrings(
   Directory example, {
   required bool fix,
   required StringSink out,
+  required Map<String, Set<String>> exemptions,
 }) {
   final name = p.basename(example.path);
   var drifted = 0;
@@ -224,7 +238,7 @@ DriftResult _checkStrings(
       // Present in both. A different value is reported and left alone: the
       // example may have translated it, and overwriting a translation is
       // worse than the drift.
-      if (allowedValueDivergence[name]?.contains(key) ?? false) continue;
+      if (exemptions[name]?.contains(key) ?? false) continue;
       if (actual[key] != expected[key]) {
         drifted++;
         out.writeln(
@@ -252,6 +266,7 @@ int _checkPubspec(
   Directory template,
   Directory example, {
   required StringSink out,
+  required Map<String, Set<String>> exemptions,
 }) {
   final name = p.basename(example.path);
   final source = File(p.join(template.path, 'pubspec.yaml'));
@@ -271,7 +286,7 @@ int _checkPubspec(
   if (sourceText == null || targetText == null) return 1;
   final expected = _dependencyBlocks(sourceText);
   final actual = _dependencyBlocks(targetText);
-  final exempt = allowedDependencyDivergence[name] ?? const <String>{};
+  final exempt = exemptions[name] ?? const <String>{};
   var drifted = 0;
 
   for (final block in expected.keys) {
