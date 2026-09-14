@@ -51,6 +51,62 @@ void main() {
       expect(boot.initialUser, const User(email: 'dev@example.com'));
     });
 
+    test('every failed read reaches the crash report', () async {
+      // The other half of loadBootState's contract: "Booting on defaults
+      // with the error in the crash report beats not booting." Only the
+      // defaults half was tested, so deleting the reporting call left the
+      // suite green while a storage failure vanished without a trace —
+      // the exact outcome core/logging/error_handlers.dart exists to
+      // prevent.
+      final reported = <Object>[];
+
+      final boot = await loadBootState(
+        FailingKeyValueStore(
+          failReads: true,
+          failWrites: true,
+          failRemovals: true,
+        ),
+        report: (error, stackTrace) {
+          reported.add(error);
+          return true;
+        },
+      );
+
+      expect(
+        reported,
+        hasLength(4),
+        reason: 'all four reads failed, so all four must be reported',
+      );
+      // Still booted, on defaults — reporting must not cost the fallback.
+      expect(boot.themeMode, ThemeMode.system);
+      expect(boot.initialUser, isNull);
+    });
+
+    test('one unreadable key reports exactly one error', () async {
+      // Pins the per-read shape from the reporting side, the way the test
+      // above it pins the value side: one try/catch around the whole
+      // record would report a single error and lose three settings.
+      final reported = <Object>[];
+      final store = FailingKeyValueStore(
+        failReads: true,
+        failKeys: const {'settings.themeMode'},
+      );
+      await store.setString('settings.themePreset', 'emerald');
+      await store.setString('settings.locale', 'ko');
+      await store.setString('auth.session.email', 'dev@example.com');
+
+      final boot = await loadBootState(
+        store,
+        report: (error, stackTrace) {
+          reported.add(error);
+          return true;
+        },
+      );
+
+      expect(reported, hasLength(1));
+      expect(boot.themePreset, ThemePreset.emerald);
+    });
+
     test('returns the persisted values when storage works', () async {
       final store = InMemoryKeyValueStore();
       await store.setString('settings.themeMode', 'dark');
