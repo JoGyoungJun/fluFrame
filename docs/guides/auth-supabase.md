@@ -63,13 +63,25 @@ import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 /// A freshly generated app has no Supabase project yet, and
 /// `Supabase.initialize` with an empty URL throws before the first frame
 /// — a black screen with nothing on it. Until `SUPABASE_URL` is set the
-/// app keeps running on the in-memory fake.
+/// app keeps running on the in-memory fake, the same way the Sentry and
+/// Amplitude addons stay inert without their keys.
+///
+/// That convenience is scoped to debug and profile builds of the `dev`
+/// flavor. A release — or any `prod` build — that never received
+/// `SUPABASE_URL` gets [UnconfiguredAuthRepository] instead: the fake
+/// signs in any email with a six-character password, and shipping that as
+/// the login screen is worse than shipping one that refuses everybody.
+/// See `failClosedWhenUnconfigured` in `core/config/app_config.dart`.
 AuthRepository supabaseAuthOrFallback(KeyValueStore store) =>
     SupabaseAuthRepository.isConfigured
     ? SupabaseAuthRepository()
-    : InMemoryAuthRepository(store);
+    : unconfiguredBackendRepository('Supabase', store);
 
 /// [AuthRepository] backed by Supabase Auth.
+///
+/// Configuration comes from `--dart-define-from-file` (see `env/*.json`:
+/// SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY) via `Supabase.initialize` in
+/// `main.dart`.
 class SupabaseAuthRepository implements AuthRepository {
   /// Whether this build was given a Supabase project to talk to.
   static const bool isConfigured = String.fromEnvironment('SUPABASE_URL') != '';
@@ -100,8 +112,9 @@ class SupabaseAuthRepository implements AuthRepository {
     try {
       await _client.auth.signOut();
     } on supabase.AuthException catch (error) {
-      // Same reason as signIn: a caller that wants to tell one
-      // sign-out failure from another needs the app's own type.
+      // Mapped exactly as signIn maps it: AuthRepository.signOut
+      // documents AuthException, and a bare `=> _client.auth.signOut()`
+      // let the SDK's own type straight past that seam.
       throw AuthException(error.message);
     }
   }
