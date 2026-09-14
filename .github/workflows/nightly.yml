@@ -325,4 +325,10 @@ jobs:
           sdk: stable
       - run: dart pub get
       - name: Compare each addon pin against pub.dev
+        # `shell: bash` for the -o pipefail it brings, exactly as the
+        # upgrade-canary step above needs it: under the default `bash -e`
+        # a pipeline reports `tee`'s exit code, so this job stayed green
+        # through every verdict the tool could reach — including the
+        # `exit(1)` that is its entire reason to exist.
+        shell: bash
         run: dart run tool/check_addon_pins.dart | tee -a "$GITHUB_STEP_SUMMARY"
