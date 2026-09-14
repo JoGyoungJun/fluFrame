@@ -66,8 +66,15 @@ class DoctorCommand extends Command<int> {
     try {
       final result = await _runProcess(tool, arguments);
       if (result.exitCode != 0) return null;
-      final lines = result.stdout.toString().trim().split('\n');
-      return lines.isEmpty ? '' : lines.first.trim();
+      // A tool that exits 0 and prints nothing is not a working tool, and
+      // it used to read as one: `''.split('\n')` is `['']`, never empty,
+      // so the `isEmpty` arm here was dead and the empty string fell
+      // through as a success. `run()` then printed a bare `[ok] ` with no
+      // version after it and fed `''` to the SDK-floor check, which
+      // reported `unknown` and let the report end in "All set" — the
+      // silent pass this command exists to prevent. Report it as missing.
+      final first = result.stdout.toString().trim().split('\n').first.trim();
+      return first.isEmpty ? null : first;
     } on io.ProcessException {
       return null;
     }
