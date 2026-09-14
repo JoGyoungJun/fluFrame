@@ -324,8 +324,19 @@ const BackendAddon supabaseAddon = BackendAddon(
     // Anchored AFTER the error hooks, not on ensureInitialized(): an
     // initialize() that throws before they are installed escapes into the
     // root zone, and since it also precedes runApp there is no widget
-    // tree to show it — the user gets a black screen. Guarded on a
-    // configured URL for the same reason.
+    // tree to show it — the user gets a black screen.
+    //
+    // The try/catch is the same shape the Firebase patch below uses, and
+    // for the same reason: the key gate only covers an EMPTY config, not
+    // a wrong one. A typo'd URL, a trailing space, anything Uri.parse
+    // rejects — all throw here, in a configured build, past the gate.
+    //
+    // Setting `supabaseInitialized` is what makes the catch worth having.
+    // Without it the app boots, `isConfigured` is still true, the real
+    // SupabaseAuthRepository is handed out, and its `_client` getter
+    // throws "not initialized" on every auth call. Firebase needs no
+    // equivalent line because `Firebase.apps.isNotEmpty` already answers
+    // this; supabase_flutter exposes nothing that does.
     AddonPatch(
       file: 'lib/main.dart',
       anchor:
@@ -335,13 +346,18 @@ const BackendAddon supabaseAddon = BackendAddon(
           '  WidgetsBinding.instance.platformDispatcher.onError = '
           'onPlatformError;\n'
           '\n'
-          '  if (SupabaseAuthRepository.isConfigured) {\n'
-          '    await supabase.Supabase.initialize(\n'
-          "      url: const String.fromEnvironment('SUPABASE_URL'),\n"
-          '      publishableKey: const String.fromEnvironment(\n'
-          "        'SUPABASE_PUBLISHABLE_KEY',\n"
-          '      ),\n'
-          '    );\n'
+          '  if (supabaseKeysPresent) {\n'
+          '    try {\n'
+          '      await supabase.Supabase.initialize(\n'
+          "        url: const String.fromEnvironment('SUPABASE_URL'),\n"
+          '        publishableKey: const String.fromEnvironment(\n'
+          "          'SUPABASE_PUBLISHABLE_KEY',\n"
+          '        ),\n'
+          '      );\n'
+          '      supabaseInitialized = true;\n'
+          '    } on Object catch (error, stackTrace) {\n'
+          '      onPlatformError(error, stackTrace);\n'
+          '    }\n'
           '  }',
     ),
     // main.dart: restore the session from Supabase instead of the fake.
