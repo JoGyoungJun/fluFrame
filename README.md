@@ -105,6 +105,7 @@ including where fluFrame loses.
 | Flavors | `--dart-define-from-file` with `env/dev.json` / `env/prod.json` |
 | Lints | [very_good_analysis](https://pub.dev/packages/very_good_analysis) — zero warnings |
 | Tests | Unit + widget tests with mocktail and Riverpod overrides — all green out of the box |
+| Release | Platform runners come straight from `flutter create`, so release signing is yours to set up — [guide](docs/guides/release-signing.md) |
 | Growing the app | `fluframe add feature <name> [--tab]` scaffolds the next feature module and registers its route |
 
 ## Repository layout

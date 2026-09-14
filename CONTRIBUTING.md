@@ -84,9 +84,9 @@ dart run tool/check_example_drift.dart   # --fix re-syncs what it can
   `.freezed.dart` you forgot to `git add` fails there while your own
   `git diff` looks clean.
 - `flutter test --coverage` is gated on a line-coverage floor, as are
-  the CLI's unit tests. The numbers live in `.github/workflows/ci.yml`
-  and only move upward; deleting a test file is the usual way to trip
-  one.
+  the CLI's unit tests and each example app — three ratchets in all. The
+  numbers live in `.github/workflows/ci.yml` and only move upward;
+  deleting a test file is the usual way to trip one.
 
 Rules of thumb:
 
@@ -102,6 +102,38 @@ Rules of thumb:
 - Keep the `fluframe_app` / `FluFrame App` / `FluFrame 앱` /
   `FluFrame アプリ` tokens intact:
   the CLI rewrites them when generating projects.
+
+## Developing the examples
+
+`examples/todo_app` and `examples/weather_app` are generated apps plus one
+feature each. Most of their source is the template's, kept byte-equal by
+`check_example_drift.dart` — but each carries a feature module no other
+job covers, so CI runs a full set of gates per example:
+
+```sh
+cd examples/todo_app          # and again for weather_app
+flutter pub get
+dart run build_runner build --delete-conflicting-outputs
+git add -A lib && git diff --cached --exit-code   # committed codegen
+dart format --set-exit-if-changed lib test
+flutter analyze
+flutter test --coverage       # floor: 78
+```
+
+Two things to know before you touch one:
+
+- **A template change reaches them through the drift tool, not by hand.**
+  Run `dart run tool/check_example_drift.dart --fix` from
+  `packages/fluframe`, then `dart fix --apply` in each example — the
+  copies arrive carrying the *template's* import order, and
+  `directives_ordering` is fatal here.
+- **A Dependabot template bump arrives red on this gate**, always. The
+  bot edits `/template` only (deliberately — see the comment in
+  `.github/dependabot.yml`), so the matching example pins and lockfiles
+  are yours to move in the same PR. Change the pubspec by hand and run
+  `flutter pub get` in that example; `--fix` will not touch a dependency
+  line, because editing a pin without resolving it leaves `pubspec.lock`
+  describing a resolution that no longer exists.
 
 ## Developing the CLI
 

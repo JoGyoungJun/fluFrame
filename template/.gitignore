@@ -47,3 +47,10 @@ app.*.map.json
 # Local env overrides — the committed env/*.json files hold safe defaults;
 # real secrets go into env/*.local.json which never enters version control.
 env/*.local.json
+
+# Release signing. An upload key cannot be rotated without Play App
+# Signing enrolment, so a keystore that reaches a public repository is a
+# reset of the app's release identity - see docs/guides/release-signing.md.
+android/key.properties
+*.jks
+*.keystore
